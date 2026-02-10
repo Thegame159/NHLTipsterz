@@ -226,9 +226,9 @@ const GameTable: React.FC<Props> = ({ predictions }) => {
             <th className="py-4 pl-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Jogo</th>
             <th className="py-4 text-right pr-8 text-[10px] font-black text-slate-500 uppercase tracking-widest">Prob. Vitória</th>
             <th className="py-4 text-center text-[10px] font-black text-slate-500 uppercase tracking-widest">Prob. Empate</th>
-            <th className="py-4 text-center text-[10px] font-black text-slate-500 uppercase tracking-widest">1ºP > 1.5</th>
+            <th className="py-4 text-center text-[10px] font-black text-slate-500 uppercase tracking-widest"> 1ºP &gt; 1.5</th>
             <th className="py-4 text-center text-[10px] font-black text-slate-500 uppercase tracking-widest">1ºP AMAMB</th>
-            <th className="py-4 text-center pr-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Jogo > 4.5</th>
+            <th className="py-4 text-center pr-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Jogo &gt; 4.5</th>
           </tr>
         </thead>
         <tbody>
