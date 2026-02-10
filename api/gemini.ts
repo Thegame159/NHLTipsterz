@@ -1,5 +1,24 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
+// Cache simples em memória (ajuda a reduzir chamadas repetidas)
+// Em serverless não é 100% garantido, mas na prática ajuda.
+type CacheEntry = { at: number; data: any };
+const cache = new Map<string, CacheEntry>();
+
+const TTL_MS = 1000 * 60 * 30; // 30 min (fresco)
+// Stale-while-revalidate: quanto tempo você aceita cache expirado
+const STALE_MAX_MS = 1000 * 60 * 60 * 24; // 24h (stale aceito)
+
+function isQuotaError(msg: string) {
+  const m = msg.toLowerCase();
+  return (
+    m.includes("429") ||
+    m.includes("resource_exhausted") ||
+    m.includes("quota") ||
+    m.includes("rate limit")
+  );
+}
+
 export default async function handler(req: any, res: any) {
   try {
     if (req.method !== "POST") {
@@ -16,9 +35,29 @@ export default async function handler(req: any, res: any) {
       return res.status(400).json({ error: "Missing selectedDate" });
     }
 
-    const ai = new GoogleGenAI({ apiKey });
+    const cacheKey = String(selectedDate);
+    const now = Date.now();
+    const entry = cache.get(cacheKey);
 
-    const prompt = `
+    const age = entry ? now - entry.at : Infinity;
+    const fresh = entry && age < TTL_MS;
+    const staleOk = entry && age < STALE_MAX_MS;
+
+    // 1) Se está fresco, devolve imediatamente
+    if (fresh) {
+      res.setHeader("x-cache", "HIT");
+      res.setHeader("x-cache-age-ms", String(age));
+      return res.status(200).json({
+        ...entry.data,
+        cache: { hit: true, stale: false, ageMs: age }
+      });
+    }
+
+    // 2) Se está expirado, tentamos atualizar (revalidate)
+    try {
+      const ai = new GoogleGenAI({ apiKey });
+
+      const prompt = `
 Analise os jogos da NHL que ocorrerão na data: ${selectedDate}.
 Para cada jogo desta data específica, realize um estudo de performance baseado nos últimos 10 jogos de cada equipe, considerando:
 1. Fator Casa vs Fora (performance específica nessas condições).
@@ -48,89 +87,122 @@ IMPORTANTE:
 - Inclua o registro dos últimos 10 jogos (L10) no formato Vitórias-Derrotas-DerrotasOT.
 `.trim();
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: prompt,
-      config: {
-        tools: [{ googleSearch: {} }],
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            predictions: {
-              type: Type.ARRAY,
-              items: {
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: prompt,
+        config: {
+          tools: [{ googleSearch: {} }],
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              predictions: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    id: { type: Type.STRING },
+                    homeTeam: { type: Type.STRING },
+                    homeTeamAbbr: { type: Type.STRING },
+                    homeRecordL10: { type: Type.STRING },
+                    awayTeam: { type: Type.STRING },
+                    awayTeamAbbr: { type: Type.STRING },
+                    awayRecordL10: { type: Type.STRING },
+                    dateTime: { type: Type.STRING },
+                    winProbabilityHome: { type: Type.NUMBER },
+                    winProbabilityAway: { type: Type.NUMBER },
+                    over15P1Prob: { type: Type.NUMBER },
+                    bttsP1Prob: { type: Type.NUMBER },
+                    drawTRProb: { type: Type.NUMBER },
+                    over45Prob: { type: Type.NUMBER },
+                    over55Prob: { type: Type.NUMBER },
+                    analysisSummary: { type: Type.STRING },
+                    injuries: {
+                      type: Type.OBJECT,
+                      properties: {
+                        home: { type: Type.ARRAY, items: { type: Type.STRING } },
+                        away: { type: Type.ARRAY, items: { type: Type.STRING } }
+                      }
+                    }
+                  },
+                  required: [
+                    "homeTeam",
+                    "homeTeamAbbr",
+                    "awayTeam",
+                    "awayTeamAbbr",
+                    "winProbabilityHome",
+                    "over15P1Prob",
+                    "drawTRProb"
+                  ]
+                }
+              },
+              suggestions: {
                 type: Type.OBJECT,
                 properties: {
-                  id: { type: Type.STRING },
-                  homeTeam: { type: Type.STRING },
-                  homeTeamAbbr: { type: Type.STRING },
-                  homeRecordL10: { type: Type.STRING },
-                  awayTeam: { type: Type.STRING },
-                  awayTeamAbbr: { type: Type.STRING },
-                  awayRecordL10: { type: Type.STRING },
-                  dateTime: { type: Type.STRING },
-                  winProbabilityHome: { type: Type.NUMBER },
-                  winProbabilityAway: { type: Type.NUMBER },
-                  over15P1Prob: { type: Type.NUMBER },
-                  bttsP1Prob: { type: Type.NUMBER },
-                  drawTRProb: { type: Type.NUMBER },
-                  over45Prob: { type: Type.NUMBER },
-                  over55Prob: { type: Type.NUMBER },
-                  analysisSummary: { type: Type.STRING },
-                  injuries: {
-                    type: Type.OBJECT,
-                    properties: {
-                      home: { type: Type.ARRAY, items: { type: Type.STRING } },
-                      away: { type: Type.ARRAY, items: { type: Type.STRING } }
+                  tripleWin: { type: Type.ARRAY, items: { type: Type.STRING } },
+                  tripleOver15P1: { type: Type.ARRAY, items: { type: Type.STRING } },
+                  doubleOver15P1: { type: Type.ARRAY, items: { type: Type.STRING } },
+                  drawSuggestions: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        game: { type: Type.STRING },
+                        explanation: { type: Type.STRING }
+                      }
                     }
-                  }
-                },
-                required: [
-                  "homeTeam",
-                  "homeTeamAbbr",
-                  "awayTeam",
-                  "awayTeamAbbr",
-                  "winProbabilityHome",
-                  "over15P1Prob",
-                  "drawTRProb"
-                ]
-              }
-            },
-            suggestions: {
-              type: Type.OBJECT,
-              properties: {
-                tripleWin: { type: Type.ARRAY, items: { type: Type.STRING } },
-                tripleOver15P1: { type: Type.ARRAY, items: { type: Type.STRING } },
-                doubleOver15P1: { type: Type.ARRAY, items: { type: Type.STRING } },
-                drawSuggestions: {
-                  type: Type.ARRAY,
-                  items: {
-                    type: Type.OBJECT,
-                    properties: {
-                      game: { type: Type.STRING },
-                      explanation: { type: Type.STRING }
-                    }
-                  }
-                },
-                quadrupleOver45: { type: Type.ARRAY, items: { type: Type.STRING } },
-                over55Suggestions: { type: Type.ARRAY, items: { type: Type.STRING } }
+                  },
+                  quadrupleOver45: { type: Type.ARRAY, items: { type: Type.STRING } },
+                  over55Suggestions: { type: Type.ARRAY, items: { type: Type.STRING } }
+                }
               }
             }
           }
         }
+      });
+
+      const text = response.text || "{}";
+      const result = JSON.parse(text);
+
+      const payload = {
+        ...result,
+        lastUpdated: new Date().toISOString()
+      };
+
+      cache.set(cacheKey, { at: now, data: payload });
+
+      res.setHeader("x-cache", "MISS");
+      return res.status(200).json({
+        ...payload,
+        cache: { hit: false, stale: false, ageMs: 0 }
+      });
+    } catch (e: any) {
+      const msg = String(e?.message ?? "Gemini error");
+
+      // 3) Se falhou por quota/429 e temos cache stale aceitável, devolve o stale
+      if (isQuotaError(msg) && staleOk && entry) {
+        const staleAge = now - entry.at;
+        res.setHeader("x-cache", "STALE");
+        res.setHeader("x-cache-age-ms", String(staleAge));
+        return res.status(200).json({
+          ...entry.data,
+          cache: { hit: true, stale: true, ageMs: staleAge },
+          warning: "Gemini quota/rate-limit atingido; devolvendo cache antigo (stale)."
+        });
       }
-    });
 
-    const text = response.text || "{}";
-    const result = JSON.parse(text);
+      // Se não tem cache para fallback, devolve erro apropriado
+      if (isQuotaError(msg)) {
+        return res.status(429).json({
+          error: "Quota/rate limit atingido na Gemini API. Tente novamente mais tarde.",
+          details: msg
+        });
+      }
 
-    return res.status(200).json({
-      ...result,
-      lastUpdated: new Date().toISOString()
-    });
+      return res.status(500).json({ error: msg });
+    }
   } catch (e: any) {
     console.error(e);
-    return res.status(500).json({ error: e?.message ?? "Gemini error" });
+    return res.status(500).json({ error: String(e?.message ?? "Server error") });
   }
 }
