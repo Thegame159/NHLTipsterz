@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { fetchNHLAnalysis } from './services/geminiService';
 import { NHLAnalysisData } from './types';
@@ -7,10 +6,13 @@ import SuggestionsView from './components/SuggestionsView';
 
 const BrandLogo: React.FC<{ size?: 'sm' | 'lg' }> = ({ size = 'sm' }) => {
   const isLarge = size === 'lg';
-  
+
   return (
-    <div className={`relative flex flex-col items-center justify-center select-none ${isLarge ? 'p-6 scale-90 sm:scale-100' : 'p-1 scale-[0.5] sm:scale-[0.65]'} overflow-visible`}>
-      
+    <div
+      className={`relative flex flex-col items-center justify-center select-none ${
+        isLarge ? 'p-6 scale-90 sm:scale-100' : 'p-1 scale-[0.5] sm:scale-[0.65]'
+      } overflow-visible`}
+    >
       {/* Orange Speed Lines (Swooshes) */}
       <div className={`absolute left-[-20%] w-[140%] pointer-events-none ${isLarge ? 'top-[45%]' : 'top-[42%]'}`}>
         <svg viewBox="0 0 400 50" className="w-full h-auto opacity-100 drop-shadow-[0_0_5px_rgba(249,115,22,0.5)]">
@@ -23,19 +25,26 @@ const BrandLogo: React.FC<{ size?: 'sm' | 'lg' }> = ({ size = 'sm' }) => {
 
       <div className="relative flex items-center">
         {/* NHL Text - Tamanhos reduzidos para mobile */}
-        <h1 className={`${isLarge ? 'text-[100px] sm:text-[160px]' : 'text-[80px] sm:text-[100px]'} font-nhl-block text-white relative z-10 leading-none tracking-tight`}>
+        <h1
+          className={`${
+            isLarge ? 'text-[100px] sm:text-[160px]' : 'text-[80px] sm:text-[100px]'
+          } font-nhl-block text-white relative z-10 leading-none tracking-tight`}
+        >
           NHL
         </h1>
 
         {/* The Puck (Disco) - Redondo/Elíptico com perspectiva */}
         <div className={`absolute z-30 transform rotate-[-12deg] ${isLarge ? 'right-[-45px] sm:right-[-60px] top-[10px] sm:top-[15px]' : 'right-[-35px] top-[8px]'}`}>
-          <div className={`${isLarge ? 'w-36 h-20 sm:w-44 sm:h-28' : 'w-24 h-14'} bg-[#1a1a1a] rounded-full shadow-[0_10px_20px_rgba(0,0,0,0.8),inset_0_2px_4px_rgba(255,255,255,0.1)] border-b-[6px] border-black relative overflow-hidden flex items-center justify-center`}>
-            
+          <div
+            className={`${
+              isLarge ? 'w-36 h-20 sm:w-44 sm:h-28' : 'w-24 h-14'
+            } bg-[#1a1a1a] rounded-full shadow-[0_10px_20px_rgba(0,0,0,0.8),inset_0_2px_4px_rgba(255,255,255,0.1)] border-b-[6px] border-black relative overflow-hidden flex items-center justify-center`}
+          >
             <div className={`${isLarge ? 'w-16 h-16 sm:w-20 sm:h-20' : 'w-12 h-12'} relative flex flex-col items-center justify-center`}>
-               <svg viewBox="0 0 100 100" className="w-full h-full p-2">
-                  <path d="M 50 20 L 25 75 L 38 75 L 50 55 L 62 75 L 75 75 Z" fill="white" />
-                  <rect x="60" y="65" width="22" height="8" fill="#ea580c" rx="1" />
-               </svg>
+              <svg viewBox="0 0 100 100" className="w-full h-full p-2">
+                <path d="M 50 20 L 25 75 L 38 75 L 50 55 L 62 75 L 75 75 Z" fill="white" />
+                <rect x="60" y="65" width="22" height="8" fill="#ea580c" rx="1" />
+              </svg>
             </div>
 
             <div className="absolute top-0 left-0 w-full h-1/2 bg-gradient-to-b from-white/5 to-transparent"></div>
@@ -71,12 +80,12 @@ const App: React.FC = () => {
   const [loadingMsgIdx, setLoadingMsgIdx] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'schedule' | 'suggestions'>('schedule');
-  
+
   const getTodayString = () => {
     const today = new Date();
     return today.toISOString().split('T')[0];
   };
-  
+
   const [selectedDate, setSelectedDate] = useState<string>(getTodayString());
 
   const loadData = async (date: string) => {
@@ -84,15 +93,13 @@ const App: React.FC = () => {
       setLoading(true);
       setProgress(0);
       setError(null);
-      
+
       const progressInterval = setInterval(() => {
         setProgress(prev => {
           if (prev >= 99) {
             clearInterval(progressInterval);
             return prev;
           }
-          // Lógica assintótica: nunca pára totalmente, mas fica muito lento no final
-          // dando tempo para a API responder sem parecer travado
           const diff = 100 - prev;
           const increment = diff > 50 ? 3 : (diff > 10 ? 0.8 : 0.05);
           return prev + increment;
@@ -104,25 +111,29 @@ const App: React.FC = () => {
       }, 1800);
 
       const analysis = await fetchNHLAnalysis(date);
-      
+
       clearInterval(progressInterval);
       clearInterval(msgInterval);
       setProgress(100);
-      
+
       setTimeout(() => {
         setData(analysis);
         setLoading(false);
       }, 600);
-      
-    } catch (err) {
-      console.error(err);
-      setError("Erro ao carregar dados. Tente novamente.");
+    } catch (err: any) {
+      const msg = err?.message || "Erro ao carregar dados. Tente novamente.";
+
+      // Evita “tijolo” gigante no console
+      console.debug("loadData failed:", msg);
+
+      setError(msg);
       setLoading(false);
     }
   };
 
   useEffect(() => {
     loadData(selectedDate);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDate]);
 
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -138,23 +149,23 @@ const App: React.FC = () => {
 
         <div className="text-center space-y-8 w-full max-w-[280px] mt-8">
           <div className="flex flex-col items-center gap-4">
-             <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden relative">
-               <div 
-                 className="h-full bg-orange-600 transition-all duration-300 shadow-[0_0_15px_rgba(249,115,22,0.6)]"
-                 style={{ width: `${progress}%` }}
-               >
-                 <div className="absolute top-0 right-0 h-full w-12 bg-white/20 blur-md animate-[pulse_1s_infinite]"></div>
-               </div>
-             </div>
-             
-             <div className="flex flex-col items-center gap-1.5">
-               <p className="text-[10px] font-black text-slate-400 tracking-[0.2em] uppercase italic animate-pulse">
-                 {loadingMessages[loadingMsgIdx]}
-               </p>
-               <span className="text-[9px] font-black text-slate-600 tracking-[0.5em] uppercase">
-                 {Math.round(progress)}%
-               </span>
-             </div>
+            <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden relative">
+              <div
+                className="h-full bg-orange-600 transition-all duration-300 shadow-[0_0_15px_rgba(249,115,22,0.6)]"
+                style={{ width: `${progress}%` }}
+              >
+                <div className="absolute top-0 right-0 h-full w-12 bg-white/20 blur-md animate-[pulse_1s_infinite]"></div>
+              </div>
+            </div>
+
+            <div className="flex flex-col items-center gap-1.5">
+              <p className="text-[10px] font-black text-slate-400 tracking-[0.2em] uppercase italic animate-pulse">
+                {loadingMessages[loadingMsgIdx]}
+              </p>
+              <span className="text-[9px] font-black text-slate-600 tracking-[0.5em] uppercase">
+                {Math.round(progress)}%
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -169,11 +180,11 @@ const App: React.FC = () => {
             <BrandLogo size="sm" />
           </div>
         </div>
-        
+
         <div className="flex items-center gap-3 justify-between md:justify-end w-full md:w-auto">
           <div className="flex items-center bg-zinc-900/50 border border-white/10 rounded-lg overflow-hidden flex-1 md:flex-none">
-            <input 
-              type="date" 
+            <input
+              type="date"
               value={selectedDate}
               onChange={handleDateChange}
               className="bg-transparent text-white text-[11px] font-black p-2 outline-none cursor-pointer [color-scheme:dark] w-full"
@@ -190,8 +201,16 @@ const App: React.FC = () => {
       {error ? (
         <div className="bg-red-500/5 border border-red-500/20 rounded-2xl p-12 text-center my-10 backdrop-blur-xl">
           <i className="fas fa-exclamation-circle text-2xl text-red-600 mb-4"></i>
-          <h2 className="text-lg font-black text-white mb-2 uppercase tracking-widest">Erro</h2>
-          <button 
+
+          <h2 className="text-lg font-black text-white mb-3 uppercase tracking-widest">
+            ERRO
+          </h2>
+
+          <p className="text-slate-300 text-xs font-bold max-w-xl mx-auto mb-6">
+            {error}
+          </p>
+
+          <button
             onClick={() => loadData(selectedDate)}
             className="bg-white text-black font-black py-2.5 px-8 rounded-lg text-xs uppercase"
           >
@@ -224,7 +243,9 @@ const App: React.FC = () => {
               <div className="space-y-6">
                 {data && <GameTable predictions={data.predictions} />}
                 {data?.predictions.length === 0 && (
-                  <div className="py-24 text-center text-slate-600 text-[10px] font-black uppercase tracking-widest">Sem jogos</div>
+                  <div className="py-24 text-center text-slate-600 text-[10px] font-black uppercase tracking-widest">
+                    Sem jogos
+                  </div>
                 )}
               </div>
             ) : (
