@@ -1,0 +1,5 @@
+{
+  "name": "NHL Performance ",
+  "description": "Análise avançada de performance da NHL baseada nos últimos 10 jogos, fator casa/fora e lesões, com previsões de probabilidades e sugestões estratégicas.",
+  "requestFramePermissions": []
+}
