@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import { createClient } from "redis";
 
 export const config = {
@@ -44,12 +44,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .json({ code: "METHOD_NOT_ALLOWED", message: "Use POST." });
     }
 
-    // ⚠️ O nome na Vercel está como GEMINI_API_KEY (no teu print)
+    // O nome na Vercel está como GEMINI_API_KEY (no teu print)
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       return res.status(500).json({
         code: "MISSING_GEMINI_API_KEY",
-        message: "GEMINI_API_KEY não definida nas Environment Variables da Vercel.",
+        message:
+          "GEMINI_API_KEY não definida nas Environment Variables da Vercel.",
       });
     }
 
@@ -95,21 +96,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
       const ai = new GoogleGenAI({ apiKey });
 
+      // Dica: quanto mais instruções tu deres aqui, melhor sai o JSON
       const prompt = `
 Analise os jogos da NHL que ocorrerão na data: ${selectedDate}.
-Gere probabilidades e sugestões estratégicas conforme especificado no código anterior.
+Responda APENAS com JSON válido (sem texto extra).
 `.trim();
 
       const response = await ai.models.generateContent({
-        // se este modelo falhar, troca para "gemini-1.5-flash"
+        // Se este modelo falhar, troca para: "gemini-1.5-flash"
         model: "gemini-3-flash-preview",
         contents: prompt,
         config: {
-          // Se isto der erro em produção, comenta esta linha:
-          // tools: [{ googleSearch: {} }],
-
           responseMimeType: "application/json",
-          responseSchema: { type: Type.OBJECT },
+          // (removido) responseSchema — estava a causar INVALID_ARGUMENT
         },
       });
 
