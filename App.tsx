@@ -73,6 +73,15 @@ const loadingMessages = [
   "Preparando face-off..."
 ];
 
+// ✅ Helpers de data
+const toDateString = (d: Date) => d.toISOString().split('T')[0];
+
+const getYesterdayString = () => {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return toDateString(d);
+};
+
 const App: React.FC = () => {
   const [data, setData] = useState<NHLAnalysisData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -81,12 +90,10 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'schedule' | 'suggestions'>('schedule');
 
-  const getTodayString = () => {
-    const today = new Date();
-    return today.toISOString().split('T')[0];
-  };
-
-  const [selectedDate, setSelectedDate] = useState<string>(getTodayString());
+  // ✅ selectedDate = o que o utilizador escolhe no input
+  // ✅ loadedDate = o que está efetivamente carregado (só muda quando clicas "Analisar")
+  const [selectedDate, setSelectedDate] = useState<string>(getYesterdayString());
+  const [loadedDate, setLoadedDate] = useState<string>(getYesterdayString());
 
   const loadData = async (date: string) => {
     try {
@@ -122,22 +129,25 @@ const App: React.FC = () => {
       }, 600);
     } catch (err: any) {
       const msg = err?.message || "Erro ao carregar dados. Tente novamente.";
-
-      // Evita “tijolo” gigante no console
       console.debug("loadData failed:", msg);
-
       setError(msg);
       setLoading(false);
     }
   };
 
+  // ✅ Carrega SÓ UMA VEZ ao abrir (ontem)
   useEffect(() => {
-    loadData(selectedDate);
+    loadData(loadedDate);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDate]);
+  }, []);
 
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSelectedDate(e.target.value);
+  };
+
+  const handleAnalyzeClick = () => {
+    setLoadedDate(selectedDate);
+    loadData(selectedDate);
   };
 
   if (loading) {
@@ -190,6 +200,15 @@ const App: React.FC = () => {
               className="bg-transparent text-white text-[11px] font-black p-2 outline-none cursor-pointer [color-scheme:dark] w-full"
             />
           </div>
+
+          {/* ✅ Botão para evitar chamadas automáticas */}
+          <button
+            onClick={handleAnalyzeClick}
+            className="bg-orange-600 text-white font-black px-4 py-2 rounded-lg text-[10px] uppercase tracking-wider hover:bg-orange-500 transition"
+            title={`Carregado: ${loadedDate}`}
+          >
+            Analisar
+          </button>
 
           <div className="bg-orange-600/5 px-3 py-1.5 rounded-lg border border-orange-600/10 flex items-center gap-2">
             <div className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse"></div>
