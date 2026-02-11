@@ -20,12 +20,11 @@ function safeJsonParse(text: string) {
   }
 }
 
-// NHL schedule endpoint (público)
+// 🔥 NHL API pública
 async function fetchNhlGames(date: string): Promise<Game[]> {
-  // date esperado: YYYY-MM-DD
   const url = `https://api-web.nhle.com/v1/schedule/${date}`;
-
   const res = await fetch(url);
+
   if (!res.ok) return [];
 
   const data = await res.json();
@@ -34,19 +33,16 @@ async function fetchNhlGames(date: string): Promise<Game[]> {
   const games: Game[] = [];
 
   for (const day of data.gameWeek) {
-    const dayGames = Array.isArray(day?.games) ? day.games : [];
-    for (const g of dayGames) {
-      const id = g?.id;
-      const home = g?.homeTeam?.abbrev;
-      const away = g?.awayTeam?.abbrev;
+    if (!Array.isArray(day?.games)) continue;
 
-      if (!id || !home || !away) continue;
+    for (const g of day.games) {
+      if (!g?.id || !g?.homeTeam?.abbrev || !g?.awayTeam?.abbrev) continue;
 
       games.push({
-        gameId: id,
+        gameId: g.id,
         date,
-        homeTeam: home,
-        awayTeam: away,
+        homeTeam: g.homeTeam.abbrev,
+        awayTeam: g.awayTeam.abbrev,
       });
     }
   }
@@ -60,7 +56,10 @@ function normalizePredictions(obj: any) {
   return { ...root, predictions };
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function handler(
+  req: VercelRequest,
+  res: VercelResponse
+) {
   try {
     if (req.method !== "POST") {
       return res.status(405).json({ message: "Use POST", predictions: [] });
@@ -75,7 +74,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const body =
-      typeof req.body === "string" ? safeJsonParse(req.body) : (req.body ?? {});
+      typeof req.body === "string" ? safeJsonParse(req.body) : req.body;
+
     const selectedDate = body?.selectedDate;
 
     if (!selectedDate) {
@@ -85,27 +85,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // 1) Buscar jogos reais da NHL
+    // 1️⃣ Buscar jogos reais
     const games = await fetchNhlGames(selectedDate);
 
     if (!games.length) {
       return res.status(200).json({
         predictions: [],
-        message: "Sem jogos nesta data (ou API NHL sem dados).",
+        message: "Sem jogos nesta data",
         date: selectedDate,
       });
     }
 
-    // 2) Pedir ao Gemini para analisar jogos reais
+    // 2️⃣ Analisar jogos com Gemini
     const ai = new GoogleGenAI({ apiKey });
 
     const prompt = `
-Responde APENAS com JSON válido (sem texto extra, sem markdown, sem \`\`\`).
+Responde APENAS com JSON válido (sem texto extra).
 
-Tens esta lista de jogos (reais) da NHL:
+Jogos:
 ${JSON.stringify(games, null, 2)}
 
-Gera previsões no formato:
+Formato obrigatório:
 {
   "predictions": [
     {
@@ -119,16 +119,10 @@ Gera previsões no formato:
     }
   ]
 }
-
-Regras:
-- Usa gameId/homeTeam/awayTeam exatamente como na lista.
-- confidence entre 0 e 1.
-- Se por algum motivo não conseguires analisar, devolve {"predictions": []}.
-`.trim();
+`;
 
     const response = await ai.models.generateContent({
-      // ✅ modelo corrigido (evita NOT_FOUND no v1beta)
-      model: "gemini-1.5-flash-latest",
+      model: "gemini-1.0-pro", // ✅ compatível com v1beta
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -138,7 +132,6 @@ Regras:
     const parsed = safeJsonParse(response.text || "") ?? {};
     const normalized = normalizePredictions(parsed);
 
-    // Se o Gemini devolver predictions vazio, pelo menos devolvemos a lista de jogos para debug/UI
     return res.status(200).json({
       ...normalized,
       games,
