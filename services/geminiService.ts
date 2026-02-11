@@ -13,10 +13,8 @@ export class AppError extends Error {
 }
 
 function friendlyMessage(status: number, code?: string, backendMessage?: string) {
-  // Se o backend já mandou uma mensagem boa, usa ela
   if (backendMessage && backendMessage.trim().length > 0) return backendMessage;
 
-  // Mensagens padrão por status/código
   if (status === 429 || code === "QUOTA_EXCEEDED") {
     return "Limite da Gemini API atingido (quota/rate limit). Tenta novamente mais tarde.";
   }
@@ -28,6 +26,25 @@ function friendlyMessage(status: number, code?: string, backendMessage?: string)
   return "Erro ao carregar dados. Tenta novamente.";
 }
 
+// Normaliza o payload do backend para o formato que a UI espera (NHLAnalysisData)
+function normalizeToUiShape(raw: any): NHLAnalysisData {
+  const obj = raw && typeof raw === "object" ? raw : {};
+
+  // Backend novo: { predictions: [...] }
+  const predictions = Array.isArray(obj.predictions) ? obj.predictions : [];
+
+  // UI antiga: usa "jogos"
+  // Se já vier "jogos" do backend antigo, preserva; senão usa predictions.
+  const jogos = Array.isArray(obj.jogos) ? obj.jogos : predictions;
+
+  return {
+    ...obj,
+    jogos,
+    // Mantém também predictions para debug/uso futuro (não atrapalha)
+    predictions,
+  } as NHLAnalysisData;
+}
+
 export const fetchNHLAnalysis = async (selectedDate: string): Promise<NHLAnalysisData> => {
   const r = await fetch("/api/gemini", {
     method: "POST",
@@ -37,7 +54,8 @@ export const fetchNHLAnalysis = async (selectedDate: string): Promise<NHLAnalysi
 
   // Sucesso
   if (r.ok) {
-    return r.json();
+    const data = await r.json();
+    return normalizeToUiShape(data);
   }
 
   // Erro: tenta ler JSON padronizado do backend
@@ -45,7 +63,6 @@ export const fetchNHLAnalysis = async (selectedDate: string): Promise<NHLAnalysi
   let rawText = "";
 
   try {
-    // Clona para tentar json sem perder body
     data = await r.clone().json();
   } catch {
     try {
@@ -60,7 +77,6 @@ export const fetchNHLAnalysis = async (selectedDate: string): Promise<NHLAnalysi
 
   const message = friendlyMessage(r.status, code, backendMessage);
 
-  // Opcional: guardar detalhes para debug (não aparece na UI)
   const err = new AppError(message, { code, status: r.status });
   (err as any).details = data?.details || rawText || undefined;
 
