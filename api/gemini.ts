@@ -22,17 +22,26 @@ function isQuotaError(msg: string) {
 export default async function handler(req: any, res: any) {
   try {
     if (req.method !== "POST") {
-      return res.status(405).json({ error: "Method not allowed" });
+      return res.status(405).json({
+        code: "METHOD_NOT_ALLOWED",
+        message: "Método não permitido. Use POST."
+      });
     }
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      return res.status(500).json({ error: "Missing GEMINI_API_KEY" });
+      return res.status(500).json({
+        code: "MISSING_GEMINI_API_KEY",
+        message: "Configuração inválida no servidor: GEMINI_API_KEY não definida."
+      });
     }
 
     const { selectedDate } = req.body || {};
     if (!selectedDate) {
-      return res.status(400).json({ error: "Missing selectedDate" });
+      return res.status(400).json({
+        code: "MISSING_SELECTED_DATE",
+        message: "Parâmetro 'selectedDate' é obrigatório."
+      });
     }
 
     const cacheKey = String(selectedDate);
@@ -44,7 +53,7 @@ export default async function handler(req: any, res: any) {
     const staleOk = entry && age < STALE_MAX_MS;
 
     // 1) Se está fresco, devolve imediatamente
-    if (fresh) {
+    if (fresh && entry) {
       res.setHeader("x-cache", "HIT");
       res.setHeader("x-cache-age-ms", String(age));
       return res.status(200).json({
@@ -187,22 +196,31 @@ IMPORTANTE:
         return res.status(200).json({
           ...entry.data,
           cache: { hit: true, stale: true, ageMs: staleAge },
-          warning: "Gemini quota/rate-limit atingido; devolvendo cache antigo (stale)."
+          warning: "Quota/rate limit atingido; a mostrar dados em cache (podem estar desatualizados)."
         });
       }
 
-      // Se não tem cache para fallback, devolve erro apropriado
+      // Se não tem cache para fallback, devolve erro padronizado
       if (isQuotaError(msg)) {
         return res.status(429).json({
-          error: "Quota/rate limit atingido na Gemini API. Tente novamente mais tarde.",
+          code: "QUOTA_EXCEEDED",
+          message: "Limite da Gemini API atingido (quota/rate limit). Tenta novamente mais tarde.",
           details: msg
         });
       }
 
-      return res.status(500).json({ error: msg });
+      return res.status(500).json({
+        code: "GEMINI_ERROR",
+        message: "Ocorreu um erro ao gerar a análise. Tenta novamente.",
+        details: msg
+      });
     }
   } catch (e: any) {
     console.error(e);
-    return res.status(500).json({ error: String(e?.message ?? "Server error") });
+    return res.status(500).json({
+      code: "SERVER_ERROR",
+      message: "Erro interno no servidor.",
+      details: String(e?.message ?? "Server error")
+    });
   }
 }
