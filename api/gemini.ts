@@ -62,7 +62,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!apiKey) {
       return res.status(500).json({
         code: "MISSING_GEMINI_API_KEY",
-        message: "GEMINI_API_KEY não definida nas Environment Variables da Vercel.",
+        message:
+          "GEMINI_API_KEY não definida nas Environment Variables da Vercel.",
       });
     }
 
@@ -92,8 +93,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           cachedEntry = safeJsonParse(cachedRaw);
           const age = now - (cachedEntry?.lastUpdated ?? 0);
 
-          if (cachedEntry?.data && age < TTL_MS) {
-            // Garante formato esperado
+          // ✅ ALTERAÇÃO ELEGANTE:
+          // Só usa cache se:
+          // - não expirou (age < TTL)
+          // - E tiver predictions com pelo menos 1 item
+          if (
+            cachedEntry?.data &&
+            age < TTL_MS &&
+            Array.isArray(cachedEntry.data.predictions) &&
+            cachedEntry.data.predictions.length > 0
+          ) {
             const normalized = normalizeResult(cachedEntry.data);
 
             return res.status(200).json({
@@ -112,7 +121,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
       const ai = new GoogleGenAI({ apiKey });
 
-      // IMPORTANTE: forçar o formato que o frontend espera
       const prompt = `
 Responde APENAS com JSON válido. Sem texto extra, sem markdown, sem blocos \`\`\`.
 
@@ -148,17 +156,17 @@ Regras:
         },
       });
 
-      // Parse seguro
       const parsed = safeJsonParse(response.text || "");
       const normalized = normalizeResult(parsed);
 
-      // Garante que sempre devolvemos predictions
       const payload = {
         ...normalized,
         lastUpdated: new Date().toISOString(),
       };
 
       // --- Guarda cache ---
+      // Nota: nós guardamos mesmo que venha vazio, mas ele NÃO será usado no futuro
+      // (por causa do if acima que exige predictions.length > 0)
       if (redis) {
         try {
           await redis.set(
@@ -197,21 +205,19 @@ Regras:
         });
       }
 
-      // Mesmo em erro, devolve predictions: [] para o frontend não quebrar
       return res.status(500).json({
         code: "GEMINI_ERROR",
         message: "Erro ao gerar análise.",
         details: msg,
-        predictions: [],
+        predictions: [], // evita crash no frontend
       });
     }
   } catch (e: any) {
-    // Mesmo em erro, devolve predictions: [] para o frontend não quebrar
     return res.status(500).json({
       code: "SERVER_ERROR",
       message: "Erro interno.",
       details: String(e?.message ?? "Server error"),
-      predictions: [],
+      predictions: [], // evita crash no frontend
     });
   }
 }
