@@ -6,8 +6,7 @@ export const config = {
   runtime: "nodejs",
 };
 
-// 24h
-const TTL_MS = 1000 * 60 * 60 * 24;
+const TTL_MS = 1000 * 60 * 60 * 24; // 24h
 
 function isQuotaError(msg: string) {
   const m = msg.toLowerCase();
@@ -36,6 +35,20 @@ async function getRedis() {
   return _redis;
 }
 
+function safeJsonParse(text: string) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function normalizeResult(obj: any) {
+  // Garante SEMPRE que existe predictions: []
+  const predictions = Array.isArray(obj?.predictions) ? obj.predictions : [];
+  return { ...(obj && typeof obj === "object" ? obj : {}), predictions };
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     if (req.method !== "POST") {
@@ -44,21 +57,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .json({ code: "METHOD_NOT_ALLOWED", message: "Use POST." });
     }
 
-    // O nome na Vercel está como GEMINI_API_KEY (no teu print)
+    // Na Vercel tens GEMINI_API_KEY
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       return res.status(500).json({
         code: "MISSING_GEMINI_API_KEY",
-        message:
-          "GEMINI_API_KEY não definida nas Environment Variables da Vercel.",
+        message: "GEMINI_API_KEY não definida nas Environment Variables da Vercel.",
       });
     }
 
     // Em Vercel Functions (não-Next), o body pode vir como string
     const body =
-      typeof req.body === "string" ? JSON.parse(req.body) : (req.body ?? {});
+      typeof req.body === "string" ? safeJsonParse(req.body) : (req.body ?? {});
+    const selectedDate = body?.selectedDate;
 
-    const { selectedDate } = body;
     if (!selectedDate) {
       return res.status(400).json({
         code: "MISSING_SELECTED_DATE",
@@ -77,17 +89,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       try {
         const cachedRaw = await redis.get(cacheKey);
         if (cachedRaw) {
-          cachedEntry = JSON.parse(cachedRaw);
-          const age = now - cachedEntry.lastUpdated;
-          if (age < TTL_MS) {
+          cachedEntry = safeJsonParse(cachedRaw);
+          const age = now - (cachedEntry?.lastUpdated ?? 0);
+
+          if (cachedEntry?.data && age < TTL_MS) {
+            // Garante formato esperado
+            const normalized = normalizeResult(cachedEntry.data);
+
             return res.status(200).json({
-              ...cachedEntry.data,
+              ...normalized,
+              lastUpdated: normalized.lastUpdated ?? new Date().toISOString(),
               cache: { hit: true, ageMs: age },
             });
           }
         }
       } catch (e: any) {
-        // Se cache falhar, continua sem cache
         console.error("Redis get failed:", e?.message ?? e);
       }
     }
@@ -96,10 +112,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
       const ai = new GoogleGenAI({ apiKey });
 
-      // Dica: quanto mais instruções tu deres aqui, melhor sai o JSON
+      // IMPORTANTE: forçar o formato que o frontend espera
       const prompt = `
-Analise os jogos da NHL que ocorrerão na data: ${selectedDate}.
-Responda APENAS com JSON válido (sem texto extra).
+Responde APENAS com JSON válido. Sem texto extra, sem markdown, sem blocos \`\`\`.
+
+Formato obrigatório (tem de existir "predictions" como array):
+{
+  "predictions": [
+    {
+      "gameId": "string",
+      "date": "YYYY-MM-DD",
+      "homeTeam": "string",
+      "awayTeam": "string",
+      "pick": "string",
+      "confidence": 0.0,
+      "reason": "string"
+    }
+  ]
+}
+
+Analisa os jogos da NHL na data: ${selectedDate}.
+
+Regras:
+- "confidence" é um número entre 0 e 1.
+- Se não houver jogos ou não conseguires obter dados, devolve EXATAMENTE:
+{"predictions":[]}
 `.trim();
 
       const response = await ai.models.generateContent({
@@ -108,12 +145,18 @@ Responda APENAS com JSON válido (sem texto extra).
         contents: prompt,
         config: {
           responseMimeType: "application/json",
-          // (removido) responseSchema — estava a causar INVALID_ARGUMENT
         },
       });
 
-      const result = JSON.parse(response.text || "{}");
-      const payload = { ...result, lastUpdated: new Date().toISOString() };
+      // Parse seguro
+      const parsed = safeJsonParse(response.text || "");
+      const normalized = normalizeResult(parsed);
+
+      // Garante que sempre devolvemos predictions
+      const payload = {
+        ...normalized,
+        lastUpdated: new Date().toISOString(),
+      };
 
       // --- Guarda cache ---
       if (redis) {
@@ -135,10 +178,12 @@ Responda APENAS com JSON válido (sem texto extra).
     } catch (e: any) {
       const msg = String(e?.message ?? "Gemini error");
 
-      // Se quota e tem cache velho, devolve cache stale
-      if (isQuotaError(msg) && cachedEntry) {
+      // Se quota e tem cache velho, devolve cache stale (normalizado)
+      if (isQuotaError(msg) && cachedEntry?.data) {
+        const normalized = normalizeResult(cachedEntry.data);
         return res.status(200).json({
-          ...cachedEntry.data,
+          ...normalized,
+          lastUpdated: normalized.lastUpdated ?? new Date().toISOString(),
           cache: { hit: true, stale: true },
           warning: "Quota atingida, mostrando cache anterior.",
         });
@@ -152,17 +197,21 @@ Responda APENAS com JSON válido (sem texto extra).
         });
       }
 
+      // Mesmo em erro, devolve predictions: [] para o frontend não quebrar
       return res.status(500).json({
         code: "GEMINI_ERROR",
         message: "Erro ao gerar análise.",
         details: msg,
+        predictions: [],
       });
     }
   } catch (e: any) {
+    // Mesmo em erro, devolve predictions: [] para o frontend não quebrar
     return res.status(500).json({
       code: "SERVER_ERROR",
       message: "Erro interno.",
       details: String(e?.message ?? "Server error"),
+      predictions: [],
     });
   }
 }
