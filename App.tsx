@@ -257,7 +257,7 @@ const App: React.FC = () => {
 
       <footer className="fixed bottom-0 left-0 right-0 bg-black/80 backdrop-blur-md border-t border-white/5 p-4 text-center z-40">
         <p className="text-[8px] text-slate-500 uppercase tracking-[0.4em] font-black">
-          NHL Tipsterz Studio &copy; {new Date().getFullYear()}
+          NHL Tipsterz &copy; {new Date().getFullYear()}
         </p>
       </footer>
     </div>
