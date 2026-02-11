@@ -1,9 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { GoogleGenAI } from "@google/genai";
 
-export const config = {
-  runtime: "nodejs",
-};
+export const config = { runtime: "nodejs" };
 
 type ScheduleGame = {
   id: number;
@@ -13,11 +11,7 @@ type ScheduleGame = {
 };
 
 function safeJsonParse(text: string) {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
+  try { return JSON.parse(text); } catch { return null; }
 }
 
 function isModelNotFound(msg: string) {
@@ -29,20 +23,14 @@ async function fetchNhlScheduleGames(date: string): Promise<ScheduleGame[]> {
   const url = `https://api-web.nhle.com/v1/schedule/${date}`;
   const res = await fetch(url);
   if (!res.ok) return [];
-
   const data = await res.json();
   if (!data?.gameWeek?.length) return [];
 
   const games: ScheduleGame[] = [];
-
   for (const day of data.gameWeek) {
     if (!Array.isArray(day?.games)) continue;
-    for (const g of day.games) {
-      if (!g?.id) continue;
-      games.push(g);
-    }
+    for (const g of day.games) if (g?.id) games.push(g);
   }
-
   return games;
 }
 
@@ -57,14 +45,20 @@ function defaultSuggestions() {
   };
 }
 
+function clampPct(n: any) {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return 0;
+  // se vier 0..1, converte para %
+  const pct = v <= 1 ? v * 100 : v;
+  return Math.max(0, Math.min(100, pct));
+}
+
 function normalizeOutput(obj: any) {
   const root = obj && typeof obj === "object" ? obj : {};
-
   const predictions = Array.isArray(root.predictions) ? root.predictions : [];
   const suggestions = root.suggestions && typeof root.suggestions === "object" ? root.suggestions : defaultSuggestions();
   const lastUpdated = typeof root.lastUpdated === "string" ? root.lastUpdated : new Date().toISOString();
 
-  // Garante forma mínima de cada prediction para não rebentar na UI
   const normalizedPredictions = predictions.map((p: any) => {
     const injuriesHome = Array.isArray(p?.injuries?.home) ? p.injuries.home : [];
     const injuriesAway = Array.isArray(p?.injuries?.away) ? p.injuries.away : [];
@@ -78,13 +72,14 @@ function normalizeOutput(obj: any) {
       awayTeamAbbr: String(p?.awayTeamAbbr ?? ""),
       awayRecordL10: String(p?.awayRecordL10 ?? "N/A"),
       dateTime: String(p?.dateTime ?? ""),
-      winProbabilityHome: Number.isFinite(p?.winProbabilityHome) ? p.winProbabilityHome : 0,
-      winProbabilityAway: Number.isFinite(p?.winProbabilityAway) ? p.winProbabilityAway : 0,
-      over15P1Prob: Number.isFinite(p?.over15P1Prob) ? p.over15P1Prob : 0,
-      bttsP1Prob: Number.isFinite(p?.bttsP1Prob) ? p.bttsP1Prob : 0,
-      drawTRProb: Number.isFinite(p?.drawTRProb) ? p.drawTRProb : 0,
-      over45Prob: Number.isFinite(p?.over45Prob) ? p.over45Prob : 0,
-      over55Prob: Number.isFinite(p?.over55Prob) ? p.over55Prob : 0,
+      // ✅ percentagens 0..100
+      winProbabilityHome: clampPct(p?.winProbabilityHome),
+      winProbabilityAway: clampPct(p?.winProbabilityAway),
+      over15P1Prob: clampPct(p?.over15P1Prob),
+      bttsP1Prob: clampPct(p?.bttsP1Prob),
+      drawTRProb: clampPct(p?.drawTRProb),
+      over45Prob: clampPct(p?.over45Prob),
+      over55Prob: clampPct(p?.over55Prob),
       analysisSummary: String(p?.analysisSummary ?? ""),
       injuries: {
         home: injuriesHome.map((x: any) => String(x)),
@@ -93,36 +88,23 @@ function normalizeOutput(obj: any) {
     };
   });
 
-  // Normaliza suggestions
   const sug = suggestions;
   const normalizedSuggestions = {
     tripleWin: Array.isArray(sug.tripleWin) ? sug.tripleWin.map(String) : [],
     tripleOver15P1: Array.isArray(sug.tripleOver15P1) ? sug.tripleOver15P1.map(String) : [],
     doubleOver15P1: Array.isArray(sug.doubleOver15P1) ? sug.doubleOver15P1.map(String) : [],
     drawSuggestions: Array.isArray(sug.drawSuggestions)
-      ? sug.drawSuggestions.map((d: any) => ({
-          game: String(d?.game ?? ""),
-          explanation: String(d?.explanation ?? ""),
-        }))
+      ? sug.drawSuggestions.map((d: any) => ({ game: String(d?.game ?? ""), explanation: String(d?.explanation ?? "") }))
       : [],
     quadrupleOver45: Array.isArray(sug.quadrupleOver45) ? sug.quadrupleOver45.map(String) : [],
     over55Suggestions: Array.isArray(sug.over55Suggestions) ? sug.over55Suggestions.map(String) : [],
   };
 
-  return {
-    predictions: normalizedPredictions,
-    suggestions: normalizedSuggestions,
-    lastUpdated,
-  };
+  return { predictions: normalizedPredictions, suggestions: normalizedSuggestions, lastUpdated };
 }
 
 async function generateWithFallback(ai: GoogleGenAI, prompt: string) {
-  const modelsToTry = [
-    "gemini-3-flash-preview", // este já funcionou contigo
-    "gemini-3-pro-preview",
-    "gemini-2.0-flash",
-  ];
-
+  const modelsToTry = ["gemini-3-flash-preview", "gemini-3-pro-preview", "gemini-2.0-flash"];
   let lastErr: any = null;
 
   for (const model of modelsToTry) {
@@ -132,7 +114,6 @@ async function generateWithFallback(ai: GoogleGenAI, prompt: string) {
         contents: prompt,
         config: { responseMimeType: "application/json" },
       });
-
       const parsed = safeJsonParse(resp.text || "") ?? {};
       return { modelUsed: model, parsed };
     } catch (e: any) {
@@ -143,15 +124,12 @@ async function generateWithFallback(ai: GoogleGenAI, prompt: string) {
     }
   }
 
-  const msg = String(lastErr?.message ?? lastErr);
-  throw new Error(`Nenhum modelo disponível. Último erro: ${msg}`);
+  throw new Error(`Nenhum modelo disponível. Último erro: ${String(lastErr?.message ?? lastErr)}`);
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
-    if (req.method !== "POST") {
-      return res.status(405).json({ message: "Use POST" });
-    }
+    if (req.method !== "POST") return res.status(405).json({ message: "Use POST" });
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
@@ -163,8 +141,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    const body =
-      typeof req.body === "string" ? safeJsonParse(req.body) : (req.body ?? {});
+    const body = typeof req.body === "string" ? safeJsonParse(req.body) : (req.body ?? {});
     const selectedDate = body?.selectedDate;
 
     if (!selectedDate) {
@@ -176,9 +153,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // 1) Jogos reais do calendário NHL
     const scheduleGames = await fetchNhlScheduleGames(selectedDate);
-
     if (!scheduleGames.length) {
       return res.status(200).json({
         predictions: [],
@@ -187,7 +162,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // Simplifica a lista para o Gemini
     const gamesForAI = scheduleGames.map((g) => ({
       id: g.id,
       dateTime: g.startTimeUTC ?? "",
@@ -197,17 +171,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       awayTeamAbbr: g.awayTeam?.abbrev ?? "",
     }));
 
-    // 2) Gemini cria exatamente o schema do teu frontend
     const ai = new GoogleGenAI({ apiKey });
 
     const prompt = `
 Responde APENAS com JSON válido (sem texto extra, sem markdown).
 
-Tens estes jogos da NHL (reais) para a data ${selectedDate}:
+Tens estes jogos da NHL para a data ${selectedDate}:
 ${JSON.stringify(gamesForAI, null, 2)}
 
-Quero que devolvas EXACTAMENTE este formato:
-
+Devolve EXACTAMENTE este formato:
 {
   "predictions": [
     {
@@ -219,13 +191,13 @@ Quero que devolvas EXACTAMENTE este formato:
       "awayTeamAbbr": "string",
       "awayRecordL10": "string",
       "dateTime": "string",
-      "winProbabilityHome": 0.0,
-      "winProbabilityAway": 0.0,
-      "over15P1Prob": 0.0,
-      "bttsP1Prob": 0.0,
-      "drawTRProb": 0.0,
-      "over45Prob": 0.0,
-      "over55Prob": 0.0,
+      "winProbabilityHome": 0,
+      "winProbabilityAway": 0,
+      "over15P1Prob": 0,
+      "bttsP1Prob": 0,
+      "drawTRProb": 0,
+      "over45Prob": 0,
+      "over55Prob": 0,
       "analysisSummary": "string",
       "injuries": { "home": ["string"], "away": ["string"] }
     }
@@ -241,11 +213,10 @@ Quero que devolvas EXACTAMENTE este formato:
   "lastUpdated": "ISO8601 string"
 }
 
-Regras:
-- Usa "id" igual ao id numérico do jogo mas convertido para string.
-- Se não souberes records L10 ou injuries, usa "N/A" e arrays vazios.
-- Todas as probabilidades devem ser números entre 0 e 1.
-- Se não conseguires gerar algo útil, devolve predictions [] e suggestions vazias.
+REGRAS IMPORTANTES:
+- Todas as probabilidades (winProbabilityHome, over15P1Prob, etc.) DEVEM ser percentagens de 0 a 100 (ex: 72.5).
+- Usa "id" = id numérico do jogo convertido para string.
+- Se não souberes records L10 ou injuries: usa "N/A" e arrays vazios.
 `.trim();
 
     const { parsed } = await generateWithFallback(ai, prompt);
