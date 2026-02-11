@@ -45,10 +45,10 @@ function defaultSuggestions() {
   };
 }
 
+// Converte para percentagem 0..100 (se vier 0..1 também funciona)
 function clampPct(n: any) {
   const v = Number(n);
   if (!Number.isFinite(v)) return 0;
-  // se vier 0..1, converte para %
   const pct = v <= 1 ? v * 100 : v;
   return Math.max(0, Math.min(100, pct));
 }
@@ -56,8 +56,13 @@ function clampPct(n: any) {
 function normalizeOutput(obj: any) {
   const root = obj && typeof obj === "object" ? obj : {};
   const predictions = Array.isArray(root.predictions) ? root.predictions : [];
-  const suggestions = root.suggestions && typeof root.suggestions === "object" ? root.suggestions : defaultSuggestions();
-  const lastUpdated = typeof root.lastUpdated === "string" ? root.lastUpdated : new Date().toISOString();
+  const suggestions =
+    root.suggestions && typeof root.suggestions === "object"
+      ? root.suggestions
+      : defaultSuggestions();
+
+  const lastUpdated =
+    typeof root.lastUpdated === "string" ? root.lastUpdated : new Date().toISOString();
 
   const normalizedPredictions = predictions.map((p: any) => {
     const injuriesHome = Array.isArray(p?.injuries?.home) ? p.injuries.home : [];
@@ -72,7 +77,6 @@ function normalizeOutput(obj: any) {
       awayTeamAbbr: String(p?.awayTeamAbbr ?? ""),
       awayRecordL10: String(p?.awayRecordL10 ?? "N/A"),
       dateTime: String(p?.dateTime ?? ""),
-      // ✅ percentagens 0..100
       winProbabilityHome: clampPct(p?.winProbabilityHome),
       winProbabilityAway: clampPct(p?.winProbabilityAway),
       over15P1Prob: clampPct(p?.over15P1Prob),
@@ -94,13 +98,20 @@ function normalizeOutput(obj: any) {
     tripleOver15P1: Array.isArray(sug.tripleOver15P1) ? sug.tripleOver15P1.map(String) : [],
     doubleOver15P1: Array.isArray(sug.doubleOver15P1) ? sug.doubleOver15P1.map(String) : [],
     drawSuggestions: Array.isArray(sug.drawSuggestions)
-      ? sug.drawSuggestions.map((d: any) => ({ game: String(d?.game ?? ""), explanation: String(d?.explanation ?? "") }))
+      ? sug.drawSuggestions.map((d: any) => ({
+          game: String(d?.game ?? ""),
+          explanation: String(d?.explanation ?? ""),
+        }))
       : [],
     quadrupleOver45: Array.isArray(sug.quadrupleOver45) ? sug.quadrupleOver45.map(String) : [],
     over55Suggestions: Array.isArray(sug.over55Suggestions) ? sug.over55Suggestions.map(String) : [],
   };
 
-  return { predictions: normalizedPredictions, suggestions: normalizedSuggestions, lastUpdated };
+  return {
+    predictions: normalizedPredictions,
+    suggestions: normalizedSuggestions,
+    lastUpdated,
+  };
 }
 
 async function generateWithFallback(ai: GoogleGenAI, prompt: string) {
@@ -154,6 +165,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const scheduleGames = await fetchNhlScheduleGames(selectedDate);
+
     if (!scheduleGames.length) {
       return res.status(200).json({
         predictions: [],
@@ -174,12 +186,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const ai = new GoogleGenAI({ apiKey });
 
     const prompt = `
-Responde APENAS com JSON válido (sem texto extra, sem markdown).
+Responde APENAS com JSON válido (sem texto extra).
 
-Tens estes jogos da NHL para a data ${selectedDate}:
+Jogos NHL para ${selectedDate}:
 ${JSON.stringify(gamesForAI, null, 2)}
 
 Devolve EXACTAMENTE este formato:
+
 {
   "predictions": [
     {
@@ -214,9 +227,9 @@ Devolve EXACTAMENTE este formato:
 }
 
 REGRAS IMPORTANTES:
-- Todas as probabilidades (winProbabilityHome, over15P1Prob, etc.) DEVEM ser percentagens de 0 a 100 (ex: 72.5).
-- Usa "id" = id numérico do jogo convertido para string.
-- Se não souberes records L10 ou injuries: usa "N/A" e arrays vazios.
+- Todas as probabilidades DEVEM ser percentagens 0..100 (ex: 72.5).
+- id deve ser o id do jogo convertido para string.
+- Se não souberes records/lesões: usa "N/A" e arrays vazios.
 `.trim();
 
     const { parsed } = await generateWithFallback(ai, prompt);
