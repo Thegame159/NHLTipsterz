@@ -5,11 +5,11 @@ export const config = {
   runtime: "nodejs",
 };
 
-type Game = {
-  gameId: number;
-  date: string;
-  homeTeam: string;
-  awayTeam: string;
+type ScheduleGame = {
+  id: number;
+  startTimeUTC?: string;
+  homeTeam?: { abbrev?: string; placeName?: { default?: string } };
+  awayTeam?: { abbrev?: string; placeName?: { default?: string } };
 };
 
 function safeJsonParse(text: string) {
@@ -20,56 +20,105 @@ function safeJsonParse(text: string) {
   }
 }
 
-function normalizePredictions(obj: any) {
-  const root = obj && typeof obj === "object" ? obj : {};
-  const predictions = Array.isArray(root.predictions) ? root.predictions : [];
-  return { ...root, predictions };
-}
-
 function isModelNotFound(msg: string) {
   const m = msg.toLowerCase();
-  return m.includes("not found") || m.includes("model") && m.includes("not") && m.includes("found");
+  return m.includes("not found") || (m.includes("model") && m.includes("not") && m.includes("found"));
 }
 
-// NHL API pública — schedule
-async function fetchNhlGames(date: string): Promise<Game[]> {
+async function fetchNhlScheduleGames(date: string): Promise<ScheduleGame[]> {
   const url = `https://api-web.nhle.com/v1/schedule/${date}`;
   const res = await fetch(url);
-
   if (!res.ok) return [];
 
   const data = await res.json();
   if (!data?.gameWeek?.length) return [];
 
-  const games: Game[] = [];
+  const games: ScheduleGame[] = [];
 
   for (const day of data.gameWeek) {
     if (!Array.isArray(day?.games)) continue;
-
     for (const g of day.games) {
-      const id = g?.id;
-      const home = g?.homeTeam?.abbrev;
-      const away = g?.awayTeam?.abbrev;
-
-      if (!id || !home || !away) continue;
-
-      games.push({
-        gameId: id,
-        date,
-        homeTeam: home,
-        awayTeam: away,
-      });
+      if (!g?.id) continue;
+      games.push(g);
     }
   }
 
   return games;
 }
 
+function defaultSuggestions() {
+  return {
+    tripleWin: [],
+    tripleOver15P1: [],
+    doubleOver15P1: [],
+    drawSuggestions: [],
+    quadrupleOver45: [],
+    over55Suggestions: [],
+  };
+}
+
+function normalizeOutput(obj: any) {
+  const root = obj && typeof obj === "object" ? obj : {};
+
+  const predictions = Array.isArray(root.predictions) ? root.predictions : [];
+  const suggestions = root.suggestions && typeof root.suggestions === "object" ? root.suggestions : defaultSuggestions();
+  const lastUpdated = typeof root.lastUpdated === "string" ? root.lastUpdated : new Date().toISOString();
+
+  // Garante forma mínima de cada prediction para não rebentar na UI
+  const normalizedPredictions = predictions.map((p: any) => {
+    const injuriesHome = Array.isArray(p?.injuries?.home) ? p.injuries.home : [];
+    const injuriesAway = Array.isArray(p?.injuries?.away) ? p.injuries.away : [];
+
+    return {
+      id: String(p?.id ?? ""),
+      homeTeam: String(p?.homeTeam ?? ""),
+      homeTeamAbbr: String(p?.homeTeamAbbr ?? ""),
+      homeRecordL10: String(p?.homeRecordL10 ?? "N/A"),
+      awayTeam: String(p?.awayTeam ?? ""),
+      awayTeamAbbr: String(p?.awayTeamAbbr ?? ""),
+      awayRecordL10: String(p?.awayRecordL10 ?? "N/A"),
+      dateTime: String(p?.dateTime ?? ""),
+      winProbabilityHome: Number.isFinite(p?.winProbabilityHome) ? p.winProbabilityHome : 0,
+      winProbabilityAway: Number.isFinite(p?.winProbabilityAway) ? p.winProbabilityAway : 0,
+      over15P1Prob: Number.isFinite(p?.over15P1Prob) ? p.over15P1Prob : 0,
+      bttsP1Prob: Number.isFinite(p?.bttsP1Prob) ? p.bttsP1Prob : 0,
+      drawTRProb: Number.isFinite(p?.drawTRProb) ? p.drawTRProb : 0,
+      over45Prob: Number.isFinite(p?.over45Prob) ? p.over45Prob : 0,
+      over55Prob: Number.isFinite(p?.over55Prob) ? p.over55Prob : 0,
+      analysisSummary: String(p?.analysisSummary ?? ""),
+      injuries: {
+        home: injuriesHome.map((x: any) => String(x)),
+        away: injuriesAway.map((x: any) => String(x)),
+      },
+    };
+  });
+
+  // Normaliza suggestions
+  const sug = suggestions;
+  const normalizedSuggestions = {
+    tripleWin: Array.isArray(sug.tripleWin) ? sug.tripleWin.map(String) : [],
+    tripleOver15P1: Array.isArray(sug.tripleOver15P1) ? sug.tripleOver15P1.map(String) : [],
+    doubleOver15P1: Array.isArray(sug.doubleOver15P1) ? sug.doubleOver15P1.map(String) : [],
+    drawSuggestions: Array.isArray(sug.drawSuggestions)
+      ? sug.drawSuggestions.map((d: any) => ({
+          game: String(d?.game ?? ""),
+          explanation: String(d?.explanation ?? ""),
+        }))
+      : [],
+    quadrupleOver45: Array.isArray(sug.quadrupleOver45) ? sug.quadrupleOver45.map(String) : [],
+    over55Suggestions: Array.isArray(sug.over55Suggestions) ? sug.over55Suggestions.map(String) : [],
+  };
+
+  return {
+    predictions: normalizedPredictions,
+    suggestions: normalizedSuggestions,
+    lastUpdated,
+  };
+}
+
 async function generateWithFallback(ai: GoogleGenAI, prompt: string) {
-  // Estes são modelos que, na tua app, têm mais probabilidade de existir.
-  // O primeiro ("gemini-3-flash-preview") já funcionou contigo antes.
   const modelsToTry = [
-    "gemini-3-flash-preview",
+    "gemini-3-flash-preview", // este já funcionou contigo
     "gemini-3-pro-preview",
     "gemini-2.0-flash",
   ];
@@ -81,9 +130,7 @@ async function generateWithFallback(ai: GoogleGenAI, prompt: string) {
       const resp = await ai.models.generateContent({
         model,
         contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-        },
+        config: { responseMimeType: "application/json" },
       });
 
       const parsed = safeJsonParse(resp.text || "") ?? {};
@@ -91,26 +138,19 @@ async function generateWithFallback(ai: GoogleGenAI, prompt: string) {
     } catch (e: any) {
       lastErr = e;
       const msg = String(e?.message ?? e);
-
-      // Se for "model not found", tenta o próximo
       if (isModelNotFound(msg)) continue;
-
-      // Outros erros (quota, invalid arg, etc.) — não vale tentar outro modelo
       throw e;
     }
   }
 
-  // Se chegou aqui, todos os modelos falharam (provavelmente NOT_FOUND)
   const msg = String(lastErr?.message ?? lastErr);
-  const err = new Error(`Nenhum modelo disponível. Último erro: ${msg}`);
-  (err as any).cause = lastErr;
-  throw err;
+  throw new Error(`Nenhum modelo disponível. Último erro: ${msg}`);
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     if (req.method !== "POST") {
-      return res.status(405).json({ message: "Use POST", predictions: [] });
+      return res.status(405).json({ message: "Use POST" });
     }
 
     const apiKey = process.env.GEMINI_API_KEY;
@@ -118,6 +158,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(500).json({
         message: "GEMINI_API_KEY não definida",
         predictions: [],
+        suggestions: defaultSuggestions(),
+        lastUpdated: new Date().toISOString(),
       });
     }
 
@@ -129,66 +171,94 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({
         message: "selectedDate obrigatório (YYYY-MM-DD)",
         predictions: [],
+        suggestions: defaultSuggestions(),
+        lastUpdated: new Date().toISOString(),
       });
     }
 
-    // 1) Jogos reais da NHL
-    const games = await fetchNhlGames(selectedDate);
+    // 1) Jogos reais do calendário NHL
+    const scheduleGames = await fetchNhlScheduleGames(selectedDate);
 
-    if (!games.length) {
+    if (!scheduleGames.length) {
       return res.status(200).json({
         predictions: [],
-        message: "Sem jogos nesta data (ou API NHL sem dados).",
-        date: selectedDate,
-        games: [],
+        suggestions: defaultSuggestions(),
+        lastUpdated: new Date().toISOString(),
       });
     }
 
-    // 2) Gemini analisa os jogos reais
+    // Simplifica a lista para o Gemini
+    const gamesForAI = scheduleGames.map((g) => ({
+      id: g.id,
+      dateTime: g.startTimeUTC ?? "",
+      homeTeam: g.homeTeam?.placeName?.default ?? g.homeTeam?.abbrev ?? "",
+      homeTeamAbbr: g.homeTeam?.abbrev ?? "",
+      awayTeam: g.awayTeam?.placeName?.default ?? g.awayTeam?.abbrev ?? "",
+      awayTeamAbbr: g.awayTeam?.abbrev ?? "",
+    }));
+
+    // 2) Gemini cria exatamente o schema do teu frontend
     const ai = new GoogleGenAI({ apiKey });
 
     const prompt = `
 Responde APENAS com JSON válido (sem texto extra, sem markdown).
 
-Jogos reais da NHL:
-${JSON.stringify(games, null, 2)}
+Tens estes jogos da NHL (reais) para a data ${selectedDate}:
+${JSON.stringify(gamesForAI, null, 2)}
 
-Formato obrigatório:
+Quero que devolvas EXACTAMENTE este formato:
+
 {
   "predictions": [
     {
-      "gameId": 123,
-      "date": "YYYY-MM-DD",
-      "homeTeam": "ABC",
-      "awayTeam": "DEF",
-      "pick": "string",
-      "confidence": 0.0,
-      "reason": "string"
+      "id": "string",
+      "homeTeam": "string",
+      "homeTeamAbbr": "string",
+      "homeRecordL10": "string",
+      "awayTeam": "string",
+      "awayTeamAbbr": "string",
+      "awayRecordL10": "string",
+      "dateTime": "string",
+      "winProbabilityHome": 0.0,
+      "winProbabilityAway": 0.0,
+      "over15P1Prob": 0.0,
+      "bttsP1Prob": 0.0,
+      "drawTRProb": 0.0,
+      "over45Prob": 0.0,
+      "over55Prob": 0.0,
+      "analysisSummary": "string",
+      "injuries": { "home": ["string"], "away": ["string"] }
     }
-  ]
+  ],
+  "suggestions": {
+    "tripleWin": ["string"],
+    "tripleOver15P1": ["string"],
+    "doubleOver15P1": ["string"],
+    "drawSuggestions": [{ "game": "string", "explanation": "string" }],
+    "quadrupleOver45": ["string"],
+    "over55Suggestions": ["string"]
+  },
+  "lastUpdated": "ISO8601 string"
 }
 
 Regras:
-- Usa gameId/homeTeam/awayTeam exatamente como na lista.
-- confidence entre 0 e 1.
-- Se não conseguires analisar, devolve {"predictions": []}.
+- Usa "id" igual ao id numérico do jogo mas convertido para string.
+- Se não souberes records L10 ou injuries, usa "N/A" e arrays vazios.
+- Todas as probabilidades devem ser números entre 0 e 1.
+- Se não conseguires gerar algo útil, devolve predictions [] e suggestions vazias.
 `.trim();
 
-    const { modelUsed, parsed } = await generateWithFallback(ai, prompt);
-    const normalized = normalizePredictions(parsed);
+    const { parsed } = await generateWithFallback(ai, prompt);
+    const normalized = normalizeOutput(parsed);
 
-    return res.status(200).json({
-      ...normalized,
-      modelUsed,
-      games,
-      date: selectedDate,
-      lastUpdated: new Date().toISOString(),
-    });
+    return res.status(200).json(normalized);
   } catch (err: any) {
     return res.status(500).json({
       message: "Erro interno",
       details: String(err?.message ?? err),
       predictions: [],
+      suggestions: defaultSuggestions(),
+      lastUpdated: new Date().toISOString(),
     });
   }
 }
