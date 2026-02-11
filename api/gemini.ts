@@ -1,13 +1,15 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
-// Cache simples em memória (ajuda a reduzir chamadas repetidas)
-// Em serverless não é 100% garantido, mas na prática ajuda.
+/**
+ * Cache simples em memória.
+ * Nota: em serverless não é garantido entre instâncias,
+ * mas ajuda a reduzir chamadas repetidas no mesmo runtime.
+ */
 type CacheEntry = { at: number; data: any };
 const cache = new Map<string, CacheEntry>();
 
-const TTL_MS = 1000 * 60 * 30; // 30 min (fresco)
-// Stale-while-revalidate: quanto tempo você aceita cache expirado
-const STALE_MAX_MS = 1000 * 60 * 60 * 24; // 24h (stale aceito)
+const TTL_MS = 1000 * 60 * 30; // 30 minutos
+const STALE_MAX_MS = 1000 * 60 * 60 * 24; // 24h (aceita stale)
 
 function isQuotaError(msg: string) {
   const m = msg.toLowerCase();
@@ -32,7 +34,7 @@ export default async function handler(req: any, res: any) {
     if (!apiKey) {
       return res.status(500).json({
         code: "MISSING_GEMINI_API_KEY",
-        message: "Configuração inválida no servidor: GEMINI_API_KEY não definida."
+        message: "GEMINI_API_KEY não definida no servidor."
       });
     }
 
@@ -52,55 +54,53 @@ export default async function handler(req: any, res: any) {
     const fresh = entry && age < TTL_MS;
     const staleOk = entry && age < STALE_MAX_MS;
 
-    // 1) Se está fresco, devolve imediatamente
+    // 1️⃣ Cache fresco → responde direto
     if (fresh && entry) {
       res.setHeader("x-cache", "HIT");
-      res.setHeader("x-cache-age-ms", String(age));
       return res.status(200).json({
         ...entry.data,
         cache: { hit: true, stale: false, ageMs: age }
       });
     }
 
-    // 2) Se está expirado, tentamos atualizar (revalidate)
     try {
+      // 2️⃣ Chamada à Gemini (APENAS quando necessário)
       const ai = new GoogleGenAI({ apiKey });
 
       const prompt = `
 Analise os jogos da NHL que ocorrerão na data: ${selectedDate}.
-Para cada jogo desta data específica, realize um estudo de performance baseado nos últimos 10 jogos de cada equipe, considerando:
-1. Fator Casa vs Fora (performance específica nessas condições).
-2. Lista atual de lesões de cada equipe e seu impacto.
 
-Gere as seguintes probabilidades em percentagem (0-100):
-- Probabilidade de vitória (incluindo prolongamento).
-- Probabilidade de Over 1.5 golos no 1º Período.
-- Probabilidade de BTTS (Ambas Marcam) no 1º Período.
-- Probabilidade de Empate no Tempo Regulamentar (TR).
-- Probabilidade de Over 4.5 golos no jogo total.
-- Probabilidade de Over 5.5 golos no jogo total.
+Para cada jogo dessa data:
+- Baseie-se no desempenho dos últimos 10 jogos (L10).
+- Considere fator Casa vs Fora.
+- Considere lesões conhecidas e impacto esperado.
 
-Além disso, gere sugestões estratégicas baseadas APENAS nos jogos desta data (${selectedDate}):
-- Triplete de vitórias (3 jogos mais prováveis). Formato: "EQUIPA (X%)".
-- Triplete de Over 1.5 no 1º Período (3 jogos). Formato: "VIS @ HOM (X%)".
-- Dupla de Over 1.5 no 1º Período (2 jogos adicionais). Formato: "VIS @ HOM (X%)".
-- 2 sugestões de empate com explicação detalhada. Formato do nome do jogo: "VIS @ HOM (X%)".
-- Quadriplete de Over 4.5 golos. Formato: "VIS @ HOM (X%)".
-- Sugestões extras de Over 5.5 golos. Formato: "VIS @ HOM (X%)".
+Gere probabilidades (0-100):
+- Vitória (inclui OT)
+- Over 1.5 golos no 1º Período
+- BTTS no 1º Período
+- Empate no Tempo Regulamentar
+- Over 4.5 golos (jogo)
+- Over 5.5 golos (jogo)
 
-IMPORTANTE:
-- Use ferramentas de busca para obter dados reais e atualizados especificamente para o dia ${selectedDate}.
-- SEMPRE inclua a percentagem de probabilidade calculada entre parênteses, ex: "(78%)".
-- Forneça a abreviação oficial de 3 letras para cada equipa.
-- Nas listas de sugestões, SEMPRE use as abreviações das equipes (ex: "TOR @ BOS (72%)") para que eu possa exibir os logos e a probabilidade.
-- Inclua o registro dos últimos 10 jogos (L10) no formato Vitórias-Derrotas-DerrotasOT.
+Gere também sugestões APENAS para esta data (${selectedDate}):
+- Triplete de vitórias (3 jogos)
+- Triplete Over 1.5 1º Período
+- Dupla Over 1.5 1º Período
+- 2 empates com explicação
+- Quadriplete Over 4.5
+- Extras Over 5.5
+
+Regras:
+- Sempre incluir percentagem (ex: 72%).
+- Usar abreviações oficiais de 3 letras (ex: TOR @ BOS).
+- Incluir L10 no formato V-D-OT.
 `.trim();
 
       const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-1.5-flash",
         contents: prompt,
         config: {
-          tools: [{ googleSearch: {} }],
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
@@ -110,14 +110,12 @@ IMPORTANTE:
                 items: {
                   type: Type.OBJECT,
                   properties: {
-                    id: { type: Type.STRING },
                     homeTeam: { type: Type.STRING },
                     homeTeamAbbr: { type: Type.STRING },
                     homeRecordL10: { type: Type.STRING },
                     awayTeam: { type: Type.STRING },
                     awayTeamAbbr: { type: Type.STRING },
                     awayRecordL10: { type: Type.STRING },
-                    dateTime: { type: Type.STRING },
                     winProbabilityHome: { type: Type.NUMBER },
                     winProbabilityAway: { type: Type.NUMBER },
                     over15P1Prob: { type: Type.NUMBER },
@@ -125,23 +123,14 @@ IMPORTANTE:
                     drawTRProb: { type: Type.NUMBER },
                     over45Prob: { type: Type.NUMBER },
                     over55Prob: { type: Type.NUMBER },
-                    analysisSummary: { type: Type.STRING },
-                    injuries: {
-                      type: Type.OBJECT,
-                      properties: {
-                        home: { type: Type.ARRAY, items: { type: Type.STRING } },
-                        away: { type: Type.ARRAY, items: { type: Type.STRING } }
-                      }
-                    }
+                    analysisSummary: { type: Type.STRING }
                   },
                   required: [
                     "homeTeam",
                     "homeTeamAbbr",
                     "awayTeam",
                     "awayTeamAbbr",
-                    "winProbabilityHome",
-                    "over15P1Prob",
-                    "drawTRProb"
+                    "winProbabilityHome"
                   ]
                 }
               },
@@ -188,35 +177,31 @@ IMPORTANTE:
     } catch (e: any) {
       const msg = String(e?.message ?? "Gemini error");
 
-      // 3) Se falhou por quota/429 e temos cache stale aceitável, devolve o stale
+      // 3️⃣ Quota estourada → devolve cache stale se existir
       if (isQuotaError(msg) && staleOk && entry) {
         const staleAge = now - entry.at;
         res.setHeader("x-cache", "STALE");
-        res.setHeader("x-cache-age-ms", String(staleAge));
         return res.status(200).json({
           ...entry.data,
           cache: { hit: true, stale: true, ageMs: staleAge },
-          warning: "Quota/rate limit atingido; a mostrar dados em cache (podem estar desatualizados)."
+          warning: "Quota atingida. A mostrar dados em cache."
         });
       }
 
-      // Se não tem cache para fallback, devolve erro padronizado
       if (isQuotaError(msg)) {
         return res.status(429).json({
           code: "QUOTA_EXCEEDED",
-          message: "Limite da Gemini API atingido (quota/rate limit). Tenta novamente mais tarde.",
-          details: msg
+          message: "Limite da Gemini API atingido. Tenta mais tarde."
         });
       }
 
       return res.status(500).json({
         code: "GEMINI_ERROR",
-        message: "Ocorreu um erro ao gerar a análise. Tenta novamente.",
+        message: "Erro ao gerar análise.",
         details: msg
       });
     }
   } catch (e: any) {
-    console.error(e);
     return res.status(500).json({
       code: "SERVER_ERROR",
       message: "Erro interno no servidor.",
