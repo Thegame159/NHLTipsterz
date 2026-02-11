@@ -20,7 +20,18 @@ function safeJsonParse(text: string) {
   }
 }
 
-// 🔥 NHL API pública
+function normalizePredictions(obj: any) {
+  const root = obj && typeof obj === "object" ? obj : {};
+  const predictions = Array.isArray(root.predictions) ? root.predictions : [];
+  return { ...root, predictions };
+}
+
+function isModelNotFound(msg: string) {
+  const m = msg.toLowerCase();
+  return m.includes("not found") || m.includes("model") && m.includes("not") && m.includes("found");
+}
+
+// NHL API pública — schedule
 async function fetchNhlGames(date: string): Promise<Game[]> {
   const url = `https://api-web.nhle.com/v1/schedule/${date}`;
   const res = await fetch(url);
@@ -36,13 +47,17 @@ async function fetchNhlGames(date: string): Promise<Game[]> {
     if (!Array.isArray(day?.games)) continue;
 
     for (const g of day.games) {
-      if (!g?.id || !g?.homeTeam?.abbrev || !g?.awayTeam?.abbrev) continue;
+      const id = g?.id;
+      const home = g?.homeTeam?.abbrev;
+      const away = g?.awayTeam?.abbrev;
+
+      if (!id || !home || !away) continue;
 
       games.push({
-        gameId: g.id,
+        gameId: id,
         date,
-        homeTeam: g.homeTeam.abbrev,
-        awayTeam: g.awayTeam.abbrev,
+        homeTeam: home,
+        awayTeam: away,
       });
     }
   }
@@ -50,16 +65,49 @@ async function fetchNhlGames(date: string): Promise<Game[]> {
   return games;
 }
 
-function normalizePredictions(obj: any) {
-  const root = obj && typeof obj === "object" ? obj : {};
-  const predictions = Array.isArray(root.predictions) ? root.predictions : [];
-  return { ...root, predictions };
+async function generateWithFallback(ai: GoogleGenAI, prompt: string) {
+  // Estes são modelos que, na tua app, têm mais probabilidade de existir.
+  // O primeiro ("gemini-3-flash-preview") já funcionou contigo antes.
+  const modelsToTry = [
+    "gemini-3-flash-preview",
+    "gemini-3-pro-preview",
+    "gemini-2.0-flash",
+  ];
+
+  let lastErr: any = null;
+
+  for (const model of modelsToTry) {
+    try {
+      const resp = await ai.models.generateContent({
+        model,
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+        },
+      });
+
+      const parsed = safeJsonParse(resp.text || "") ?? {};
+      return { modelUsed: model, parsed };
+    } catch (e: any) {
+      lastErr = e;
+      const msg = String(e?.message ?? e);
+
+      // Se for "model not found", tenta o próximo
+      if (isModelNotFound(msg)) continue;
+
+      // Outros erros (quota, invalid arg, etc.) — não vale tentar outro modelo
+      throw e;
+    }
+  }
+
+  // Se chegou aqui, todos os modelos falharam (provavelmente NOT_FOUND)
+  const msg = String(lastErr?.message ?? lastErr);
+  const err = new Error(`Nenhum modelo disponível. Último erro: ${msg}`);
+  (err as any).cause = lastErr;
+  throw err;
 }
 
-export default async function handler(
-  req: VercelRequest,
-  res: VercelResponse
-) {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     if (req.method !== "POST") {
       return res.status(405).json({ message: "Use POST", predictions: [] });
@@ -74,8 +122,7 @@ export default async function handler(
     }
 
     const body =
-      typeof req.body === "string" ? safeJsonParse(req.body) : req.body;
-
+      typeof req.body === "string" ? safeJsonParse(req.body) : (req.body ?? {});
     const selectedDate = body?.selectedDate;
 
     if (!selectedDate) {
@@ -85,24 +132,25 @@ export default async function handler(
       });
     }
 
-    // 1️⃣ Buscar jogos reais
+    // 1) Jogos reais da NHL
     const games = await fetchNhlGames(selectedDate);
 
     if (!games.length) {
       return res.status(200).json({
         predictions: [],
-        message: "Sem jogos nesta data",
+        message: "Sem jogos nesta data (ou API NHL sem dados).",
         date: selectedDate,
+        games: [],
       });
     }
 
-    // 2️⃣ Analisar jogos com Gemini
+    // 2) Gemini analisa os jogos reais
     const ai = new GoogleGenAI({ apiKey });
 
     const prompt = `
-Responde APENAS com JSON válido (sem texto extra).
+Responde APENAS com JSON válido (sem texto extra, sem markdown).
 
-Jogos:
+Jogos reais da NHL:
 ${JSON.stringify(games, null, 2)}
 
 Formato obrigatório:
@@ -119,22 +167,21 @@ Formato obrigatório:
     }
   ]
 }
-`;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-1.0-pro", // ✅ compatível com v1beta
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-      },
-    });
+Regras:
+- Usa gameId/homeTeam/awayTeam exatamente como na lista.
+- confidence entre 0 e 1.
+- Se não conseguires analisar, devolve {"predictions": []}.
+`.trim();
 
-    const parsed = safeJsonParse(response.text || "") ?? {};
+    const { modelUsed, parsed } = await generateWithFallback(ai, prompt);
     const normalized = normalizePredictions(parsed);
 
     return res.status(200).json({
       ...normalized,
+      modelUsed,
       games,
+      date: selectedDate,
       lastUpdated: new Date().toISOString(),
     });
   } catch (err: any) {
