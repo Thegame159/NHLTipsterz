@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { fetchNHLAnalysis } from './services/geminiService';
 import { NHLAnalysisData } from './types';
 import GameTable from './components/GameTable';
@@ -34,7 +34,11 @@ const BrandLogo: React.FC<{ size?: 'sm' | 'lg' }> = ({ size = 'sm' }) => {
         </h1>
 
         {/* The Puck (Disco) - Redondo/Elíptico com perspectiva */}
-        <div className={`absolute z-30 transform rotate-[-12deg] ${isLarge ? 'right-[-45px] sm:right-[-60px] top-[10px] sm:top-[15px]' : 'right-[-35px] top-[8px]'}`}>
+        <div
+          className={`absolute z-30 transform rotate-[-12deg] ${
+            isLarge ? 'right-[-45px] sm:right-[-60px] top-[10px] sm:top-[15px]' : 'right-[-35px] top-[8px]'
+          }`}
+        >
           <div
             className={`${
               isLarge ? 'w-36 h-20 sm:w-44 sm:h-28' : 'w-24 h-14'
@@ -54,7 +58,9 @@ const BrandLogo: React.FC<{ size?: 'sm' | 'lg' }> = ({ size = 'sm' }) => {
 
       {/* Tipsterz - Caligrafia redimensionada */}
       <div className={`z-40 ${isLarge ? 'mt-[-40px] sm:mt-[-55px] ml-16 sm:ml-24' : 'mt-[-35px] ml-14'}`}>
-        <span className={`${isLarge ? 'text-[65px] sm:text-[90px]' : 'text-[55px] sm:text-[65px]'} font-tipsterz text-white drop-shadow-[0_3px_6px_rgba(0,0,0,1)]`}>
+        <span
+          className={`${isLarge ? 'text-[65px] sm:text-[90px]' : 'text-[55px] sm:text-[65px]'} font-tipsterz text-white drop-shadow-[0_3px_6px_rgba(0,0,0,1)]`}
+        >
           Tipsterz
         </span>
       </div>
@@ -73,72 +79,94 @@ const loadingMessages = [
   "Preparando face-off..."
 ];
 
-// ✅ Helpers de data
-const toDateString = (d: Date) => d.toISOString().split('T')[0];
+// ✅ Helpers de data (LOCAL, sem UTC)
+const toDateStringLocal = (d: Date) => {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
 
 const getYesterdayString = () => {
   const d = new Date();
   d.setDate(d.getDate() - 1);
-  return toDateString(d);
+  return toDateStringLocal(d);
 };
 
 const App: React.FC = () => {
   const [data, setData] = useState<NHLAnalysisData | null>(null);
-  const [loading, setLoading] = useState(true);
+
+  // ✅ Importante: começar SEM loading (não faz auto-load nem “lê cache”)
+  const [loading, setLoading] = useState(false);
+
   const [progress, setProgress] = useState(0);
   const [loadingMsgIdx, setLoadingMsgIdx] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'schedule' | 'suggestions'>('schedule');
 
-  // ✅ selectedDate = o que o utilizador escolhe no input
-  // ✅ loadedDate = o que está efetivamente carregado (só muda quando clicas "Analisar")
+  // ✅ selectedDate = escolhido no input
+  // ✅ loadedDate = última data realmente analisada (vazia até clicar Analisar)
   const [selectedDate, setSelectedDate] = useState<string>(getYesterdayString());
-  const [loadedDate, setLoadedDate] = useState<string>(getYesterdayString());
+  const [loadedDate, setLoadedDate] = useState<string>(''); // <- não carrega nada ao abrir
+
+  // ✅ Evita race condition (respostas antigas a sobrescrever a última)
+  const requestIdRef = useRef(0);
 
   const loadData = async (date: string) => {
+    const reqId = ++requestIdRef.current;
+
+    let progressInterval: ReturnType<typeof setInterval> | null = null;
+    let msgInterval: ReturnType<typeof setInterval> | null = null;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
     try {
       setLoading(true);
       setProgress(0);
       setError(null);
 
-      const progressInterval = setInterval(() => {
+      progressInterval = setInterval(() => {
         setProgress(prev => {
-          if (prev >= 99) {
-            clearInterval(progressInterval);
-            return prev;
-          }
+          if (prev >= 99) return prev;
           const diff = 100 - prev;
           const increment = diff > 50 ? 3 : (diff > 10 ? 0.8 : 0.05);
           return prev + increment;
         });
       }, 100);
 
-      const msgInterval = setInterval(() => {
+      msgInterval = setInterval(() => {
         setLoadingMsgIdx(prev => (prev + 1) % loadingMessages.length);
       }, 1800);
 
       const analysis = await fetchNHLAnalysis(date);
 
-      clearInterval(progressInterval);
-      clearInterval(msgInterval);
+      // ✅ Ignora resposta se já houve um request mais recente
+      if (reqId !== requestIdRef.current) return;
+
       setProgress(100);
 
-      setTimeout(() => {
+      timeoutId = setTimeout(() => {
+        // ✅ Ainda valida o request antes de aplicar state (extra segurança)
+        if (reqId !== requestIdRef.current) return;
         setData(analysis);
         setLoading(false);
       }, 600);
     } catch (err: any) {
+      if (reqId !== requestIdRef.current) return;
       const msg = err?.message || "Erro ao carregar dados. Tente novamente.";
       console.debug("loadData failed:", msg);
       setError(msg);
       setLoading(false);
+    } finally {
+      // ✅ CRÍTICO: limpar SEMPRE (evita loop infinito e spam de imagens)
+      if (progressInterval) clearInterval(progressInterval);
+      if (msgInterval) clearInterval(msgInterval);
+      if (timeoutId) clearTimeout(timeoutId);
     }
   };
 
-  // ✅ Carrega SÓ UMA VEZ ao abrir (ontem)
+  // ✅ NÃO carregar ao abrir (sem auto-load)
   useEffect(() => {
-    loadData(loadedDate);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // intencionalmente vazio
   }, []);
 
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -182,6 +210,8 @@ const App: React.FC = () => {
     );
   }
 
+  const predictionsCount = data?.predictions?.length ?? 0;
+
   return (
     <div className="max-w-7xl mx-auto p-4 sm:p-6 pb-20">
       <header className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4 border-b border-white/5 pb-4">
@@ -201,11 +231,11 @@ const App: React.FC = () => {
             />
           </div>
 
-          {/* ✅ Botão para evitar chamadas automáticas */}
+          {/* ✅ Botão: só chama quando clicas */}
           <button
             onClick={handleAnalyzeClick}
             className="bg-orange-600 text-white font-black px-4 py-2 rounded-lg text-[10px] uppercase tracking-wider hover:bg-orange-500 transition"
-            title={`Carregado: ${loadedDate}`}
+            title={loadedDate ? `Carregado: ${loadedDate}` : 'Ainda não analisado'}
           >
             Analisar
           </button>
@@ -230,7 +260,7 @@ const App: React.FC = () => {
           </p>
 
           <button
-            onClick={() => loadData(selectedDate)}
+            onClick={() => loadData(loadedDate || selectedDate)}
             className="bg-white text-black font-black py-2.5 px-8 rounded-lg text-xs uppercase"
           >
             Repetir
@@ -260,15 +290,27 @@ const App: React.FC = () => {
           <main className="animate-in fade-in duration-500">
             {activeTab === 'schedule' ? (
               <div className="space-y-6">
-                {data && <GameTable predictions={data.predictions} />}
-                {data?.predictions.length === 0 && (
+                {/* ✅ Só mostra tabela se houver data carregada e dados */}
+                {loadedDate && data && <GameTable predictions={data.predictions} />}
+
+                {/* ✅ Ao abrir (sem loadedDate) OU se não houver jogos -> "Sem jogos" */}
+                {(!loadedDate || predictionsCount === 0) && (
                   <div className="py-24 text-center text-slate-600 text-[10px] font-black uppercase tracking-widest">
                     Sem jogos
                   </div>
                 )}
               </div>
             ) : (
-              data && <SuggestionsView suggestions={data.suggestions} />
+              <>
+                {/* ✅ Na tab Dicas, só mostra se já analisou e tem dados */}
+                {loadedDate && data ? (
+                  <SuggestionsView suggestions={data.suggestions} />
+                ) : (
+                  <div className="py-24 text-center text-slate-600 text-[10px] font-black uppercase tracking-widest">
+                    Sem dicas
+                  </div>
+                )}
+              </>
             )}
           </main>
         </>
