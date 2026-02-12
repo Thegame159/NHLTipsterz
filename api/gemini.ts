@@ -4,12 +4,11 @@ import { createClient } from "redis";
 
 export const config = { runtime: "nodejs" };
 
-// Cache só para o output do Gemini (probabilidades/sugestões)
-// Lesões: SEMPRE fresh
-const GEMINI_TTL_MS = 1000 * 60 * 60 * 12; // 12h (ajusta)
+// cache só do Gemini (caro)
+const GEMINI_TTL_MS = 1000 * 60 * 60 * 12;
 
+// Redis opcional
 let _redis: ReturnType<typeof createClient> | null = null;
-
 async function getRedis() {
   if (_redis) return _redis;
   const url = process.env.REDIS_URL;
@@ -22,20 +21,14 @@ async function getRedis() {
 }
 
 function safeJsonParse(text: string) {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
+  try { return JSON.parse(text); } catch { return null; }
 }
-
 function clampPct(n: any) {
   const v = Number(n);
   if (!Number.isFinite(v)) return 0;
   const pct = v <= 1 ? v * 100 : v;
   return Math.max(0, Math.min(100, pct));
 }
-
 function defaultSuggestions() {
   return {
     tripleWin: [],
@@ -46,8 +39,11 @@ function defaultSuggestions() {
     over55Suggestions: [],
   };
 }
+function normAbbr(abbr: string) {
+  return (abbr || "").toUpperCase().trim();
+}
 
-// ------------------ NHL schedule (real) ------------------
+// ---------------- NHL schedule (real) ----------------
 type ScheduleGame = {
   id: number;
   startTimeUTC?: string;
@@ -66,55 +62,20 @@ async function fetchNhlScheduleGames(date: string): Promise<ScheduleGame[]> {
 
   for (const day of data.gameWeek) {
     if (!Array.isArray(day?.games)) continue;
-    for (const g of day.games) {
-      if (g?.id) games.push(g);
-    }
+    for (const g of day.games) if (g?.id) games.push(g);
   }
-
   return games;
 }
 
-// ------------------ ESPN injuries (real) ------------------
-const ESPN_TEAM_ID: Record<string, number> = {
-  ANA: 25,
-  BOS: 1,
-  BUF: 2,
-  CAR: 7,
-  CBJ: 29,
-  CGY: 3,
-  CHI: 4,
-  COL: 17,
-  DAL: 9,
-  DET: 5,
-  EDM: 6,
-  FLA: 26,
-  LAK: 8,
-  MIN: 30,
-  MTL: 10,
-  NJD: 11,
-  NSH: 27,
-  NYI: 12,
-  NYR: 13,
-  OTT: 14,
-  PHI: 15,
-  PIT: 16,
-  SEA: 124292,
-  SJS: 18,
-  STL: 19,
-  TBL: 20,
-  TOR: 21,
-  VAN: 22,
-  VGK: 37,
-  WPG: 52,
-  WSH: 23,
-
-  // Se o teu schedule devolver UTA, diz-me e eu meto o ID correto
-  // UTA: ???,
+// ---------------- ESPN injuries (real) - league endpoint ----------------
+// Este endpoint costuma vir com a lista completa de lesionados na liga
+// e é mais estável do que "teams/{id}".
+type EspnInjuryRow = {
+  athlete?: { displayName?: string };
+  team?: { abbreviation?: string };
+  status?: string;
+  details?: { type?: string; detail?: string };
 };
-
-function normAbbr(abbr: string) {
-  return (abbr || "").toUpperCase().trim();
-}
 
 function simplifyStatus(status?: string) {
   const s = (status || "").toLowerCase();
@@ -126,43 +87,50 @@ function simplifyStatus(status?: string) {
   return status || "";
 }
 
-async function fetchEspnInjuriesByTeamAbbr(teamAbbr: string): Promise<string[]> {
-  const abbr = normAbbr(teamAbbr);
-  const id = ESPN_TEAM_ID[abbr];
-  if (!id) return [];
-
-  const url = `https://site.web.api.espn.com/apis/site/v2/sports/hockey/nhl/teams/${id}`;
+async function fetchEspnLeagueInjuries(): Promise<EspnInjuryRow[]> {
+  // Endpoint de injuries da NHL (ESPN site api)
+  const url = "https://site.web.api.espn.com/apis/site/v2/sports/hockey/nhl/injuries";
   const res = await fetch(url, { headers: { accept: "application/json" } });
   if (!res.ok) return [];
-
   const data = await res.json();
-  const injuries = data?.team?.injuries ?? data?.injuries ?? [];
-  if (!Array.isArray(injuries)) return [];
 
-  const out: string[] = [];
-  for (const item of injuries) {
-    const athlete =
-      item?.athlete?.displayName ||
-      item?.athlete?.fullName ||
-      item?.athlete?.name ||
-      "";
+  // Formato pode variar: tenta várias entradas
+  const items =
+    data?.injuries ||
+    data?.sports?.[0]?.leagues?.[0]?.injuries ||
+    data?.leagues?.[0]?.injuries ||
+    [];
 
-    const status = simplifyStatus(item?.status || item?.injuryStatus || "");
-    const detail =
-      item?.details?.type || item?.type || item?.details?.detail || "";
+  if (!Array.isArray(items)) return [];
+  return items as EspnInjuryRow[];
+}
 
-    const line = [athlete, status ? `(${status})` : "", detail ? `- ${detail}` : ""]
+async function buildInjuriesByTeam(teamAbbrs: Set<string>) {
+  const injuriesByTeam: Record<string, string[]> = {};
+  for (const abbr of teamAbbrs) injuriesByTeam[abbr] = [];
+
+  const rows = await fetchEspnLeagueInjuries();
+
+  for (const r of rows) {
+    const abbr = normAbbr(r?.team?.abbreviation || "");
+    if (!abbr || !injuriesByTeam[abbr]) continue;
+
+    const name = r?.athlete?.displayName || "";
+    const status = simplifyStatus(r?.status || "");
+    const detail = r?.details?.type || r?.details?.detail || "";
+
+    const line = [name, status ? `(${status})` : "", detail ? `- ${detail}` : ""]
       .filter(Boolean)
       .join(" ")
       .trim();
 
-    if (line) out.push(line);
+    if (line) injuriesByTeam[abbr].push(line);
   }
 
-  return out;
+  return injuriesByTeam;
 }
 
-// ------------------ Gemini with fallback ------------------
+// ---------------- Gemini fallback ----------------
 async function generateWithFallback(ai: GoogleGenAI, prompt: string) {
   const modelsToTry = ["gemini-3-flash-preview", "gemini-3-pro-preview", "gemini-2.0-flash"];
   let lastErr: any = null;
@@ -183,11 +151,10 @@ async function generateWithFallback(ai: GoogleGenAI, prompt: string) {
       throw e;
     }
   }
-
   throw new Error(`Nenhum modelo disponível. Último erro: ${String(lastErr?.message ?? lastErr)}`);
 }
 
-// ------------------ Merge final (injuries sempre fresh) ------------------
+// ---------------- merge final (injuries fresh SEMPRE) ----------------
 function mergeInjuriesIntoPredictions(geminiObj: any, sourceById: Record<string, any>) {
   const root = geminiObj && typeof geminiObj === "object" ? geminiObj : {};
   const predictions = Array.isArray(root.predictions) ? root.predictions : [];
@@ -198,7 +165,6 @@ function mergeInjuriesIntoPredictions(geminiObj: any, sourceById: Record<string,
 
   const lastUpdated = new Date().toISOString();
 
-  // Se Gemini não devolver predictions, devolvemos base com injuries reais
   if (predictions.length === 0) {
     const fallback = Object.values(sourceById).map((src: any) => ({
       id: String(src.id),
@@ -244,7 +210,6 @@ function mergeInjuriesIntoPredictions(geminiObj: any, sourceById: Record<string,
       over45Prob: clampPct(p?.over45Prob),
       over55Prob: clampPct(p?.over55Prob),
       analysisSummary: String(p?.analysisSummary ?? ""),
-      // ✅ FORÇA SEMPRE as injuries reais (fresh)
       injuries: {
         home: (src?.injuries?.home ?? []).map(String),
         away: (src?.injuries?.away ?? []).map(String),
@@ -293,7 +258,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // 1) SEMPRE buscar schedule real
+    // 1) Schedule real
     const scheduleGames = await fetchNhlScheduleGames(selectedDate);
     if (!scheduleGames.length) {
       return res.status(200).json({
@@ -303,7 +268,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // 2) SEMPRE buscar injuries reais (fresh)
+    // 2) Injuries REAL (sempre fresh)
     const teamAbbrs = new Set<string>();
     for (const g of scheduleGames) {
       const h = normAbbr(g.homeTeam?.abbrev || "");
@@ -311,15 +276,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (h) teamAbbrs.add(h);
       if (a) teamAbbrs.add(a);
     }
+    const injuriesByTeam = await buildInjuriesByTeam(teamAbbrs);
 
-    const injuriesByTeam: Record<string, string[]> = {};
-    await Promise.all(
-      Array.from(teamAbbrs).map(async (abbr) => {
-        injuriesByTeam[abbr] = await fetchEspnInjuriesByTeamAbbr(abbr);
-      })
-    );
-
-    // Base source por jogo (verdade)
+    // Base por jogo
     const sourceById: Record<string, any> = {};
     const gamesForAI = scheduleGames.map((g) => {
       const id = String(g.id);
@@ -343,10 +302,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return base;
     });
 
-    // 3) Cache SÓ do Gemini (caro). Injuries não entram no cache.
+    // 3) Cache só Gemini
     const redis = await getRedis();
     const geminiCacheKey = `gemini_only:${selectedDate}`;
+
     let geminiObj: any = null;
+    let geminiHit = false;
 
     if (redis) {
       try {
@@ -354,13 +315,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const cached = raw ? safeJsonParse(raw) : null;
         if (cached?.savedAt && Date.now() - cached.savedAt < GEMINI_TTL_MS) {
           geminiObj = cached.data;
+          geminiHit = true;
         }
       } catch (e) {
-        console.error("Redis read Gemini cache failed:", e);
+        console.error("Redis read failed:", e);
       }
     }
 
-    // Se não houver cache do Gemini, chama Gemini
     if (!geminiObj) {
       const ai = new GoogleGenAI({ apiKey });
 
@@ -421,13 +382,21 @@ REGRAS:
             { PX: GEMINI_TTL_MS }
           );
         } catch (e) {
-          console.error("Redis save Gemini cache failed:", e);
+          console.error("Redis save failed:", e);
         }
       }
     }
 
-    // 4) Merge final: PROB do Gemini + injuries reais fresh
-    const finalData = mergeInjuriesIntoPredictions(geminiObj, sourceById);
+    const finalData: any = mergeInjuriesIntoPredictions(geminiObj, sourceById);
+
+    // DEBUG: confirma cache + contagem de injuries por equipa
+    finalData.meta = {
+      selectedDate,
+      cache: { geminiHit, key: geminiCacheKey },
+      injuriesCounts: Object.fromEntries(
+        Object.entries(injuriesByTeam).map(([k, v]) => [k, v.length])
+      ),
+    };
 
     return res.status(200).json(finalData);
   } catch (err: any) {
