@@ -96,7 +96,7 @@ const getYesterdayString = () => {
 const App: React.FC = () => {
   const [data, setData] = useState<NHLAnalysisData | null>(null);
 
-  // ✅ Importante: começar SEM loading (não faz auto-load nem “lê cache”)
+  // ✅ Começa SEM loading (não faz auto-load)
   const [loading, setLoading] = useState(false);
 
   const [progress, setProgress] = useState(0);
@@ -109,7 +109,7 @@ const App: React.FC = () => {
   const [selectedDate, setSelectedDate] = useState<string>(getYesterdayString());
   const [loadedDate, setLoadedDate] = useState<string>(''); // <- não carrega nada ao abrir
 
-  // ✅ Evita race condition (respostas antigas a sobrescrever a última)
+  // ✅ Evita race condition
   const requestIdRef = useRef(0);
 
   const loadData = async (date: string) => {
@@ -117,7 +117,6 @@ const App: React.FC = () => {
 
     let progressInterval: ReturnType<typeof setInterval> | null = null;
     let msgInterval: ReturnType<typeof setInterval> | null = null;
-    let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
     try {
       setLoading(true);
@@ -139,17 +138,14 @@ const App: React.FC = () => {
 
       const analysis = await fetchNHLAnalysis(date);
 
-      // ✅ Ignora resposta se já houve um request mais recente
+      // ✅ Ignora resposta antiga
       if (reqId !== requestIdRef.current) return;
 
       setProgress(100);
 
-      timeoutId = setTimeout(() => {
-        // ✅ Ainda valida o request antes de aplicar state (extra segurança)
-        if (reqId !== requestIdRef.current) return;
-        setData(analysis);
-        setLoading(false);
-      }, 600);
+      // ✅ termina já (sem timeout)
+      setData(analysis);
+      setLoading(false);
     } catch (err: any) {
       if (reqId !== requestIdRef.current) return;
       const msg = err?.message || "Erro ao carregar dados. Tente novamente.";
@@ -157,14 +153,13 @@ const App: React.FC = () => {
       setError(msg);
       setLoading(false);
     } finally {
-      // ✅ CRÍTICO: limpar SEMPRE (evita loop infinito e spam de imagens)
+      // ✅ CRÍTICO: limpar SEMPRE
       if (progressInterval) clearInterval(progressInterval);
       if (msgInterval) clearInterval(msgInterval);
-      if (timeoutId) clearTimeout(timeoutId);
     }
   };
 
-  // ✅ NÃO carregar ao abrir (sem auto-load)
+  // ✅ NÃO carregar ao abrir
   useEffect(() => {
     // intencionalmente vazio
   }, []);
@@ -231,7 +226,6 @@ const App: React.FC = () => {
             />
           </div>
 
-          {/* ✅ Botão: só chama quando clicas */}
           <button
             onClick={handleAnalyzeClick}
             className="bg-orange-600 text-white font-black px-4 py-2 rounded-lg text-[10px] uppercase tracking-wider hover:bg-orange-500 transition"
@@ -290,10 +284,8 @@ const App: React.FC = () => {
           <main className="animate-in fade-in duration-500">
             {activeTab === 'schedule' ? (
               <div className="space-y-6">
-                {/* ✅ Só mostra tabela se houver data carregada e dados */}
                 {loadedDate && data && <GameTable predictions={data.predictions} />}
 
-                {/* ✅ Ao abrir (sem loadedDate) OU se não houver jogos -> "Sem jogos" */}
                 {(!loadedDate || predictionsCount === 0) && (
                   <div className="py-24 text-center text-slate-600 text-[10px] font-black uppercase tracking-widest">
                     Sem jogos
@@ -302,7 +294,6 @@ const App: React.FC = () => {
               </div>
             ) : (
               <>
-                {/* ✅ Na tab Dicas, só mostra se já analisou e tem dados */}
                 {loadedDate && data ? (
                   <SuggestionsView suggestions={data.suggestions} />
                 ) : (
