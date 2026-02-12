@@ -4,9 +4,10 @@ import { createClient } from "redis";
 
 export const config = { runtime: "nodejs" };
 
-// Cache só do Gemini (caro)
+// Cache só do Gemini (caro). Lesões NÃO são cacheadas.
 const GEMINI_TTL_MS = 1000 * 60 * 60 * 12;
 
+// Redis opcional
 let _redis: ReturnType<typeof createClient> | null = null;
 async function getRedis() {
   if (_redis) return _redis;
@@ -83,7 +84,7 @@ async function fetchNhlScheduleGames(date: string): Promise<ScheduleGame[]> {
   return games;
 }
 
-// ---------------- ESPN injuries (robusto + debug) ----------------
+// ---------------- ESPN injuries (robusto + fallback + debug) ----------------
 type EspnInjuryRow = {
   athlete?: { displayName?: string };
   team?: { abbreviation?: string };
@@ -101,77 +102,127 @@ type EspnFetchDebug = {
 
 async function fetchEspnLeagueInjuries(): Promise<{
   rows: EspnInjuryRow[];
-  debug: EspnFetchDebug;
+  debug: EspnFetchDebug & {
+    tried: { url: string; ok: boolean; status: number; contentType: string; foundRows: number }[];
+  };
 }> {
-  const url = "https://site.web.api.espn.com/apis/site/v2/sports/hockey/nhl/injuries";
+  const candidates = [
+    "https://site.web.api.espn.com/apis/site/v2/sports/hockey/nhl/injuries",
+    "https://site.web.api.espn.com/apis/v2/sports/hockey/nhl/injuries",
+    "https://site.web.api.espn.com/apis/v2/sports/hockey/nhl/injuries?lang=pt&region=br",
+    "https://site.web.api.espn.com/apis/v2/sports/hockey/nhl/injuries?lang=en&region=us",
+  ];
 
-  const res = await fetch(url, {
-    headers: {
-      accept: "application/json,text/plain,*/*",
-      "accept-language": "pt-PT,pt;q=0.9,en;q=0.8",
-      "user-agent":
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123 Safari/537.36",
-    },
-  });
+  const tried: { url: string; ok: boolean; status: number; contentType: string; foundRows: number }[] = [];
 
-  const contentType = res.headers.get("content-type") || "";
-  const debug: EspnFetchDebug = { url, ok: res.ok, status: res.status, contentType };
+  const headers = {
+    accept: "application/json,text/plain,*/*",
+    "accept-language": "pt-PT,pt;q=0.9,pt-BR;q=0.8,en;q=0.7",
+    "user-agent":
+      "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123 Safari/537.36",
+  };
 
-  // Se vier bloqueado/HTML, devolve vazio mas com debug
-  if (!res.ok) {
-    return { rows: [], debug };
-  }
+  for (const url of candidates) {
+    const res = await fetch(url, { headers });
+    const contentType = res.headers.get("content-type") || "";
 
-  const text = await res.text();
-
-  // às vezes vem “JSON” mas com lixo/HTML; protege
-  const data = safeJsonParse(text);
-  if (!data || typeof data !== "object") {
-    debug.note = "Resposta não era JSON parseável (talvez HTML/bloqueio).";
-    return { rows: [], debug };
-  }
-
-  // ✅ Parser recursivo: encontra entradas com {athlete, team} em qualquer estrutura
-  const found: EspnInjuryRow[] = [];
-  const seen = new Set<string>();
-
-  function walk(node: any) {
-    if (!node) return;
-
-    if (Array.isArray(node)) {
-      for (const item of node) walk(item);
-      return;
+    if (!res.ok) {
+      tried.push({ url, ok: false, status: res.status, contentType, foundRows: 0 });
+      continue;
     }
 
-    if (typeof node === "object") {
-      const hasAthlete = node.athlete && typeof node.athlete === "object";
-      const hasTeam = node.team && typeof node.team === "object";
-      const abbr = normAbbr(node?.team?.abbreviation || "");
+    const text = await res.text();
+    const data = safeJsonParse(text);
 
-      if (hasAthlete && hasTeam && abbr) {
-        const name = node?.athlete?.displayName || "";
-        const status = simplifyStatus(node?.status || node?.injuryStatus || "");
-        const detail = node?.details?.type || node?.details?.detail || node?.type || "";
+    if (!data || typeof data !== "object") {
+      tried.push({ url, ok: true, status: res.status, contentType, foundRows: 0 });
+      continue;
+    }
 
-        const key = `${abbr}|${name}|${status}|${detail}`;
-        if (!seen.has(key)) {
-          seen.add(key);
-          found.push({
-            athlete: { displayName: name },
-            team: { abbreviation: abbr },
-            status: status,
-            details: { type: detail, detail: detail },
-          });
-        }
+    // Parser flexível: tenta apanhar “team+athlete/player” em qualquer sub-estrutura
+    const found: EspnInjuryRow[] = [];
+    const seen = new Set<string>();
+
+    function walk(node: any) {
+      if (!node) return;
+
+      if (Array.isArray(node)) {
+        for (const item of node) walk(item);
+        return;
       }
 
-      for (const k of Object.keys(node)) walk(node[k]);
+      if (typeof node === "object") {
+        const abbr = normAbbr(node?.team?.abbreviation || node?.team?.abbrev || node?.teamAbbreviation || "");
+        const name =
+          node?.athlete?.displayName ||
+          node?.athlete?.fullName ||
+          node?.player?.displayName ||
+          node?.player?.fullName ||
+          node?.name ||
+          "";
+
+        const statusRaw = node?.status || node?.injuryStatus || node?.state || node?.availability || "";
+        const detailRaw =
+          node?.details?.type ||
+          node?.details?.detail ||
+          node?.type ||
+          node?.injury?.type ||
+          node?.injury?.detail ||
+          node?.description ||
+          node?.detail ||
+          "";
+
+        const hasTeamLike = Boolean(abbr);
+        const hasNameLike = Boolean(name);
+
+        if (hasTeamLike && hasNameLike) {
+          const status = simplifyStatus(String(statusRaw));
+          const detail = String(detailRaw || "");
+          const key = `${abbr}|${name}|${status}|${detail}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            found.push({
+              athlete: { displayName: String(name) },
+              team: { abbreviation: abbr },
+              status,
+              details: { type: detail, detail },
+            });
+          }
+        }
+
+        for (const k of Object.keys(node)) walk(node[k]);
+      }
+    }
+
+    walk(data);
+
+    tried.push({ url, ok: true, status: res.status, contentType, foundRows: found.length });
+
+    if (found.length > 0) {
+      return {
+        rows: found,
+        debug: {
+          url,
+          ok: true,
+          status: res.status,
+          contentType,
+          tried,
+        },
+      };
     }
   }
 
-  walk(data);
-
-  return { rows: found, debug };
+  return {
+    rows: [],
+    debug: {
+      url: candidates[0],
+      ok: false,
+      status: 200,
+      contentType: "",
+      note: "Nenhum endpoint devolveu lesões parseáveis (foundRows=0 em todos).",
+      tried,
+    },
+  };
 }
 
 async function buildInjuriesByTeam(teamAbbrs: Set<string>) {
@@ -255,7 +306,7 @@ function mergeInjuriesIntoPredictions(geminiObj: any, sourceById: Record<string,
       over45Prob: clampPct(p?.over45Prob),
       over55Prob: clampPct(p?.over55Prob),
       analysisSummary: String(p?.analysisSummary ?? ""),
-      // ✅ FORÇA sempre injuries reais do source
+      // ✅ FORÇA sempre injuries reais do source (fresh)
       injuries: {
         home: (src?.injuries?.home ?? []).map(String),
         away: (src?.injuries?.away ?? []).map(String),
@@ -314,7 +365,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // 2) equipa(s) do dia
+    // 2) equipas do dia
     const teamAbbrs = new Set<string>();
     for (const g of scheduleGames) {
       const h = normAbbr(g.homeTeam?.abbrev || "");
