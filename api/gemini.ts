@@ -4,8 +4,9 @@ import { createClient } from "redis";
 
 export const config = { runtime: "nodejs" };
 
-// Cache só do Gemini (caro). Lesões NÃO são cacheadas.
-const GEMINI_TTL_MS = 1000 * 60 * 60 * 12;
+// Cache do Gemini (predictions) e das lesões
+const GEMINI_TTL_MS = 1000 * 60 * 60 * 12; // 12h
+const INJURIES_TTL_MS = 1000 * 60 * 60 * 6; // 6h (como pediste)
 
 // ---------------- REDIS ----------------
 let _redis: ReturnType<typeof createClient> | null = null;
@@ -30,18 +31,16 @@ function safeJsonParse(text: string) {
   }
 }
 
-function normAbbr(abbr: string) {
-  return (abbr || "").toUpperCase().trim();
+function norm(s: string) {
+  return (s || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .trim();
 }
 
-function simplifyStatus(status?: string) {
-  const s = (status || "").toLowerCase();
-  if (!s) return "";
-  if (s.includes("out")) return "OUT";
-  if (s.includes("questionable")) return "Q";
-  if (s.includes("day-to-day") || s.includes("day to day") || s.includes("day")) return "DTD";
-  if (s.includes("ir")) return "IR";
-  return status || "";
+function normAbbr(abbr: string) {
+  return (abbr || "").toUpperCase().trim();
 }
 
 function defaultSuggestions() {
@@ -79,142 +78,215 @@ async function fetchNhlScheduleGames(date: string): Promise<ScheduleGame[]> {
   return games;
 }
 
-// ---------------- ESPN TEAM ID RESOLVER (robusto) ----------------
-// A ESPN usa IDs numéricos para /teams/{id}/injuries.
-// Em vez de manter um mapa manual (que pode estar errado), buscamos a lista de equipas e fazemos lookup por abreviação.
-
-type EspnTeamIndex = {
-  fetchedAt: number;
-  byAbbr: Record<string, string>; // "BOS" -> "1"
+// ---------------- TEAM NAME MAP (para casar ESPN->ABBR) ----------------
+// Isto ajuda a mapear "Boston Bruins" -> "BOS" mesmo que a ESPN não mostre abreviação.
+const TEAM_FULLNAMES: Record<string, string[]> = {
+  ANA: ["anaheim ducks", "ducks"],
+  BOS: ["boston bruins", "bruins"],
+  BUF: ["buffalo sabres", "sabres"],
+  CAR: ["carolina hurricanes", "hurricanes"],
+  CBJ: ["columbus blue jackets", "blue jackets", "bluejackets"],
+  CGY: ["calgary flames", "flames"],
+  CHI: ["chicago blackhawks", "blackhawks"],
+  COL: ["colorado avalanche", "avalanche"],
+  DAL: ["dallas stars", "stars"],
+  DET: ["detroit red wings", "red wings", "redwings"],
+  EDM: ["edmonton oilers", "oilers"],
+  FLA: ["florida panthers", "panthers"],
+  LAK: ["los angeles kings", "la kings", "kings"],
+  MIN: ["minnesota wild", "wild"],
+  MTL: ["montreal canadiens", "canadiens"],
+  NJD: ["new jersey devils", "devils"],
+  NSH: ["nashville predators", "predators"],
+  NYI: ["new york islanders", "islanders"],
+  NYR: ["new york rangers", "rangers"],
+  OTT: ["ottawa senators", "senators"],
+  PHI: ["philadelphia flyers", "flyers"],
+  PIT: ["pittsburgh penguins", "penguins"],
+  SEA: ["seattle kraken", "kraken"],
+  SJS: ["san jose sharks", "sharks"],
+  STL: ["st. louis blues", "st louis blues", "blues"],
+  TBL: ["tampa bay lightning", "lightning"],
+  TOR: ["toronto maple leafs", "maple leafs", "leafs"],
+  VAN: ["vancouver canucks", "canucks"],
+  VGK: ["vegas golden knights", "golden knights", "knights"],
+  WPG: ["winnipeg jets", "jets"],
+  WSH: ["washington capitals", "capitals"],
+  UTA: ["utah hockey club", "utah"], // se aparecer assim na ESPN
+  ARI: ["arizona coyotes", "coyotes"], // se aparecer histórico
 };
 
-let _espnTeamIndex: EspnTeamIndex | null = null;
-const ESPN_TEAM_INDEX_TTL_MS = 1000 * 60 * 60 * 12; // 12h em memória (na mesma instância)
+function guessAbbrFromTeamName(teamName: string): string | null {
+  const t = norm(teamName);
+  if (!t) return null;
 
-async function getEspnTeamIndex(): Promise<EspnTeamIndex> {
-  // cache em memória (melhor performance)
-  if (_espnTeamIndex && Date.now() - _espnTeamIndex.fetchedAt < ESPN_TEAM_INDEX_TTL_MS) return _espnTeamIndex;
-
-  const url = "https://site.web.api.espn.com/apis/site/v2/sports/hockey/nhl/teams";
-  const res = await fetch(url, {
-    headers: {
-      accept: "application/json,text/plain,*/*",
-      "accept-language": "pt-PT,pt;q=0.9,en;q=0.7",
-      "user-agent":
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123 Safari/537.36",
-    },
-  });
-
-  if (!res.ok) {
-    // fallback: devolve vazio para não rebentar
-    _espnTeamIndex = { fetchedAt: Date.now(), byAbbr: {} };
-    return _espnTeamIndex;
-  }
-
-  const data = await res.json();
-
-  const byAbbr: Record<string, string> = {};
-  // A estrutura costuma ter: sports[0].leagues[0].teams[{ team: {...}}]
-  const teams = data?.sports?.[0]?.leagues?.[0]?.teams ?? [];
-
-  for (const t of teams) {
-    const team = t?.team;
-    const abbr = normAbbr(team?.abbreviation || team?.abbrev || "");
-    const id = team?.id ? String(team.id) : "";
-    if (abbr && id) byAbbr[abbr] = id;
-  }
-
-  _espnTeamIndex = { fetchedAt: Date.now(), byAbbr };
-  return _espnTeamIndex;
-}
-
-// ---------------- ESPN INJURIES (por equipa usando TEAM ID) ----------------
-async function fetchTeamInjuriesByAbbr(teamAbbr: string): Promise<{ injuries: string[]; teamId?: string; ok: boolean; status: number; url: string }> {
-  const abbr = normAbbr(teamAbbr);
-  const index = await getEspnTeamIndex();
-  const teamId = index.byAbbr[abbr];
-
-  if (!teamId) {
-    return { injuries: [], teamId: undefined, ok: false, status: 404, url: "teamId-not-found" };
-  }
-
-  const url = `https://site.web.api.espn.com/apis/site/v2/sports/hockey/nhl/teams/${teamId}/injuries`;
-  const res = await fetch(url, {
-    headers: {
-      accept: "application/json,text/plain,*/*",
-      "accept-language": "pt-PT,pt;q=0.9,en;q=0.7",
-      "user-agent":
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123 Safari/537.36",
-    },
-  });
-
-  if (!res.ok) return { injuries: [], teamId, ok: false, status: res.status, url };
-
-  const data = await res.json();
-
-  const injuries: string[] = [];
-
-  // Estruturas possíveis
-  const list =
-    data?.injuries ||
-    data?.athletes ||
-    data?.items ||
-    [];
-
-  if (Array.isArray(list)) {
-    for (const item of list) {
-      const name =
-        item?.athlete?.displayName ||
-        item?.athlete?.fullName ||
-        item?.displayName ||
-        item?.fullName ||
-        "";
-
-      const statusRaw =
-        item?.status ||
-        item?.injuryStatus ||
-        item?.availability ||
-        item?.state ||
-        "";
-
-      const detailRaw =
-        item?.details?.type ||
-        item?.details?.detail ||
-        item?.injury?.type ||
-        item?.injury?.detail ||
-        item?.description ||
-        item?.detail ||
-        "";
-
-      const status = simplifyStatus(String(statusRaw));
-      const detail = String(detailRaw || "").trim();
-
-      if (name) {
-        injuries.push(
-          `${name}${status ? ` (${status})` : ""}${detail ? ` - ${detail}` : ""}`.trim()
-        );
-      }
+  // match por full names / aliases
+  for (const [abbr, names] of Object.entries(TEAM_FULLNAMES)) {
+    for (const n of names) {
+      if (t.includes(n)) return abbr;
     }
   }
 
-  return { injuries, teamId, ok: true, status: 200, url };
+  return null;
 }
 
-async function buildInjuriesByTeam(teamAbbrs: Set<string>) {
-  const injuriesByTeam: Record<string, string[]> = {};
-  const debugByTeam: Record<string, any> = {};
+// ---------------- ESPN HTML -> GEMINI (extract injuries) ----------------
+type ExtractedTeamInjuries = {
+  team: string; // ex: "Boston Bruins"
+  injuries: string[]; // ex: ["Player (OUT) - Lower Body", ...]
+};
 
-  for (const abbr of teamAbbrs) {
-    const r = await fetchTeamInjuriesByAbbr(abbr);
-    injuriesByTeam[abbr] = r.injuries;
-    debugByTeam[abbr] = { teamId: r.teamId, ok: r.ok, status: r.status, url: r.url, count: r.injuries.length };
+type InjuriesExtractResult = {
+  teams: ExtractedTeamInjuries[];
+};
+
+async function fetchEspnBrazilInjuriesHtml(): Promise<{ ok: boolean; status: number; url: string; html: string }> {
+  const url = "https://www.espn.com.br/nhl/lesoes";
+  const res = await fetch(url, {
+    headers: {
+      accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "accept-language": "pt-PT,pt;q=0.9,en;q=0.7",
+      "user-agent":
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123 Safari/537.36",
+    },
+  });
+
+  const html = await res.text().catch(() => "");
+  return { ok: res.ok, status: res.status, url, html };
+}
+
+async function extractInjuriesWithGemini(apiKey: string, html: string): Promise<InjuriesExtractResult> {
+  const ai = new GoogleGenAI({ apiKey });
+
+  // Não mandes HTML infinito. Mantemos um chunk grande, mas com limite.
+  const MAX_CHARS = 180_000;
+  const clipped = html.length > MAX_CHARS ? html.slice(0, MAX_CHARS) : html;
+
+  const prompt = `
+Vais receber HTML da página de lesões da NHL da ESPN Brasil.
+A tua tarefa é APENAS extrair as lesões listadas no HTML. NÃO INVENTES NADA.
+
+Regras:
+- Se não encontrares uma equipa ou jogador no HTML, não cries entradas.
+- Devolve APENAS JSON válido.
+- Formato EXATO:
+{
+  "teams": [
+    { "team": "string", "injuries": ["string", "..."] }
+  ]
+}
+
+O campo "team" deve ser o nome da equipa como aparece no HTML (ex: "Boston Bruins").
+Cada item em "injuries" deve ser uma linha curta por jogador (ex: "Nome (OUT) - Lesão" ou "Nome - Lesão" se o estado não existir).
+Se não encontrares lesões, devolve: { "teams": [] }
+
+HTML:
+${clipped}
+`.trim();
+
+  const resp = await ai.models.generateContent({
+    model: "gemini-3-flash-preview",
+    contents: prompt,
+    config: { responseMimeType: "application/json" },
+  });
+
+  const parsed = safeJsonParse(resp.text || "");
+  if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.teams)) {
+    return { teams: [] };
   }
 
-  return { injuriesByTeam, debugByTeam };
+  // normaliza
+  const teams: ExtractedTeamInjuries[] = parsed.teams
+    .filter((x: any) => x && typeof x.team === "string" && Array.isArray(x.injuries))
+    .map((x: any) => ({
+      team: String(x.team),
+      injuries: x.injuries.map((s: any) => String(s)).filter((s: string) => s.trim().length > 0),
+    }));
+
+  return { teams };
 }
 
-// ---------------- GEMINI ----------------
-async function generateWithFallback(ai: GoogleGenAI, prompt: string) {
+async function getInjuriesByAbbr(apiKey: string, teamsOnDate: Set<string>) {
+  const redis = await getRedis();
+  const cacheKey = "espn_br_injuries_extracted_v1";
+
+  // 1) cache (6h)
+  if (redis) {
+    try {
+      const raw = await redis.get(cacheKey);
+      const cached = raw ? safeJsonParse(raw) : null;
+      if (cached?.savedAt && Date.now() - cached.savedAt < INJURIES_TTL_MS && cached?.data?.teams) {
+        const extracted: InjuriesExtractResult = cached.data;
+        const mapped = mapExtractedToAbbr(extracted, teamsOnDate);
+        return {
+          ...mapped,
+          meta: { hit: true, key: cacheKey, savedAt: cached.savedAt },
+        };
+      }
+    } catch (e) {
+      console.error("Injuries cache read failed:", e);
+    }
+  }
+
+  // 2) fetch html
+  const htmlRes = await fetchEspnBrazilInjuriesHtml();
+
+  // 3) Gemini extrai (só parsing)
+  const extracted = await extractInjuriesWithGemini(apiKey, htmlRes.html);
+
+  // 4) map para abreviações que interessam
+  const mapped = mapExtractedToAbbr(extracted, teamsOnDate);
+
+  // 5) guarda cache
+  if (redis) {
+    try {
+      await redis.set(
+        cacheKey,
+        JSON.stringify({ savedAt: Date.now(), data: extracted }),
+        { PX: INJURIES_TTL_MS }
+      );
+    } catch (e) {
+      console.error("Injuries cache save failed:", e);
+    }
+  }
+
+  return {
+    ...mapped,
+    meta: {
+      hit: false,
+      key: cacheKey,
+      espn: { ok: htmlRes.ok, status: htmlRes.status, url: htmlRes.url, htmlLen: htmlRes.html.length },
+    },
+  };
+}
+
+function mapExtractedToAbbr(extracted: InjuriesExtractResult, teamsOnDate: Set<string>) {
+  const injuriesByTeam: Record<string, string[]> = {};
+  const debug: Record<string, any> = {};
+
+  // init vazios
+  for (const abbr of teamsOnDate) injuriesByTeam[abbr] = [];
+
+  // tenta casar por nome -> abbr
+  for (const t of extracted.teams) {
+    const abbr = guessAbbrFromTeamName(t.team);
+    if (!abbr) continue;
+    if (!teamsOnDate.has(abbr)) continue;
+
+    injuriesByTeam[abbr] = t.injuries;
+    debug[abbr] = { matchedFrom: t.team, count: t.injuries.length };
+  }
+
+  // counts
+  const injuriesCounts = Object.fromEntries(
+    Object.entries(injuriesByTeam).map(([k, v]) => [k, Array.isArray(v) ? v.length : 0])
+  );
+
+  return { injuriesByTeam, injuriesCounts, debugMatch: debug, extractedTeams: extracted.teams.length };
+}
+
+// ---------------- GEMINI PREDICTIONS ----------------
+async function generatePredictionsWithFallback(ai: GoogleGenAI, prompt: string) {
   const modelsToTry = ["gemini-3-flash-preview", "gemini-3-pro-preview", "gemini-2.0-flash"];
   let lastErr: any = null;
 
@@ -239,28 +311,25 @@ async function generateWithFallback(ai: GoogleGenAI, prompt: string) {
   throw new Error(`Nenhum modelo disponível. Último erro: ${String(lastErr?.message ?? lastErr)}`);
 }
 
-// ---------------- MERGE FINAL (injuries sempre fresh) ----------------
-function mergeInjuriesIntoPredictions(geminiObj: any, sourceById: Record<string, any>) {
+function mergeInjuriesIntoPredictions(geminiObj: any, injuriesByTeam: Record<string, string[]>) {
   const root = geminiObj && typeof geminiObj === "object" ? geminiObj : {};
   const predictions = Array.isArray(root.predictions) ? root.predictions : [];
   const suggestions =
     root.suggestions && typeof root.suggestions === "object" ? root.suggestions : defaultSuggestions();
 
-  const lastUpdated = new Date().toISOString();
-
   const mergedPredictions = predictions.map((p: any) => {
-    const id = String(p?.id ?? "");
-    const src = sourceById[id];
+    const homeAbbr = normAbbr(String(p?.homeTeamAbbr ?? ""));
+    const awayAbbr = normAbbr(String(p?.awayTeamAbbr ?? ""));
 
     return {
-      id,
-      homeTeam: String(p?.homeTeam ?? src?.homeTeam ?? ""),
-      homeTeamAbbr: String(p?.homeTeamAbbr ?? src?.homeTeamAbbr ?? ""),
+      id: String(p?.id ?? ""),
+      homeTeam: String(p?.homeTeam ?? ""),
+      homeTeamAbbr: homeAbbr,
       homeRecordL10: String(p?.homeRecordL10 ?? "N/A"),
-      awayTeam: String(p?.awayTeam ?? src?.awayTeam ?? ""),
-      awayTeamAbbr: String(p?.awayTeamAbbr ?? src?.awayTeamAbbr ?? ""),
+      awayTeam: String(p?.awayTeam ?? ""),
+      awayTeamAbbr: awayAbbr,
       awayRecordL10: String(p?.awayRecordL10 ?? "N/A"),
-      dateTime: String(p?.dateTime ?? src?.dateTime ?? ""),
+      dateTime: String(p?.dateTime ?? ""),
       winProbabilityHome: Number(p?.winProbabilityHome ?? 0),
       winProbabilityAway: Number(p?.winProbabilityAway ?? 0),
       over15P1Prob: Number(p?.over15P1Prob ?? 0),
@@ -269,10 +338,9 @@ function mergeInjuriesIntoPredictions(geminiObj: any, sourceById: Record<string,
       over45Prob: Number(p?.over45Prob ?? 0),
       over55Prob: Number(p?.over55Prob ?? 0),
       analysisSummary: String(p?.analysisSummary ?? ""),
-      // ✅ ALWAYS from fresh source
       injuries: {
-        home: (src?.injuries?.home ?? []).map(String),
-        away: (src?.injuries?.away ?? []).map(String),
+        home: injuriesByTeam[homeAbbr] ?? [],
+        away: injuriesByTeam[awayAbbr] ?? [],
       },
     };
   });
@@ -289,7 +357,11 @@ function mergeInjuriesIntoPredictions(geminiObj: any, sourceById: Record<string,
     over55Suggestions: Array.isArray(sug.over55Suggestions) ? sug.over55Suggestions.map(String) : [],
   };
 
-  return { predictions: mergedPredictions, suggestions: normalizedSuggestions, lastUpdated };
+  return {
+    predictions: mergedPredictions,
+    suggestions: normalizedSuggestions,
+    lastUpdated: new Date().toISOString(),
+  };
 }
 
 // ---------------- HANDLER ----------------
@@ -330,7 +402,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // 2) equipas do dia
+    // 2) teams no dia
     const teamAbbrs = new Set<string>();
     for (const g of scheduleGames) {
       const h = normAbbr(g.homeTeam?.abbrev || "");
@@ -339,34 +411,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (a) teamAbbrs.add(a);
     }
 
-    // 3) injuries REAL (sempre fresh)
-    const { injuriesByTeam, debugByTeam } = await buildInjuriesByTeam(teamAbbrs);
+    // 3) Injuries (ESPN HTML -> Gemini extract) com cache 6h
+    const injuriesPack = await getInjuriesByAbbr(apiKey, teamAbbrs);
 
-    // base por jogo
-    const sourceById: Record<string, any> = {};
-    const gamesForAI = scheduleGames.map((g) => {
-      const id = String(g.id);
-      const homeAbbr = normAbbr(g.homeTeam?.abbrev || "");
-      const awayAbbr = normAbbr(g.awayTeam?.abbrev || "");
-
-      const base = {
-        id,
-        dateTime: g.startTimeUTC ?? "",
-        homeTeam: g.homeTeam?.placeName?.default ?? homeAbbr,
-        homeTeamAbbr: homeAbbr,
-        awayTeam: g.awayTeam?.placeName?.default ?? awayAbbr,
-        awayTeamAbbr: awayAbbr,
-        injuries: {
-          home: injuriesByTeam[homeAbbr] ?? [],
-          away: injuriesByTeam[awayAbbr] ?? [],
-        },
-      };
-
-      sourceById[id] = base;
-      return base;
-    });
-
-    // 4) cache só do Gemini
+    // 4) Gemini predictions (cache 12h)
     const redis = await getRedis();
     const geminiCacheKey = `gemini_only:${selectedDate}`;
     let geminiObj: any = null;
@@ -381,21 +429,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           geminiHit = true;
         }
       } catch (e) {
-        console.error("Redis read failed:", e);
+        console.error("Gemini cache read failed:", e);
       }
     }
 
     if (!geminiObj) {
       const ai = new GoogleGenAI({ apiKey });
 
+      const gamesForAI = scheduleGames.map((g) => ({
+        id: String(g.id),
+        dateTime: g.startTimeUTC ?? "",
+        homeTeamAbbr: normAbbr(g.homeTeam?.abbrev || ""),
+        awayTeamAbbr: normAbbr(g.awayTeam?.abbrev || ""),
+      }));
+
       const prompt = `
 Responde APENAS com JSON válido (sem texto extra).
 
-Tens estes jogos da NHL para ${selectedDate}.
-As lesões abaixo são REAIS. Usa-as no resumo/análise e NÃO inventes novas lesões.
-${JSON.stringify(gamesForAI, null, 2)}
-
-Devolve EXACTAMENTE este formato:
+Analisa estes jogos da NHL para ${selectedDate} e devolve EXACTAMENTE este formato:
 {
   "predictions": [
     {
@@ -426,10 +477,13 @@ Devolve EXACTAMENTE este formato:
     "over55Suggestions": ["string"]
   }
 }
+
+Jogos (IDs e abreviações):
+${JSON.stringify(gamesForAI, null, 2)}
 `.trim();
 
-      const { parsed } = await generateWithFallback(ai, prompt);
-      geminiObj = parsed;
+      const { modelUsed, parsed } = await generatePredictionsWithFallback(ai, prompt);
+      geminiObj = { ...parsed, modelUsed };
 
       if (redis) {
         try {
@@ -439,19 +493,21 @@ Devolve EXACTAMENTE este formato:
             { PX: GEMINI_TTL_MS }
           );
         } catch (e) {
-          console.error("Redis save failed:", e);
+          console.error("Gemini cache save failed:", e);
         }
       }
     }
 
-    const finalData: any = mergeInjuriesIntoPredictions(geminiObj, sourceById);
+    // 5) Merge final (injuries sempre vindas do pack)
+    const finalData: any = mergeInjuriesIntoPredictions(geminiObj, injuriesPack.injuriesByTeam);
 
-    // DEBUG
+    // debug/meta
     finalData.meta = {
       selectedDate,
-      cache: { geminiHit, key: geminiCacheKey },
-      injuriesCounts: Object.fromEntries(Object.entries(injuriesByTeam).map(([k, v]) => [k, v.length])),
-      injuriesDebug: debugByTeam,
+      cache: { geminiHit, geminiKey: geminiCacheKey, injuries: injuriesPack.meta },
+      injuriesCounts: injuriesPack.injuriesCounts,
+      injuriesMatch: injuriesPack.debugMatch,
+      extractedTeams: injuriesPack.extractedTeams,
       teamsOnDate: Array.from(teamAbbrs),
     };
 
