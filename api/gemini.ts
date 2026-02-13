@@ -79,7 +79,6 @@ async function fetchNhlScheduleGames(date: string): Promise<ScheduleGame[]> {
 }
 
 // ---------------- TEAM NAME MAP (para casar ESPN->ABBR) ----------------
-// Isto ajuda a mapear "Boston Bruins" -> "BOS" mesmo que a ESPN não mostre abreviação.
 const TEAM_FULLNAMES: Record<string, string[]> = {
   ANA: ["anaheim ducks", "ducks"],
   BOS: ["boston bruins", "bruins"],
@@ -112,28 +111,26 @@ const TEAM_FULLNAMES: Record<string, string[]> = {
   VGK: ["vegas golden knights", "golden knights", "knights"],
   WPG: ["winnipeg jets", "jets"],
   WSH: ["washington capitals", "capitals"],
-  UTA: ["utah hockey club", "utah"], // se aparecer assim na ESPN
-  ARI: ["arizona coyotes", "coyotes"], // se aparecer histórico
+  UTA: ["utah hockey club", "utah"],
+  ARI: ["arizona coyotes", "coyotes"],
 };
 
 function guessAbbrFromTeamName(teamName: string): string | null {
   const t = norm(teamName);
   if (!t) return null;
 
-  // match por full names / aliases
   for (const [abbr, names] of Object.entries(TEAM_FULLNAMES)) {
     for (const n of names) {
       if (t.includes(n)) return abbr;
     }
   }
-
   return null;
 }
 
 // ---------------- ESPN HTML -> GEMINI (extract injuries) ----------------
 type ExtractedTeamInjuries = {
-  team: string; // ex: "Boston Bruins"
-  injuries: string[]; // ex: ["Player (OUT) - Lower Body", ...]
+  team: string;
+  injuries: string[];
 };
 
 type InjuriesExtractResult = {
@@ -158,7 +155,6 @@ async function fetchEspnBrazilInjuriesHtml(): Promise<{ ok: boolean; status: num
 async function extractInjuriesWithGemini(apiKey: string, html: string): Promise<InjuriesExtractResult> {
   const ai = new GoogleGenAI({ apiKey });
 
-  // Não mandes HTML infinito. Mantemos um chunk grande, mas com limite.
   const MAX_CHARS = 180_000;
   const clipped = html.length > MAX_CHARS ? html.slice(0, MAX_CHARS) : html;
 
@@ -191,12 +187,11 @@ ${clipped}
   });
 
   const parsed = safeJsonParse(resp.text || "");
-  if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.teams)) {
+  if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as any).teams)) {
     return { teams: [] };
   }
 
-  // normaliza
-  const teams: ExtractedTeamInjuries[] = parsed.teams
+  const teams: ExtractedTeamInjuries[] = (parsed as any).teams
     .filter((x: any) => x && typeof x.team === "string" && Array.isArray(x.injuries))
     .map((x: any) => ({
       team: String(x.team),
@@ -210,7 +205,6 @@ async function getInjuriesByAbbr(apiKey: string, teamsOnDate: Set<string>) {
   const redis = await getRedis();
   const cacheKey = "espn_br_injuries_extracted_v1";
 
-  // 1) cache (6h)
   if (redis) {
     try {
       const raw = await redis.get(cacheKey);
@@ -228,23 +222,13 @@ async function getInjuriesByAbbr(apiKey: string, teamsOnDate: Set<string>) {
     }
   }
 
-  // 2) fetch html
   const htmlRes = await fetchEspnBrazilInjuriesHtml();
-
-  // 3) Gemini extrai (só parsing)
   const extracted = await extractInjuriesWithGemini(apiKey, htmlRes.html);
-
-  // 4) map para abreviações que interessam
   const mapped = mapExtractedToAbbr(extracted, teamsOnDate);
 
-  // 5) guarda cache
   if (redis) {
     try {
-      await redis.set(
-        cacheKey,
-        JSON.stringify({ savedAt: Date.now(), data: extracted }),
-        { PX: INJURIES_TTL_MS }
-      );
+      await redis.set(cacheKey, JSON.stringify({ savedAt: Date.now(), data: extracted }), { PX: INJURIES_TTL_MS });
     } catch (e) {
       console.error("Injuries cache save failed:", e);
     }
@@ -264,10 +248,8 @@ function mapExtractedToAbbr(extracted: InjuriesExtractResult, teamsOnDate: Set<s
   const injuriesByTeam: Record<string, string[]> = {};
   const debug: Record<string, any> = {};
 
-  // init vazios
   for (const abbr of teamsOnDate) injuriesByTeam[abbr] = [];
 
-  // tenta casar por nome -> abbr
   for (const t of extracted.teams) {
     const abbr = guessAbbrFromTeamName(t.team);
     if (!abbr) continue;
@@ -277,7 +259,6 @@ function mapExtractedToAbbr(extracted: InjuriesExtractResult, teamsOnDate: Set<s
     debug[abbr] = { matchedFrom: t.team, count: t.injuries.length };
   }
 
-  // counts
   const injuriesCounts = Object.fromEntries(
     Object.entries(injuriesByTeam).map(([k, v]) => [k, Array.isArray(v) ? v.length : 0])
   );
@@ -364,9 +345,37 @@ function mergeInjuriesIntoPredictions(geminiObj: any, injuriesByTeam: Record<str
   };
 }
 
+// ---------------- CORS HELPERS ----------------
+function setCors(req: VercelRequest, res: VercelResponse) {
+  const origin = String(req.headers.origin ?? "");
+
+  // Origens permitidas
+  const allowlist = new Set([
+    "capacitor://localhost",
+    "http://localhost",
+    "https://nhl-tipsterz.vercel.app",
+  ]);
+
+  // Se vier uma origin conhecida, devolve-a; senão, permite na mesma (útil para testes)
+  const allowOrigin = allowlist.has(origin) ? origin : "*";
+
+  res.setHeader("Access-Control-Allow-Origin", allowOrigin);
+  res.setHeader("Vary", "Origin");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+}
+
 // ---------------- HANDLER ----------------
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
+    // CORS (IMPORTANTE para Capacitor/WebView)
+    setCors(req, res);
+
+    // Preflight
+    if (req.method === "OPTIONS") {
+      return res.status(200).end();
+    }
+
     if (req.method !== "POST") return res.status(405).json({ message: "Use POST." });
 
     const apiKey = process.env.GEMINI_API_KEY;
@@ -379,8 +388,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    const body = typeof req.body === "string" ? safeJsonParse(req.body) : (req.body ?? {});
-    const selectedDate = body?.selectedDate;
+    const body = typeof req.body === "string" ? safeJsonParse(req.body) : req.body ?? {};
+    const selectedDate = (body as any)?.selectedDate;
 
     if (!selectedDate) {
       return res.status(400).json({
@@ -487,21 +496,16 @@ ${JSON.stringify(gamesForAI, null, 2)}
 
       if (redis) {
         try {
-          await redis.set(
-            geminiCacheKey,
-            JSON.stringify({ savedAt: Date.now(), data: geminiObj }),
-            { PX: GEMINI_TTL_MS }
-          );
+          await redis.set(geminiCacheKey, JSON.stringify({ savedAt: Date.now(), data: geminiObj }), { PX: GEMINI_TTL_MS });
         } catch (e) {
           console.error("Gemini cache save failed:", e);
         }
       }
     }
 
-    // 5) Merge final (injuries sempre vindas do pack)
+    // 5) Merge final
     const finalData: any = mergeInjuriesIntoPredictions(geminiObj, injuriesPack.injuriesByTeam);
 
-    // debug/meta
     finalData.meta = {
       selectedDate,
       cache: { geminiHit, geminiKey: geminiCacheKey, injuries: injuriesPack.meta },
