@@ -16,7 +16,6 @@ const getLogoUrl = (abbr: string) => {
     'COL': 'col', 'DAL': 'dal', 'DET': 'det', 'EDM': 'edm',
     'FLA': 'fla', 'MIN': 'min', 'OTT': 'ott', 'PHI': 'phi',
     'PIT': 'pit', 'SEA': 'sea', 'STL': 'stl', 'VAN': 'van',
-    // faltavam no teu map: TOR, CBJ já tens, mas adiciono TOR e outros comuns
     'TOR': 'tor',
   };
   const normalizedAbbr = abbr?.trim().toUpperCase();
@@ -24,74 +23,136 @@ const getLogoUrl = (abbr: string) => {
   return `https://a.espncdn.com/i/teamlogos/nhl/500/${code}.png`;
 };
 
-/** --- NOVO: mapping de nomes -> abreviações --- */
+/** --- mapping de nomes -> abreviações --- */
 const TEAM_NAME_TO_ABBR: Record<string, string> = {
   // Atlantic
   'Boston': 'BOS',
+  'Boston Bruins': 'BOS',
   'Buffalo': 'BUF',
+  'Buffalo Sabres': 'BUF',
   'Detroit': 'DET',
+  'Detroit Red Wings': 'DET',
   'Florida': 'FLA',
+  'Florida Panthers': 'FLA',
   'Montréal': 'MTL',
   'Montreal': 'MTL',
+  'Montréal Canadiens': 'MTL',
+  'Montreal Canadiens': 'MTL',
   'Ottawa': 'OTT',
+  'Ottawa Senators': 'OTT',
   'Tampa Bay': 'TBL',
+  'Tampa Bay Lightning': 'TBL',
   'Toronto': 'TOR',
+  'Toronto Maple Leafs': 'TOR',
 
   // Metro
   'Carolina': 'CAR',
+  'Carolina Hurricanes': 'CAR',
   'Columbus': 'CBJ',
+  'Columbus Blue Jackets': 'CBJ',
   'New Jersey': 'NJD',
+  'New Jersey Devils': 'NJD',
   'New York Islanders': 'NYI',
   'NY Islanders': 'NYI',
   'New York Rangers': 'NYR',
   'NY Rangers': 'NYR',
   'Philadelphia': 'PHI',
+  'Philadelphia Flyers': 'PHI',
   'Pittsburgh': 'PIT',
+  'Pittsburgh Penguins': 'PIT',
   'Washington': 'WSH',
+  'Washington Capitals': 'WSH',
 
   // Central
   'Chicago': 'CHI',
+  'Chicago Blackhawks': 'CHI',
   'Colorado': 'COL',
+  'Colorado Avalanche': 'COL',
   'Dallas': 'DAL',
+  'Dallas Stars': 'DAL',
   'Minnesota': 'MIN',
+  'Minnesota Wild': 'MIN',
   'Nashville': 'NSH',
+  'Nashville Predators': 'NSH',
   'St. Louis': 'STL',
   'St Louis': 'STL',
+  'St. Louis Blues': 'STL',
+  'St Louis Blues': 'STL',
   'Winnipeg': 'WPG',
+  'Winnipeg Jets': 'WPG',
 
   // Pacific
   'Anaheim': 'ANA',
+  'Anaheim Ducks': 'ANA',
   'Calgary': 'CGY',
+  'Calgary Flames': 'CGY',
   'Edmonton': 'EDM',
+  'Edmonton Oilers': 'EDM',
   'Los Angeles': 'LAK',
+  'Los Angeles Kings': 'LAK',
   'LA': 'LAK',
   'San Jose': 'SJS',
+  'San Jose Sharks': 'SJS',
   'Seattle': 'SEA',
+  'Seattle Kraken': 'SEA',
   'Vancouver': 'VAN',
+  'Vancouver Canucks': 'VAN',
   'Vegas': 'VGK',
+  'Vegas Golden Knights': 'VGK',
 
-  // Utah (caso uses)
+  // Utah / Arizona (caso uses)
   'Utah': 'UTA',
+  'Utah Hockey Club': 'UTA',
+  'Arizona': 'ARI',
+  'Arizona Coyotes': 'ARI',
+};
+
+// Normalizador (remove acentos e normaliza espaços)
+const normName = (s: string) =>
+  (s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+// Pré-normaliza chaves para matching “contains”
+const TEAM_KEYS_NORMALIZED: Array<{ key: string; keyNorm: string; abbr: string }> = Object.entries(TEAM_NAME_TO_ABBR)
+  .map(([key, abbr]) => ({ key, keyNorm: normName(key), abbr }))
+  // ordena por comprimento desc para preferir “Boston Bruins” antes de “Boston”
+  .sort((a, b) => b.keyNorm.length - a.keyNorm.length);
+
+/**
+ * NOVO: tenta encontrar 1 equipa num texto livre (ex: "Boston Bruins (78%)")
+ */
+const findSingleTeamAbbrFromText = (text: string): string | null => {
+  const t = normName(text.replace(/\(\d+%\)/g, ''));
+  if (!t) return null;
+
+  for (const { keyNorm, abbr } of TEAM_KEYS_NORMALIZED) {
+    if (keyNorm && t.includes(keyNorm)) return abbr;
+  }
+  return null;
 };
 
 /**
- * NOVO: extrai equipas de um texto que pode vir como:
+ * Extrai equipas de um texto que pode vir como:
  * - "TOR @ BOS (75%)"
  * - "Florida vs Toronto"
  * - "Montréal vs NY Islanders"
- * - "Boston vs Columbus"
+ * - "Boston Bruins"  ✅ agora funciona (1 equipa)
  */
 const parseTeamsFromText = (text: string): string[] => {
   const raw = (text || '').trim();
 
   // 1) Se já tiver abreviações (2-4 letras), usa-as
   const abbrMatches = raw.match(/\b[A-Z]{2,4}\b/g) || [];
-  // filtra percentagens tipo "75" não entra, mas "OT" podia entrar -> removemos "OT"
   const cleanedAbbr = abbrMatches
     .map(s => s.toUpperCase())
     .filter(s => s !== 'OT' && s !== 'VS' && s !== 'V');
 
   if (cleanedAbbr.length >= 2) return cleanedAbbr.slice(0, 2);
+  if (cleanedAbbr.length === 1) return cleanedAbbr;
 
   // 2) Caso venha por nomes: tenta detectar "A vs B" / "A v B" / "A @ B"
   const normalized = raw.replace(/\s+/g, ' ').replace(/\(\d+%\)/g, '').trim();
@@ -102,24 +163,28 @@ const parseTeamsFromText = (text: string): string[] => {
     : normalized.includes(' @ ') ? normalized.split(' @ ')
     : null;
 
-  if (!split || split.length < 2) return [];
+  if (split && split.length >= 2) {
+    const aName = split[0].trim();
+    const bName = split[1].trim();
 
-  const aName = split[0].trim();
-  const bName = split[1].trim();
+    const a = findSingleTeamAbbrFromText(aName);
+    const b = findSingleTeamAbbrFromText(bName);
 
-  const a = TEAM_NAME_TO_ABBR[aName] || '';
-  const b = TEAM_NAME_TO_ABBR[bName] || '';
+    const res: string[] = [];
+    if (a) res.push(a);
+    if (b) res.push(b);
 
-  const res: string[] = [];
-  if (a) res.push(a);
-  if (b) res.push(b);
+    if (res.length) return res;
+  }
 
-  return res;
+  // 3) ✅ NOVO: se for só um nome ("Boston Bruins"), tenta reconhecer 1 equipa
+  const single = findSingleTeamAbbrFromText(normalized);
+  return single ? [single] : [];
 };
 
 // Componente para extrair e mostrar logos e percentagem de uma string
 const SuggestionItem: React.FC<{ text: string; badgeColor: string; index: number }> = ({ text, badgeColor, index }) => {
-  // ✅ Agora suporta abreviações OU nomes
+  // ✅ Agora suporta abreviações OU nomes (inclusive 1 equipa)
   const teamMatches = parseTeamsFromText(text);
 
   // Encontra a percentagem (ex: 75%)
