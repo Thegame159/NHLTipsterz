@@ -44,8 +44,8 @@ const TEAM_FULLNAMES: Record<string, string[]> = {
   NJD: ["new jersey devils", "devils", "new jersey", "nj devils"],
   NSH: ["nashville predators", "predators", "nashville"],
   NYI: ["new york islanders", "islanders", "ny islanders", "nyi"],
-  // ✅ reforço para Rangers
-  NYR: ["new york rangers", "rangers", "ny rangers", "nyr"],
+  // ✅ reforço para Rangers + variações comuns
+  NYR: ["new york rangers", "rangers", "ny rangers", "nyr", "new york ranger"],
   OTT: ["ottawa senators", "senators", "ottawa"],
   PHI: ["philadelphia flyers", "flyers", "philadelphia"],
   PIT: ["pittsburgh penguins", "penguins", "pittsburgh"],
@@ -73,9 +73,10 @@ function guessAbbrFromText(text: string): string | null {
   const t = norm(text);
   if (!t) return null;
 
-  // abreviação direta
-  const m = text.toUpperCase().match(/\b[A-Z]{2,4}\b/);
-  if (m && !["OT", "VS", "V"].includes(m[0])) return m[0];
+  // abreviação direta (primeira ocorrência) — pode falhar se apanhar "VS", por isso filtramos
+  const mm = (text || "").toUpperCase().match(/\b[A-Z]{2,4}\b/g) || [];
+  const direct = mm.find((x) => !["OT", "VS", "V"].includes(x));
+  if (direct) return direct;
 
   // nomes completos/curtos
   for (const [abbr, names] of Object.entries(TEAM_FULLNAMES)) {
@@ -106,33 +107,78 @@ const splitMatchup = (text: string): [string, string] | null => {
   return [parts[0], parts[1]];
 };
 
+// ✅ Melhorado: se não houver abreviações suficientes, tenta nomes completos
 const parseTeamsFromText = (text: string): string[] => {
-  const raw = (text || "").toUpperCase();
+  const cleaned = normalizeGameText(text);
+  const raw = cleaned.toUpperCase();
+
   const abbrMatches = raw.match(/\b[A-Z]{2,4}\b/g) || [];
-  const cleaned = abbrMatches.filter((s) => !["OT", "VS", "V"].includes(s));
-  return cleaned.slice(0, 2);
+  const abbr = abbrMatches.filter((s) => !["OT", "VS", "V"].includes(s));
+  if (abbr.length >= 2) return abbr.slice(0, 2);
+
+  // fallback: nomes completos tipo "New York Rangers"
+  const sp = splitMatchup(cleaned);
+  if (sp) {
+    const a = guessAbbrFromText(sp[0]);
+    const b = guessAbbrFromText(sp[1]);
+    const out = [a, b].filter(Boolean) as string[];
+    if (out.length >= 2) return out.slice(0, 2);
+  }
+
+  // fallback single
+  const single = guessAbbrFromText(cleaned);
+  return single ? [single] : [];
 };
 
 const parseTeamSingle = (text: string): string | null => {
+  // 1) abreviação direta
   const raw = (text || "").toUpperCase();
-  const m = raw.match(/\b[A-Z]{2,4}\b/);
-  if (!m) return null;
-  const abbr = m[0];
-  if (["OT", "VS", "V"].includes(abbr)) return null;
-  return abbr;
+  const mm = raw.match(/\b[A-Z]{2,4}\b/g) || [];
+  const direct = mm.find((x) => !["OT", "VS", "V"].includes(x));
+  if (direct) return direct;
+
+  // 2) nome completo
+  return guessAbbrFromText(text);
 };
 
 const getLogoUrl = (abbr: string) => {
   const map: Record<string, string> = {
-    TBL: "tb", TB: "tb", SJS: "sj", SJ: "sj",
-    LAK: "la", LA: "la", VGK: "vgs", VGS: "vgs",
-    UTA: "utah", NJD: "nj", NJ: "nj", CBJ: "cbj",
-    WSH: "wsh", WPG: "wpg", NSH: "nsh", MTL: "mtl",
-    NYI: "nyi", NYR: "nyr", ANA: "ana", BOS: "bos",
-    BUF: "buf", CGY: "cgy", CAR: "car", CHI: "chi",
-    COL: "col", DAL: "dal", DET: "det", EDM: "edm",
-    FLA: "fla", MIN: "min", OTT: "ott", PHI: "phi",
-    PIT: "pit", SEA: "sea", STL: "stl", VAN: "van",
+    TBL: "tb",
+    TB: "tb",
+    SJS: "sj",
+    SJ: "sj",
+    LAK: "la",
+    LA: "la",
+    VGK: "vgs",
+    VGS: "vgs",
+    UTA: "utah",
+    NJD: "nj",
+    NJ: "nj",
+    CBJ: "cbj",
+    WSH: "wsh",
+    WPG: "wpg",
+    NSH: "nsh",
+    MTL: "mtl",
+    NYI: "nyi",
+    NYR: "nyr",
+    ANA: "ana",
+    BOS: "bos",
+    BUF: "buf",
+    CGY: "cgy",
+    CAR: "car",
+    CHI: "chi",
+    COL: "col",
+    DAL: "dal",
+    DET: "det",
+    EDM: "edm",
+    FLA: "fla",
+    MIN: "min",
+    OTT: "ott",
+    PHI: "phi",
+    PIT: "pit",
+    SEA: "sea",
+    STL: "stl",
+    VAN: "van",
     TOR: "tor",
   };
   const normalized = (abbr || "").trim().toUpperCase();
@@ -205,11 +251,8 @@ function evalMarkets(
   };
 
   const evalWinTeam = (text: string): PickEval => {
-    // 1) abreviação direta
-    let team = parseTeamSingle(text);
-
-    // 2) fallback: nome completo
-    if (!team) team = guessAbbrFromText(text);
+    // ✅ agora suporta abreviação OU nome completo (ex: New York Rangers)
+    const team = parseTeamSingle(text);
 
     if (!team) return { label: text, ok: null, reason: "Não consegui ler a equipa." };
 
@@ -217,7 +260,12 @@ function evalMarkets(
 
     // ✅ em vez de “equipa não encontrada”, tratamos como “dados ainda não disponíveis”
     if (!game) {
-      return { label: text, ok: null, teams: [team], reason: "Resultados do dia ainda não disponíveis para esta equipa." };
+      return {
+        label: text,
+        ok: null,
+        teams: [team],
+        reason: "Resultados do dia ainda não disponíveis para esta equipa.",
+      };
     }
 
     if (game.status !== "FINAL") return { label: text, ok: null, teams: [team], reason: "Jogo ainda não terminou." };
@@ -227,21 +275,11 @@ function evalMarkets(
 
   const out: Record<string, PickEval[]> = {
     "Vitória (incl. OT)": (sug.tripleWin || []).map(evalWinTeam),
-    "Over 1.5 P1 (Triplete)": (sug.tripleOver15P1 || []).map((t) =>
-      evalGamePick(t, (g) => g.p1Away + g.p1Home >= 2)
-    ),
-    "Over 1.5 P1 (Dupla)": (sug.doubleOver15P1 || []).map((t) =>
-      evalGamePick(t, (g) => g.p1Away + g.p1Home >= 2)
-    ),
-    "Empate TR": (sug.drawSuggestions || []).map((d) =>
-      evalGamePick(d.game, (g) => g.regAway === g.regHome)
-    ),
-    "Over 4.5": (sug.quadrupleOver45 || []).map((t) =>
-      evalGamePick(t, (g) => g.finalAway + g.finalHome >= 5)
-    ),
-    "Over 5.5": (sug.over55Suggestions || []).map((t) =>
-      evalGamePick(t, (g) => g.finalAway + g.finalHome >= 6)
-    ),
+    "Over 1.5 P1 (Triplete)": (sug.tripleOver15P1 || []).map((t) => evalGamePick(t, (g) => g.p1Away + g.p1Home >= 2)),
+    "Over 1.5 P1 (Dupla)": (sug.doubleOver15P1 || []).map((t) => evalGamePick(t, (g) => g.p1Away + g.p1Home >= 2)),
+    "Empate TR": (sug.drawSuggestions || []).map((d) => evalGamePick(d.game, (g) => g.regAway === g.regHome)),
+    "Over 4.5": (sug.quadrupleOver45 || []).map((t) => evalGamePick(t, (g) => g.finalAway + g.finalHome >= 5)),
+    "Over 5.5": (sug.over55Suggestions || []).map((t) => evalGamePick(t, (g) => g.finalAway + g.finalHome >= 6)),
   };
 
   let correct = 0;
@@ -278,16 +316,12 @@ const StatRow: React.FC<{
     <div className="flex items-center gap-3 sm:gap-6">
       <div className="text-right">
         <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Auto</div>
-        <div className="text-sm font-black text-amber-300">
-          {autoPct === null ? "--" : `${autoPct.toFixed(1)}%`}
-        </div>
+        <div className="text-sm font-black text-amber-300">{autoPct === null ? "--" : `${autoPct.toFixed(1)}%`}</div>
       </div>
 
       <div className="text-right">
         <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Minhas</div>
-        <div className="text-sm font-black text-blue-300">
-          {minePct === null ? "--" : `${minePct.toFixed(1)}%`}
-        </div>
+        <div className="text-sm font-black text-blue-300">{minePct === null ? "--" : `${minePct.toFixed(1)}%`}</div>
       </div>
 
       <div className="text-slate-500">
@@ -298,23 +332,28 @@ const StatRow: React.FC<{
 );
 
 const PickLine: React.FC<{ p: PickEval }> = ({ p }) => {
-  const icon =
-    p.ok === true ? "fa-check" :
-    p.ok === false ? "fa-times" :
-    "fa-clock";
+  const icon = p.ok === true ? "fa-check" : p.ok === false ? "fa-times" : "fa-clock";
 
   const color =
-    p.ok === true ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" :
-    p.ok === false ? "text-rose-400 bg-rose-500/10 border-rose-500/20" :
-    "text-slate-400 bg-white/5 border-white/10";
+    p.ok === true
+      ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
+      : p.ok === false
+      ? "text-rose-400 bg-rose-500/10 border-rose-500/20"
+      : "text-slate-400 bg-white/5 border-white/10";
 
-  let teams: string[] = p.teams && p.teams.length ? p.teams : parseTeamsFromText(normalizeGameText(p.label));
+  // ✅ Agora tenta:
+  // 1) p.teams (já resolvido no eval)
+  // 2) parseTeamsFromText (abreviações OU nomes completos)
+  // 3) guessAbbrFromText (single team)
+  let teams: string[] = p.teams && p.teams.length ? p.teams : parseTeamsFromText(p.label);
 
-  // fallback para nomes completos (auto win)
   if (!teams.length) {
     const single = guessAbbrFromText(p.label);
     if (single) teams = [single];
   }
+
+  // Normaliza para abreviações e remove vazios
+  teams = teams.map((t) => (t || "").trim().toUpperCase()).filter(Boolean);
 
   return (
     <div className="flex items-center justify-between gap-3 bg-slate-900/50 border border-slate-700/40 rounded-xl p-3">
@@ -330,6 +369,7 @@ const PickLine: React.FC<{ p: PickEval }> = ({ p }) => {
                 loading="lazy"
                 decoding="async"
                 onError={(e) => (e.currentTarget.style.display = "none")}
+                style={{ zIndex: 10 - i }}
               />
             ))}
           </div>
@@ -337,9 +377,7 @@ const PickLine: React.FC<{ p: PickEval }> = ({ p }) => {
 
         <div className="min-w-0">
           <div className="text-sm font-bold text-slate-100 truncate">{p.label}</div>
-          {p.ok === null && p.reason && (
-            <div className="text-[11px] text-slate-500 truncate">{p.reason}</div>
-          )}
+          {p.ok === null && p.reason && <div className="text-[11px] text-slate-500 truncate">{p.reason}</div>}
         </div>
       </div>
 
@@ -361,9 +399,7 @@ const MarketBlock: React.FC<{ title: string; picks: PickEval[] }> = ({ title, pi
     </div>
 
     {picks.length ? (
-      <div className="space-y-3">
-        {picks.map((p, idx) => <PickLine key={`${title}-${idx}`} p={p} />)}
-      </div>
+      <div className="space-y-3">{picks.map((p, idx) => <PickLine key={`${title}-${idx}`} p={p} />)}</div>
     ) : (
       <div className="text-[11px] text-slate-600 italic">Sem picks.</div>
     )}
@@ -413,9 +449,11 @@ const StatsView: React.FC = () => {
           const autoSug: Suggestions | null = autoRaw?.suggestions ?? null;
 
           const mineSug: Suggestions | null =
-            (myRaw && (myRaw as any).suggestions) ? (myRaw as any).suggestions :
-            (myRaw && (myRaw as any).tripleWin) ? (myRaw as any as Suggestions) :
-            null;
+            myRaw && (myRaw as any).suggestions
+              ? (myRaw as any).suggestions
+              : myRaw && (myRaw as any).tripleWin
+              ? ((myRaw as any) as Suggestions)
+              : null;
 
           const autoEval = autoSug ? evalMarkets(autoSug, results) : { correct: 0, total: 0, byMarket: {} };
           const mineEval = mineSug ? evalMarkets(mineSug, results) : { correct: 0, total: 0, byMarket: {} };
@@ -443,19 +481,29 @@ const StatsView: React.FC = () => {
       if (!cancelled) setReports(next);
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [dates]);
 
   const totals = useMemo(() => {
-    let aC = 0, aT = 0, mC = 0, mT = 0;
+    let aC = 0,
+      aT = 0,
+      mC = 0,
+      mT = 0;
     for (const r of reports) {
-      aC += r.auto.correct; aT += r.auto.total;
-      mC += r.mine.correct; mT += r.mine.total;
+      aC += r.auto.correct;
+      aT += r.auto.total;
+      mC += r.mine.correct;
+      mT += r.mine.total;
     }
     return {
       autoPct: aT > 0 ? (aC / aT) * 100 : null,
       minePct: mT > 0 ? (mC / mT) * 100 : null,
-      aC, aT, mC, mT,
+      aC,
+      aT,
+      mC,
+      mT,
     };
   }, [reports]);
 
@@ -487,14 +535,18 @@ const StatsView: React.FC = () => {
             <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Auto (geral)</div>
             <div className="text-sm font-black text-amber-300">
               {totals.autoPct === null ? "--" : `${totals.autoPct.toFixed(1)}%`}
-              <span className="text-[10px] text-slate-500 ml-2">{totals.aC}/{totals.aT}</span>
+              <span className="text-[10px] text-slate-500 ml-2">
+                {totals.aC}/{totals.aT}
+              </span>
             </div>
           </div>
           <div className="text-right">
             <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Minhas (geral)</div>
             <div className="text-sm font-black text-blue-300">
               {totals.minePct === null ? "--" : `${totals.minePct.toFixed(1)}%`}
-              <span className="text-[10px] text-slate-500 ml-2">{totals.mC}/{totals.mT}</span>
+              <span className="text-[10px] text-slate-500 ml-2">
+                {totals.mC}/{totals.mT}
+              </span>
             </div>
           </div>
         </div>
@@ -516,15 +568,11 @@ const StatsView: React.FC = () => {
               {isOpen && (
                 <div className="bg-slate-800/30 border border-slate-700/40 rounded-2xl p-5 space-y-8">
                   {r.resultsStatus === "loading" && (
-                    <div className="text-[11px] text-slate-500 font-black uppercase tracking-widest">
-                      A carregar resultados…
-                    </div>
+                    <div className="text-[11px] text-slate-500 font-black uppercase tracking-widest">A carregar resultados…</div>
                   )}
 
                   {r.resultsStatus === "error" && (
-                    <div className="text-[11px] text-rose-400 font-black">
-                      Erro a obter resultados: {r.error}
-                    </div>
+                    <div className="text-[11px] text-rose-400 font-black">Erro a obter resultados: {r.error}</div>
                   )}
 
                   {r.resultsStatus === "ready" && (
@@ -565,9 +613,7 @@ const StatsView: React.FC = () => {
                             ))}
                           </div>
                         ) : (
-                          <div className="text-[11px] text-slate-600 italic">
-                            Sem picks guardadas para esta data.
-                          </div>
+                          <div className="text-[11px] text-slate-600 italic">Sem picks guardadas para esta data.</div>
                         )}
                       </div>
                     </div>
