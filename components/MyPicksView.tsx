@@ -35,7 +35,6 @@ const getLogoUrl = (abbr: string) => {
   return `https://a.espncdn.com/i/teamlogos/nhl/500/${code}.png`;
 };
 
-// Normaliza texto de jogo para formato consistente: "AAA VS BBB"
 const normalizeGameText = (s: string) =>
   (s || "")
     .trim()
@@ -57,16 +56,25 @@ const parseTeamsFromText = (text: string): string[] => {
   return [];
 };
 
+const isEmptyPicks = (p: Suggestions) =>
+  p.tripleWin.length === 0 &&
+  p.tripleOver15P1.length === 0 &&
+  p.doubleOver15P1.length === 0 &&
+  p.quadrupleOver45.length === 0 &&
+  p.over55Suggestions.length === 0 &&
+  p.drawSuggestions.length === 0;
+
 const SuggestionItem: React.FC<{
   text: string;
   badgeColor: string;
   index: number;
   onRemove?: () => void;
-}> = ({ text, badgeColor, index, onRemove }) => {
+  disabled?: boolean;
+}> = ({ text, badgeColor, index, onRemove, disabled }) => {
   const teams = parseTeamsFromText(text);
 
   return (
-    <div className="flex items-center gap-3 bg-slate-900/60 p-3 rounded-xl border border-slate-700/50 group hover:border-blue-500/30 transition-colors">
+    <div className={`flex items-center gap-3 bg-slate-900/60 p-3 rounded-xl border border-slate-700/50 group transition-colors ${disabled ? "opacity-70" : "hover:border-blue-500/30"}`}>
       <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${badgeColor} text-white shrink-0 shadow-sm`}>
         {index + 1}
       </div>
@@ -89,7 +97,7 @@ const SuggestionItem: React.FC<{
           </div>
         )}
 
-        <span className="text-sm font-semibold text-slate-200 group-hover:text-white truncate">
+        <span className="text-sm font-semibold text-slate-200 truncate">
           {text}
         </span>
       </div>
@@ -97,8 +105,11 @@ const SuggestionItem: React.FC<{
       {onRemove && (
         <button
           onClick={onRemove}
-          className="text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-rose-400 transition"
-          title="Remover"
+          disabled={disabled}
+          className={`text-[10px] font-black uppercase tracking-widest transition ${
+            disabled ? "text-slate-600 cursor-not-allowed" : "text-slate-500 hover:text-rose-400"
+          }`}
+          title={disabled ? "Ativa Editar para alterar" : "Remover"}
         >
           Remover
         </button>
@@ -135,9 +146,14 @@ const CardShell: React.FC<{
 const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
   const [picks, setPicks] = useState<Suggestions>(defaultSuggestions());
 
+  // ✅ modo edição
+  const [isEditing, setIsEditing] = useState<boolean>(true);
+
+  // feedback “guardado”
+  const [saveState, setSaveState] = useState<"idle" | "saved">("idle");
+
   const [teamPick, setTeamPick] = useState<string>("");
 
-  // ✅ Separar picks por card (cada um tem o seu)
   const [gamePickOver15Triple, setGamePickOver15Triple] = useState<string>("");
   const [gamePickOver15Double, setGamePickOver15Double] = useState<string>("");
   const [gamePickOver45Quad, setGamePickOver45Quad] = useState<string>("");
@@ -146,7 +162,6 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
   const [drawPick, setDrawPick] = useState<string>("");
   const [drawNote, setDrawNote] = useState<string>("");
 
-  // equipas do dia
   const teams = useMemo(() => {
     const set = new Set<string>();
     for (const g of predictions) {
@@ -156,7 +171,6 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
     return Array.from(set).sort();
   }, [predictions]);
 
-  // jogos do dia (normalizados)
   const gamesOfDay = useMemo(() => {
     return predictions
       .map((g) => normalizeGameText(`${g.awayTeamAbbr} vs ${g.homeTeamAbbr}`))
@@ -194,33 +208,41 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
     return gamesOfDay.filter((g) => !chosen.has(normalizeGameText(g)));
   }, [gamesOfDay, picks.drawSuggestions]);
 
-  // carregar
+  // ✅ Carregar do storage e definir modo edição:
+  // - se tiver picks guardadas -> começa em modo "bloqueado" (isEditing=false)
+  // - se não tiver -> começa em edição
   useEffect(() => {
     try {
       const raw = localStorage.getItem(storageKey(selectedDate));
       if (!raw) {
         setPicks(defaultSuggestions());
+        setIsEditing(true);
+        setSaveState("idle");
         return;
       }
       const parsed = JSON.parse(raw);
-      setPicks({
+      const loaded: Suggestions = {
         ...defaultSuggestions(),
         ...parsed,
         drawSuggestions: Array.isArray(parsed?.drawSuggestions) ? parsed.drawSuggestions : [],
-      });
+      };
+      setPicks(loaded);
+      setIsEditing(isEmptyPicks(loaded)); // se tiver vazio -> deixa editar
+      setSaveState(isEmptyPicks(loaded) ? "idle" : "saved");
     } catch {
       setPicks(defaultSuggestions());
+      setIsEditing(true);
+      setSaveState("idle");
     }
+    // limpa selects ao trocar data
+    setTeamPick("");
+    setGamePickOver15Triple("");
+    setGamePickOver15Double("");
+    setGamePickOver45Quad("");
+    setGamePickOver55("");
+    setDrawPick("");
+    setDrawNote("");
   }, [selectedDate]);
-
-  // guardar
-  useEffect(() => {
-    try {
-      localStorage.setItem(storageKey(selectedDate), JSON.stringify(picks));
-    } catch {
-      // ignore
-    }
-  }, [picks, selectedDate]);
 
   const addUnique = (arr: string[], value: string, max: number) => {
     const v = (value || "").trim().toUpperCase();
@@ -240,31 +262,90 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
 
   const removeAt = <T,>(arr: T[], idx: number) => arr.filter((_, i) => i !== idx);
 
+  const savePicks = () => {
+    try {
+      localStorage.setItem(storageKey(selectedDate), JSON.stringify(picks));
+      setSaveState("saved");
+      setIsEditing(false);
+    } catch {
+      // ignore
+    }
+  };
+
+  const enableEditing = () => {
+    setIsEditing(true);
+    setSaveState("idle");
+  };
+
+  const clearAll = () => {
+    if (!isEditing) return;
+    if (confirm("Limpar todas as tuas picks desta data?")) {
+      setPicks(defaultSuggestions());
+      setSaveState("idle");
+    }
+  };
+
+  const disabled = !isEditing;
+
   return (
     <div className="space-y-8 pb-24">
       <div className="bg-gradient-to-r from-blue-900/40 to-slate-900/40 border border-blue-500/20 rounded-2xl p-6 sm:p-8 flex flex-col sm:flex-row items-center gap-6">
         <div className="bg-blue-600/20 p-4 rounded-2xl border border-blue-500/30">
           <i className="fas fa-user-check text-4xl text-blue-400" />
         </div>
+
         <div className="flex-1">
           <h2 className="text-2xl font-black text-white italic">
             MINHAS <span className="text-blue-500">PICKS</span>
           </h2>
           <p className="text-slate-400 text-sm max-w-lg">
-            Escolhe manualmente as tuas seleções para {selectedDate}. Fica guardado automaticamente.
+            Escolhe manualmente as tuas seleções para {selectedDate}.{" "}
+            {disabled ? "Modo bloqueado (clica Editar para alterar)." : "Modo edição ativo."}
           </p>
         </div>
 
-        <button
-          onClick={() => {
-            if (confirm("Limpar todas as tuas picks desta data?")) setPicks(defaultSuggestions());
-          }}
-          className="bg-white/5 hover:bg-rose-500/10 text-slate-300 hover:text-rose-300 border border-white/10 hover:border-rose-500/20 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition"
-        >
-          Limpar tudo
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={enableEditing}
+            disabled={isEditing}
+            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition border ${
+              isEditing
+                ? "bg-white/5 text-slate-600 border-white/10 cursor-not-allowed"
+                : "bg-white/5 hover:bg-white/10 text-slate-200 border-white/10"
+            }`}
+            title={isEditing ? "Já estás em modo edição" : "Editar picks"}
+          >
+            Editar
+          </button>
+
+          <button
+            onClick={savePicks}
+            disabled={!isEditing}
+            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition border ${
+              !isEditing
+                ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/20 cursor-not-allowed"
+                : "bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border-emerald-500/30"
+            }`}
+            title={!isEditing ? "Já está guardado" : "Guardar e bloquear"}
+          >
+            {saveState === "saved" && !isEditing ? "Guardado ✅" : "Salvar"}
+          </button>
+
+          <button
+            onClick={clearAll}
+            disabled={!isEditing}
+            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition border ${
+              !isEditing
+                ? "bg-rose-500/5 text-slate-600 border-white/10 cursor-not-allowed"
+                : "bg-rose-500/10 hover:bg-rose-500/15 text-rose-200 border-rose-500/20"
+            }`}
+          >
+            Limpar
+          </button>
+        </div>
       </div>
 
+      {/* GRID */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {/* Triplete de Vitórias */}
         <CardShell
@@ -277,7 +358,10 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
             <select
               value={teamPick}
               onChange={(e) => setTeamPick(e.target.value)}
-              className="flex-1 bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none"
+              disabled={disabled}
+              className={`flex-1 bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none ${
+                disabled ? "opacity-60 cursor-not-allowed" : ""
+              }`}
             >
               <option value="">Selecionar equipa…</option>
               {availableTeams.map((t) => (
@@ -289,8 +373,14 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
               onClick={() => {
                 setPicks((p) => ({ ...p, tripleWin: addUnique(p.tripleWin, teamPick, 3) }));
                 setTeamPick("");
+                setSaveState("idle");
               }}
-              className="bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/30 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition"
+              disabled={disabled}
+              className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition border ${
+                disabled
+                  ? "bg-amber-500/10 text-slate-600 border-white/10 cursor-not-allowed"
+                  : "bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border-amber-500/30"
+              }`}
             >
               + Add
             </button>
@@ -303,7 +393,12 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
                 text={item}
                 badgeColor="bg-amber-500"
                 index={idx}
-                onRemove={() => setPicks((p) => ({ ...p, tripleWin: removeAt(p.tripleWin, idx) }))}
+                disabled={disabled}
+                onRemove={() => {
+                  if (disabled) return;
+                  setPicks((p) => ({ ...p, tripleWin: removeAt(p.tripleWin, idx) }));
+                  setSaveState("idle");
+                }}
               />
             )) : (
               <p className="text-slate-500 italic text-sm py-2">Sem seleções ainda.</p>
@@ -322,7 +417,10 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
             <select
               value={gamePickOver15Triple}
               onChange={(e) => setGamePickOver15Triple(e.target.value)}
-              className="flex-1 bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none"
+              disabled={disabled}
+              className={`flex-1 bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none ${
+                disabled ? "opacity-60 cursor-not-allowed" : ""
+              }`}
             >
               <option value="">Selecionar jogo…</option>
               {availableTripleOver15.map((v) => (
@@ -334,8 +432,14 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
               onClick={() => {
                 setPicks((p) => ({ ...p, tripleOver15P1: addGameUnique(p.tripleOver15P1, gamePickOver15Triple, 3) }));
                 setGamePickOver15Triple("");
+                setSaveState("idle");
               }}
-              className="bg-red-500/20 hover:bg-red-500/30 text-red-200 border border-red-500/30 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition"
+              disabled={disabled}
+              className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition border ${
+                disabled
+                  ? "bg-red-500/10 text-slate-600 border-white/10 cursor-not-allowed"
+                  : "bg-red-500/20 hover:bg-red-500/30 text-red-200 border-red-500/30"
+              }`}
             >
               + Add
             </button>
@@ -348,7 +452,12 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
                 text={item}
                 badgeColor="bg-red-500"
                 index={idx}
-                onRemove={() => setPicks((p) => ({ ...p, tripleOver15P1: removeAt(p.tripleOver15P1, idx) }))}
+                disabled={disabled}
+                onRemove={() => {
+                  if (disabled) return;
+                  setPicks((p) => ({ ...p, tripleOver15P1: removeAt(p.tripleOver15P1, idx) }));
+                  setSaveState("idle");
+                }}
               />
             )) : (
               <p className="text-slate-500 italic text-sm py-2">Sem seleções ainda.</p>
@@ -367,7 +476,10 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
             <select
               value={gamePickOver15Double}
               onChange={(e) => setGamePickOver15Double(e.target.value)}
-              className="flex-1 bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none"
+              disabled={disabled}
+              className={`flex-1 bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none ${
+                disabled ? "opacity-60 cursor-not-allowed" : ""
+              }`}
             >
               <option value="">Selecionar jogo…</option>
               {availableDoubleOver15.map((v) => (
@@ -379,8 +491,14 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
               onClick={() => {
                 setPicks((p) => ({ ...p, doubleOver15P1: addGameUnique(p.doubleOver15P1, gamePickOver15Double, 2) }));
                 setGamePickOver15Double("");
+                setSaveState("idle");
               }}
-              className="bg-blue-500/20 hover:bg-blue-500/30 text-blue-200 border border-blue-500/30 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition"
+              disabled={disabled}
+              className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition border ${
+                disabled
+                  ? "bg-blue-500/10 text-slate-600 border-white/10 cursor-not-allowed"
+                  : "bg-blue-500/20 hover:bg-blue-500/30 text-blue-200 border-blue-500/30"
+              }`}
             >
               + Add
             </button>
@@ -393,7 +511,12 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
                 text={item}
                 badgeColor="bg-blue-500"
                 index={idx}
-                onRemove={() => setPicks((p) => ({ ...p, doubleOver15P1: removeAt(p.doubleOver15P1, idx) }))}
+                disabled={disabled}
+                onRemove={() => {
+                  if (disabled) return;
+                  setPicks((p) => ({ ...p, doubleOver15P1: removeAt(p.doubleOver15P1, idx) }));
+                  setSaveState("idle");
+                }}
               />
             )) : (
               <p className="text-slate-500 italic text-sm py-2">Sem seleções ainda.</p>
@@ -412,7 +535,10 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
             <select
               value={gamePickOver45Quad}
               onChange={(e) => setGamePickOver45Quad(e.target.value)}
-              className="flex-1 bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none"
+              disabled={disabled}
+              className={`flex-1 bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none ${
+                disabled ? "opacity-60 cursor-not-allowed" : ""
+              }`}
             >
               <option value="">Selecionar jogo…</option>
               {availableQuadOver45.map((v) => (
@@ -424,8 +550,14 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
               onClick={() => {
                 setPicks((p) => ({ ...p, quadrupleOver45: addGameUnique(p.quadrupleOver45, gamePickOver45Quad, 4) }));
                 setGamePickOver45Quad("");
+                setSaveState("idle");
               }}
-              className="bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border border-emerald-500/30 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition"
+              disabled={disabled}
+              className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition border ${
+                disabled
+                  ? "bg-emerald-500/10 text-slate-600 border-white/10 cursor-not-allowed"
+                  : "bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border-emerald-500/30"
+              }`}
             >
               + Add
             </button>
@@ -438,7 +570,12 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
                 text={item}
                 badgeColor="bg-emerald-500"
                 index={idx}
-                onRemove={() => setPicks((p) => ({ ...p, quadrupleOver45: removeAt(p.quadrupleOver45, idx) }))}
+                disabled={disabled}
+                onRemove={() => {
+                  if (disabled) return;
+                  setPicks((p) => ({ ...p, quadrupleOver45: removeAt(p.quadrupleOver45, idx) }));
+                  setSaveState("idle");
+                }}
               />
             )) : (
               <p className="text-slate-500 italic text-sm py-2">Sem seleções ainda.</p>
@@ -446,7 +583,7 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
           </div>
         </CardShell>
 
-        {/* Empate TR */}
+        {/* Empate TR (mantive igual em comportamento, mas com disabled) */}
         <div className="md:col-span-2 bg-slate-800/40 border border-slate-700 rounded-2xl p-6 relative overflow-hidden group">
           <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500" />
           <h3 className="text-xl font-bold flex items-center mb-6 text-indigo-400">
@@ -458,7 +595,10 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
             <select
               value={drawPick}
               onChange={(e) => setDrawPick(e.target.value)}
-              className="flex-1 bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none"
+              disabled={disabled}
+              className={`flex-1 bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none ${
+                disabled ? "opacity-60 cursor-not-allowed" : ""
+              }`}
             >
               <option value="">Selecionar jogo…</option>
               {availableDraw.map((v) => (
@@ -469,8 +609,11 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
             <input
               value={drawNote}
               onChange={(e) => setDrawNote(e.target.value)}
+              disabled={disabled}
               placeholder="(opcional) nota rápida"
-              className="flex-1 bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2 text-[11px] font-bold text-slate-200 outline-none"
+              className={`flex-1 bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2 text-[11px] font-bold text-slate-200 outline-none ${
+                disabled ? "opacity-60 cursor-not-allowed" : ""
+              }`}
             />
 
             <button
@@ -485,8 +628,14 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
 
                 setDrawPick("");
                 setDrawNote("");
+                setSaveState("idle");
               }}
-              className="bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-200 border border-indigo-500/30 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition"
+              disabled={disabled}
+              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition border ${
+                disabled
+                  ? "bg-indigo-500/10 text-slate-600 border-white/10 cursor-not-allowed"
+                  : "bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-200 border-indigo-500/30"
+              }`}
             >
               + Add
             </button>
@@ -496,14 +645,21 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
             {picks.drawSuggestions.length ? picks.drawSuggestions.map((s, idx) => {
               const teams = parseTeamsFromText(s.game);
               return (
-                <div key={`${s.game}-${idx}`} className="bg-slate-900/80 p-5 rounded-2xl border border-slate-700/50 hover:bg-slate-900 transition-all">
+                <div key={`${s.game}-${idx}`} className={`bg-slate-900/80 p-5 rounded-2xl border border-slate-700/50 transition-all ${disabled ? "opacity-75" : "hover:bg-slate-900"}`}>
                   <div className="flex items-center justify-between mb-3">
                     <span className="bg-indigo-500/20 text-indigo-300 text-[10px] font-black px-2 py-0.5 rounded border border-indigo-500/30 uppercase tracking-widest">
                       Draw Candidate
                     </span>
                     <button
-                      onClick={() => setPicks((p) => ({ ...p, drawSuggestions: removeAt(p.drawSuggestions, idx) }))}
-                      className="text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-rose-400 transition"
+                      onClick={() => {
+                        if (disabled) return;
+                        setPicks((p) => ({ ...p, drawSuggestions: removeAt(p.drawSuggestions, idx) }));
+                        setSaveState("idle");
+                      }}
+                      disabled={disabled}
+                      className={`text-[10px] font-black uppercase tracking-widest transition ${
+                        disabled ? "text-slate-600 cursor-not-allowed" : "text-slate-500 hover:text-rose-400"
+                      }`}
                     >
                       Remover
                     </button>
@@ -557,7 +713,10 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
             <select
               value={gamePickOver55}
               onChange={(e) => setGamePickOver55(e.target.value)}
-              className="flex-1 bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none"
+              disabled={disabled}
+              className={`flex-1 bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none ${
+                disabled ? "opacity-60 cursor-not-allowed" : ""
+              }`}
             >
               <option value="">Selecionar jogo…</option>
               {availableOver55.map((v) => (
@@ -569,8 +728,14 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
               onClick={() => {
                 setPicks((p) => ({ ...p, over55Suggestions: addGameUnique(p.over55Suggestions, gamePickOver55, 12) }));
                 setGamePickOver55("");
+                setSaveState("idle");
               }}
-              className="bg-pink-500/20 hover:bg-pink-500/30 text-pink-200 border border-pink-500/30 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition"
+              disabled={disabled}
+              className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition border ${
+                disabled
+                  ? "bg-pink-500/10 text-slate-600 border-white/10 cursor-not-allowed"
+                  : "bg-pink-500/20 hover:bg-pink-500/30 text-pink-200 border-pink-500/30"
+              }`}
             >
               + Add
             </button>
@@ -583,7 +748,12 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
                 text={item}
                 badgeColor="bg-pink-500"
                 index={idx}
-                onRemove={() => setPicks((p) => ({ ...p, over55Suggestions: removeAt(p.over55Suggestions, idx) }))}
+                disabled={disabled}
+                onRemove={() => {
+                  if (disabled) return;
+                  setPicks((p) => ({ ...p, over55Suggestions: removeAt(p.over55Suggestions, idx) }));
+                  setSaveState("idle");
+                }}
               />
             )) : (
               <p className="text-slate-500 italic text-sm py-2">Sem seleções ainda.</p>
