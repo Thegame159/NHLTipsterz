@@ -24,39 +24,40 @@ type ApiResultsResponse = {
   byMatchup: Record<string, ApiResultGame>;
 };
 
-// ----------------- TEAM NAME -> ABBR (para Auto) -----------------
+// ----------------- TEAM NAME -> ABBR (para Auto / nomes completos) -----------------
 const TEAM_FULLNAMES: Record<string, string[]> = {
-  ANA: ["anaheim ducks", "ducks"],
-  BOS: ["boston bruins", "bruins"],
-  BUF: ["buffalo sabres", "sabres"],
-  CAR: ["carolina hurricanes", "hurricanes"],
-  CBJ: ["columbus blue jackets", "blue jackets", "bluejackets"],
-  CGY: ["calgary flames", "flames"],
-  CHI: ["chicago blackhawks", "blackhawks"],
-  COL: ["colorado avalanche", "avalanche"],
-  DAL: ["dallas stars", "stars"],
-  DET: ["detroit red wings", "red wings", "redwings"],
-  EDM: ["edmonton oilers", "oilers"],
-  FLA: ["florida panthers", "panthers"],
-  LAK: ["los angeles kings", "la kings", "kings"],
-  MIN: ["minnesota wild", "wild"],
-  MTL: ["montreal canadiens", "montréal canadiens", "canadiens"],
-  NJD: ["new jersey devils", "devils"],
-  NSH: ["nashville predators", "predators"],
-  NYI: ["new york islanders", "islanders", "ny islanders"],
-  NYR: ["new york rangers", "rangers", "ny rangers"],
-  OTT: ["ottawa senators", "senators"],
-  PHI: ["philadelphia flyers", "flyers"],
-  PIT: ["pittsburgh penguins", "penguins"],
-  SEA: ["seattle kraken", "kraken"],
-  SJS: ["san jose sharks", "sharks"],
-  STL: ["st. louis blues", "st louis blues", "blues"],
-  TBL: ["tampa bay lightning", "lightning"],
-  TOR: ["toronto maple leafs", "maple leafs", "leafs"],
-  VAN: ["vancouver canucks", "canucks"],
-  VGK: ["vegas golden knights", "golden knights", "knights"],
-  WPG: ["winnipeg jets", "jets"],
-  WSH: ["washington capitals", "capitals"],
+  ANA: ["anaheim ducks", "ducks", "anaheim"],
+  BOS: ["boston bruins", "bruins", "boston"],
+  BUF: ["buffalo sabres", "sabres", "buffalo"],
+  CAR: ["carolina hurricanes", "hurricanes", "carolina"],
+  CBJ: ["columbus blue jackets", "blue jackets", "bluejackets", "columbus"],
+  CGY: ["calgary flames", "flames", "calgary"],
+  CHI: ["chicago blackhawks", "blackhawks", "chicago"],
+  COL: ["colorado avalanche", "avalanche", "colorado"],
+  DAL: ["dallas stars", "stars", "dallas"],
+  DET: ["detroit red wings", "red wings", "redwings", "detroit"],
+  EDM: ["edmonton oilers", "oilers", "edmonton"],
+  FLA: ["florida panthers", "panthers", "florida"],
+  LAK: ["los angeles kings", "la kings", "kings", "los angeles"],
+  MIN: ["minnesota wild", "wild", "minnesota"],
+  MTL: ["montreal canadiens", "montréal canadiens", "canadiens", "montreal", "montréal"],
+  NJD: ["new jersey devils", "devils", "new jersey", "nj devils"],
+  NSH: ["nashville predators", "predators", "nashville"],
+  NYI: ["new york islanders", "islanders", "ny islanders", "nyi"],
+  // ✅ reforço para Rangers
+  NYR: ["new york rangers", "rangers", "ny rangers", "nyr"],
+  OTT: ["ottawa senators", "senators", "ottawa"],
+  PHI: ["philadelphia flyers", "flyers", "philadelphia"],
+  PIT: ["pittsburgh penguins", "penguins", "pittsburgh"],
+  SEA: ["seattle kraken", "kraken", "seattle"],
+  SJS: ["san jose sharks", "sharks", "san jose"],
+  STL: ["st. louis blues", "st louis blues", "blues", "st louis", "saint louis"],
+  TBL: ["tampa bay lightning", "lightning", "tampa bay", "tampa"],
+  TOR: ["toronto maple leafs", "maple leafs", "leafs", "toronto"],
+  VAN: ["vancouver canucks", "canucks", "vancouver"],
+  VGK: ["vegas golden knights", "golden knights", "knights", "vegas"],
+  WPG: ["winnipeg jets", "jets", "winnipeg"],
+  WSH: ["washington capitals", "capitals", "washington"],
   UTA: ["utah hockey club", "utah"],
 };
 
@@ -72,10 +73,11 @@ function guessAbbrFromText(text: string): string | null {
   const t = norm(text);
   if (!t) return null;
 
-  // se já for abreviação
+  // abreviação direta
   const m = text.toUpperCase().match(/\b[A-Z]{2,4}\b/);
   if (m && !["OT", "VS", "V"].includes(m[0])) return m[0];
 
+  // nomes completos/curtos
   for (const [abbr, names] of Object.entries(TEAM_FULLNAMES)) {
     for (const n of names) {
       if (t.includes(n)) return abbr;
@@ -162,6 +164,7 @@ function safeReadJson<T>(key: string): T | null {
 
 // ----------------- Eval -----------------
 type PickEval = { label: string; ok: boolean | null; reason?: string; teams?: string[] };
+
 type DayReport = {
   date: string;
   auto: { percent: number | null; correct: number; total: number; byMarket: Record<string, PickEval[]> };
@@ -170,21 +173,24 @@ type DayReport = {
   error?: string;
 };
 
-function evalMarkets(sug: Suggestions, results: ApiResultsResponse): { correct: number; total: number; byMarket: Record<string, PickEval[]> } {
+function evalMarkets(
+  sug: Suggestions,
+  results: ApiResultsResponse
+): { correct: number; total: number; byMarket: Record<string, PickEval[]> } {
   const byMatchup = results.byMatchup || {};
 
   const evalGamePick = (text: string, fn: (g: ApiResultGame) => boolean): PickEval => {
     const cleaned = normalizeGameText(text);
 
-    // tenta abreviações primeiro
+    // 1) tenta abreviações
     let teams = parseTeamsFromText(cleaned);
 
-    // fallback: tentar nomes completos "Boston Bruins vs Toronto Maple Leafs"
+    // 2) fallback: nomes completos "Boston Bruins VS Toronto Maple Leafs"
     if (teams.length < 2) {
-      const split = splitMatchup(cleaned);
-      if (!split) return { label: text, ok: null, reason: "Não consegui ler as equipas." };
-      const a = guessAbbrFromText(split[0]);
-      const b = guessAbbrFromText(split[1]);
+      const sp = splitMatchup(cleaned);
+      if (!sp) return { label: text, ok: null, reason: "Não consegui ler as equipas." };
+      const a = guessAbbrFromText(sp[0]);
+      const b = guessAbbrFromText(sp[1]);
       teams = [a || "", b || ""].filter(Boolean);
     }
 
@@ -199,16 +205,21 @@ function evalMarkets(sug: Suggestions, results: ApiResultsResponse): { correct: 
   };
 
   const evalWinTeam = (text: string): PickEval => {
-    // abreviação direta
+    // 1) abreviação direta
     let team = parseTeamSingle(text);
 
-    // fallback: nome completo
+    // 2) fallback: nome completo
     if (!team) team = guessAbbrFromText(text);
 
     if (!team) return { label: text, ok: null, reason: "Não consegui ler a equipa." };
 
     const game = Object.values(byMatchup).find((g) => g.awayAbbr === team || g.homeAbbr === team);
-    if (!game) return { label: text, ok: null, teams: [team], reason: "Equipa não encontrada nos jogos do dia." };
+
+    // ✅ em vez de “equipa não encontrada”, tratamos como “dados ainda não disponíveis”
+    if (!game) {
+      return { label: text, ok: null, teams: [team], reason: "Resultados do dia ainda não disponíveis para esta equipa." };
+    }
+
     if (game.status !== "FINAL") return { label: text, ok: null, teams: [team], reason: "Jogo ainda não terminou." };
 
     return { label: text, ok: game.winnerAbbr === team, teams: [team] };
@@ -217,27 +228,28 @@ function evalMarkets(sug: Suggestions, results: ApiResultsResponse): { correct: 
   const out: Record<string, PickEval[]> = {
     "Vitória (incl. OT)": (sug.tripleWin || []).map(evalWinTeam),
     "Over 1.5 P1 (Triplete)": (sug.tripleOver15P1 || []).map((t) =>
-      evalGamePick(t, (g) => (g.p1Away + g.p1Home) >= 2)
+      evalGamePick(t, (g) => g.p1Away + g.p1Home >= 2)
     ),
     "Over 1.5 P1 (Dupla)": (sug.doubleOver15P1 || []).map((t) =>
-      evalGamePick(t, (g) => (g.p1Away + g.p1Home) >= 2)
+      evalGamePick(t, (g) => g.p1Away + g.p1Home >= 2)
     ),
     "Empate TR": (sug.drawSuggestions || []).map((d) =>
       evalGamePick(d.game, (g) => g.regAway === g.regHome)
     ),
     "Over 4.5": (sug.quadrupleOver45 || []).map((t) =>
-      evalGamePick(t, (g) => (g.finalAway + g.finalHome) >= 5)
+      evalGamePick(t, (g) => g.finalAway + g.finalHome >= 5)
     ),
     "Over 5.5": (sug.over55Suggestions || []).map((t) =>
-      evalGamePick(t, (g) => (g.finalAway + g.finalHome) >= 6)
+      evalGamePick(t, (g) => g.finalAway + g.finalHome >= 6)
     ),
   };
 
   let correct = 0;
   let total = 0;
+
   for (const market of Object.keys(out)) {
     for (const p of out[market]) {
-      if (p.ok === null) continue;
+      if (p.ok === null) continue; // pendentes não contam
       total++;
       if (p.ok) correct++;
     }
@@ -246,7 +258,7 @@ function evalMarkets(sug: Suggestions, results: ApiResultsResponse): { correct: 
   return { correct, total, byMarket: out };
 }
 
-// ----------------- UI components -----------------
+// ----------------- UI blocks -----------------
 const StatRow: React.FC<{
   date: string;
   autoPct: number | null;
@@ -296,10 +308,9 @@ const PickLine: React.FC<{ p: PickEval }> = ({ p }) => {
     p.ok === false ? "text-rose-400 bg-rose-500/10 border-rose-500/20" :
     "text-slate-400 bg-white/5 border-white/10";
 
-  // ✅ teams já vêm do evaluator; se não vierem, tentamos:
   let teams: string[] = p.teams && p.teams.length ? p.teams : parseTeamsFromText(normalizeGameText(p.label));
 
-  // ✅ fallback para nomes completos (auto win ex: "Boston Bruins")
+  // fallback para nomes completos (auto win)
   if (!teams.length) {
     const single = guessAbbrFromText(p.label);
     if (single) teams = [single];
@@ -348,7 +359,12 @@ const MarketBlock: React.FC<{ title: string; picks: PickEval[] }> = ({ title, pi
         {picks.filter((p) => p.ok !== null).length}/{picks.length} avaliadas
       </span>
     </div>
-    {picks.length ? picks.map((p, idx) => <PickLine key={`${title}-${idx}`} p={p} />) : (
+
+    {picks.length ? (
+      <div className="space-y-3">
+        {picks.map((p, idx) => <PickLine key={`${title}-${idx}`} p={p} />)}
+      </div>
+    ) : (
       <div className="text-[11px] text-slate-600 italic">Sem picks.</div>
     )}
   </div>
@@ -374,13 +390,14 @@ const StatsView: React.FC = () => {
     let cancelled = false;
 
     (async () => {
-      const initial: DayReport[] = dates.map((d) => ({
-        date: d,
-        auto: { percent: null, correct: 0, total: 0, byMarket: {} },
-        mine: { percent: null, correct: 0, total: 0, byMarket: {} },
-        resultsStatus: "loading",
-      }));
-      setReports(initial);
+      setReports(
+        dates.map((d) => ({
+          date: d,
+          auto: { percent: null, correct: 0, total: 0, byMarket: {} },
+          mine: { percent: null, correct: 0, total: 0, byMarket: {} },
+          resultsStatus: "loading",
+        }))
+      );
 
       const next: DayReport[] = [];
 
