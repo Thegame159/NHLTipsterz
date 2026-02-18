@@ -3,6 +3,7 @@ import { fetchNHLAnalysis } from "./services/geminiService";
 import { NHLAnalysisData } from "./types";
 import GameTable from "./components/GameTable";
 import SuggestionsView from "./components/SuggestionsView";
+import MyPicksView from "./components/MyPicksView";
 
 const BrandLogo: React.FC<{ size?: "sm" | "lg" }> = ({ size = "sm" }) => {
   const isLarge = size === "lg";
@@ -13,7 +14,6 @@ const BrandLogo: React.FC<{ size?: "sm" | "lg" }> = ({ size = "sm" }) => {
         isLarge ? "p-6 scale-90 sm:scale-100" : "p-1 scale-[0.5] sm:scale-[0.65]"
       } overflow-visible`}
     >
-      {/* Orange Speed Lines (Swooshes) */}
       <div className={`absolute left-[-20%] w-[140%] pointer-events-none ${isLarge ? "top-[45%]" : "top-[42%]"}`}>
         <svg viewBox="0 0 400 50" className="w-full h-auto opacity-100 drop-shadow-[0_0_5px_rgba(249,115,22,0.5)]">
           <path d="M 0 25 Q 200 35 400 22" stroke="#f97316" strokeWidth="1.2" fill="transparent" />
@@ -24,7 +24,6 @@ const BrandLogo: React.FC<{ size?: "sm" | "lg" }> = ({ size = "sm" }) => {
       </div>
 
       <div className="relative flex items-center">
-        {/* NHL Text - Tamanhos reduzidos para mobile */}
         <h1
           className={`${
             isLarge ? "text-[100px] sm:text-[160px]" : "text-[80px] sm:text-[100px]"
@@ -33,7 +32,6 @@ const BrandLogo: React.FC<{ size?: "sm" | "lg" }> = ({ size = "sm" }) => {
           NHL
         </h1>
 
-        {/* The Puck (Disco) - Redondo/Elíptico com perspectiva */}
         <div
           className={`absolute z-30 transform rotate-[-12deg] ${
             isLarge ? "right-[-45px] sm:right-[-60px] top-[10px] sm:top-[15px]" : "right-[-35px] top-[8px]"
@@ -56,7 +54,6 @@ const BrandLogo: React.FC<{ size?: "sm" | "lg" }> = ({ size = "sm" }) => {
         </div>
       </div>
 
-      {/* Tipsterz - Caligrafia redimensionada */}
       <div className={`z-40 ${isLarge ? "mt-[-40px] sm:mt-[-55px] ml-16 sm:ml-24" : "mt-[-35px] ml-14"}`}>
         <span
           className={`${isLarge ? "text-[65px] sm:text-[90px]" : "text-[55px] sm:text-[65px]"} font-tipsterz text-white drop-shadow-[0_3px_6px_rgba(0,0,0,1)]`}
@@ -79,7 +76,6 @@ const loadingMessages = [
   "Preparando face-off...",
 ];
 
-// ✅ Helpers de data (LOCAL, sem UTC)
 const toDateStringLocal = (d: Date) => {
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, "0");
@@ -95,36 +91,25 @@ const getYesterdayString = () => {
 
 const App: React.FC = () => {
   const [data, setData] = useState<NHLAnalysisData | null>(null);
-
-  // ✅ Começa SEM loading (não faz auto-load)
   const [loading, setLoading] = useState(false);
 
   const [progress, setProgress] = useState(0);
   const [loadingMsgIdx, setLoadingMsgIdx] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"schedule" | "suggestions">("schedule");
 
-  // ✅ selectedDate = escolhido no input
-  // ✅ loadedDate = última data realmente analisada (vazia até clicar Analisar)
+  const [activeTab, setActiveTab] = useState<"schedule" | "suggestions" | "mypicks">("schedule");
+
   const [selectedDate, setSelectedDate] = useState<string>(getYesterdayString());
-  const [loadedDate, setLoadedDate] = useState<string>(""); // <- não carrega nada ao abrir
-
-  // ✅ Última data pedida (para "Repetir" consistente)
+  const [loadedDate, setLoadedDate] = useState<string>("");
   const [lastRequestedDate, setLastRequestedDate] = useState<string>("");
 
-  // ✅ Evita race condition
   const requestIdRef = useRef(0);
-
-  // ✅ AbortController para cancelar request anterior
   const abortRef = useRef<AbortController | null>(null);
 
   const loadData = async (date: string) => {
     const reqId = ++requestIdRef.current;
 
-    // cancela request anterior
-    if (abortRef.current) {
-      abortRef.current.abort();
-    }
+    if (abortRef.current) abortRef.current.abort();
     const controller = new AbortController();
     abortRef.current = controller;
 
@@ -137,7 +122,6 @@ const App: React.FC = () => {
       setError(null);
       setLastRequestedDate(date);
 
-      // Progresso “fake” até ~95, 100 só quando termina
       progressInterval = setInterval(() => {
         setProgress((prev) => {
           if (prev >= 95) return prev;
@@ -152,8 +136,6 @@ const App: React.FC = () => {
       }, 1800);
 
       const analysis = await fetchNHLAnalysis(date, controller.signal);
-
-      // ✅ Ignora resposta antiga
       if (reqId !== requestIdRef.current) return;
 
       setProgress(100);
@@ -161,41 +143,31 @@ const App: React.FC = () => {
       setLoadedDate(date);
       setLoading(false);
     } catch (err: any) {
-      // Abort não deve mostrar erro
       if (controller.signal.aborted) return;
-
       if (reqId !== requestIdRef.current) return;
 
-      const msg = err?.message || "Erro ao carregar dados. Tente novamente.";
-      console.debug("loadData failed:", msg);
-      setError(msg);
+      setError(err?.message || "Erro ao carregar dados. Tente novamente.");
       setLoading(false);
     } finally {
       if (progressInterval) clearInterval(progressInterval);
       if (msgInterval) clearInterval(msgInterval);
-
-      // limpa controller se ainda for o atual
-      if (abortRef.current === controller) {
-        abortRef.current = null;
-      }
+      if (abortRef.current === controller) abortRef.current = null;
     }
   };
 
-  // ✅ Não carregar ao abrir
   useEffect(() => {
     return () => {
-      // cleanup ao desmontar
       if (abortRef.current) abortRef.current.abort();
     };
   }, []);
 
-  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setSelectedDate(e.target.value);
-  };
+  const handleAnalyzeClick = () => loadData(selectedDate);
 
-  const handleAnalyzeClick = () => {
-    loadData(selectedDate);
-  };
+  const predictionsCount = data?.predictions?.length ?? 0;
+
+  // ✅ min/max do calendário alinhados com backend (past 30 / future 20)
+  const minDate = new Date(Date.now() - 30 * 86400000).toISOString().split("T")[0];
+  const maxDate = new Date(Date.now() + 20 * 86400000).toISOString().split("T")[0];
 
   if (loading) {
     return (
@@ -229,8 +201,6 @@ const App: React.FC = () => {
     );
   }
 
-  const predictionsCount = data?.predictions?.length ?? 0;
-
   const statusLabel = loading ? "LIVE" : "READY";
 
   return (
@@ -247,7 +217,9 @@ const App: React.FC = () => {
             <input
               type="date"
               value={selectedDate}
-              onChange={handleDateChange}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              min={minDate}
+              max={maxDate}
               className="bg-transparent text-white text-[11px] font-black p-2 outline-none cursor-pointer [color-scheme:dark] w-full"
             />
           </div>
@@ -270,9 +242,7 @@ const App: React.FC = () => {
       {error ? (
         <div className="bg-red-500/5 border border-red-500/20 rounded-2xl p-12 text-center my-10 backdrop-blur-xl">
           <i className="fas fa-exclamation-circle text-2xl text-red-600 mb-4" />
-
           <h2 className="text-lg font-black text-white mb-3 uppercase tracking-widest">ERRO</h2>
-
           <p className="text-slate-300 text-xs font-bold max-w-xl mx-auto mb-6">{error}</p>
 
           <button
@@ -284,7 +254,8 @@ const App: React.FC = () => {
         </div>
       ) : (
         <>
-          <div className="bg-[#020617]/80 backdrop-blur-3xl p-1 rounded-xl border border-white/5 mb-8 flex gap-1 shadow-xl max-w-[280px] mx-auto">
+          {/* ✅ 3 tabs */}
+          <div className="bg-[#020617]/80 backdrop-blur-3xl p-1 rounded-xl border border-white/5 mb-8 flex gap-1 shadow-xl max-w-[420px] mx-auto">
             <button
               onClick={() => setActiveTab("schedule")}
               aria-pressed={activeTab === "schedule"}
@@ -302,6 +273,15 @@ const App: React.FC = () => {
               }`}
             >
               Dicas
+            </button>
+            <button
+              onClick={() => setActiveTab("mypicks")}
+              aria-pressed={activeTab === "mypicks"}
+              className={`flex-1 py-2.5 rounded-lg font-black text-[9px] uppercase tracking-wider transition-all ${
+                activeTab === "mypicks" ? "bg-orange-600 text-white" : "text-slate-500 hover:text-slate-300"
+              }`}
+            >
+              Minhas Picks
             </button>
           </div>
 
@@ -322,13 +302,23 @@ const App: React.FC = () => {
                   </div>
                 )}
               </div>
-            ) : (
+            ) : activeTab === "suggestions" ? (
               <>
                 {loadedDate && data ? (
                   <SuggestionsView suggestions={data.suggestions} />
                 ) : (
                   <div className="py-24 text-center text-slate-600 text-[10px] font-black uppercase tracking-widest">
-                    {!loadedDate ? "Escolhe uma data e clica em Analisar" : "Sem dicas"}
+                    Escolhe uma data e clica em Analisar
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                {loadedDate && data ? (
+                  <MyPicksView predictions={data.predictions} selectedDate={loadedDate} />
+                ) : (
+                  <div className="py-24 text-center text-slate-600 text-[10px] font-black uppercase tracking-widest">
+                    Escolhe uma data e clica em Analisar
                   </div>
                 )}
               </>
