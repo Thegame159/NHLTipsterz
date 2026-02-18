@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { GamePrediction, Suggestions } from "../types";
 
 interface Props {
@@ -19,15 +20,42 @@ const storageKey = (date: string) => `my_picks_${date}`;
 
 const getLogoUrl = (abbr: string) => {
   const map: Record<string, string> = {
-    TBL: "tb", TB: "tb", SJS: "sj", SJ: "sj",
-    LAK: "la", LA: "la", VGK: "vgs", VGS: "vgs",
-    UTA: "utah", NJD: "nj", NJ: "nj", CBJ: "cbj",
-    WSH: "wsh", WPG: "wpg", NSH: "nsh", MTL: "mtl",
-    NYI: "nyi", NYR: "nyr", ANA: "ana", BOS: "bos",
-    BUF: "buf", CGY: "cgy", CAR: "car", CHI: "chi",
-    COL: "col", DAL: "dal", DET: "det", EDM: "edm",
-    FLA: "fla", MIN: "min", OTT: "ott", PHI: "phi",
-    PIT: "pit", SEA: "sea", STL: "stl", VAN: "van",
+    TBL: "tb",
+    TB: "tb",
+    SJS: "sj",
+    SJ: "sj",
+    LAK: "la",
+    LA: "la",
+    VGK: "vgs",
+    VGS: "vgs",
+    UTA: "utah",
+    NJD: "nj",
+    NJ: "nj",
+    CBJ: "cbj",
+    WSH: "wsh",
+    WPG: "wpg",
+    NSH: "nsh",
+    MTL: "mtl",
+    NYI: "nyi",
+    NYR: "nyr",
+    ANA: "ana",
+    BOS: "bos",
+    BUF: "buf",
+    CGY: "cgy",
+    CAR: "car",
+    CHI: "chi",
+    COL: "col",
+    DAL: "dal",
+    DET: "det",
+    EDM: "edm",
+    FLA: "fla",
+    MIN: "min",
+    OTT: "ott",
+    PHI: "phi",
+    PIT: "pit",
+    SEA: "sea",
+    STL: "stl",
+    VAN: "van",
     TOR: "tor",
   };
   const normalized = (abbr || "").trim().toUpperCase();
@@ -148,8 +176,10 @@ const CardShell: React.FC<{
 );
 
 // ----------------------------
-// ✅ Dropdown bonito (com pesquisa + logos)
+// ✅ Dropdown bonito (Portal + position:fixed) -> não fica tapado por overflow-hidden
 // ----------------------------
+type MenuPos = { left: number; top: number; width: number; openUp: boolean };
+
 const PrettyDropdown: React.FC<{
   value: string;
   onChange: (v: string) => void;
@@ -160,26 +190,74 @@ const PrettyDropdown: React.FC<{
 }> = ({ value, onChange, options, placeholder, disabled, mode = "game" }) => {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
-  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const [pos, setPos] = useState<MenuPos | null>(null);
+  const btnRef = useRef<HTMLButtonElement | null>(null);
+
+  const MENU_EST_HEIGHT = 340; // header + lista (aprox)
+
+  const computePos = () => {
+    const el = btnRef.current;
+    if (!el) return;
+
+    const r = el.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - r.bottom;
+    const openUp = spaceBelow < MENU_EST_HEIGHT && r.top > spaceBelow;
+
+    const top = openUp ? Math.max(8, r.top - 8 - MENU_EST_HEIGHT) : Math.min(window.innerHeight - 8, r.bottom + 8);
+    const left = Math.max(8, r.left);
+    const width = Math.max(180, r.width);
+
+    setPos({ left, top, width, openUp });
+  };
 
   useEffect(() => {
-    const onDoc = (e: MouseEvent) => {
-      if (!wrapRef.current) return;
-      if (!wrapRef.current.contains(e.target as Node)) setOpen(false);
+    if (!open) return;
+
+    computePos();
+
+    const onScroll = () => computePos();
+    const onResize = () => computePos();
+
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onResize);
+
+    return () => {
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onResize);
     };
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
   }, []);
 
   useEffect(() => {
-    // reset search quando abrir/fechar
+    const onDoc = (e: MouseEvent) => {
+      const el = btnRef.current;
+      if (!el) return;
+
+      // se clicar no botão -> deixa o toggle tratar
+      if (el.contains(e.target as Node)) return;
+
+      // se clicar fora -> fecha
+      setOpen(false);
+    };
+    if (open) document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  useEffect(() => {
     if (!open) setQ("");
   }, [open]);
 
   const filtered = useMemo(() => {
     const needle = q.trim().toUpperCase();
     if (!needle) return options;
-
     return options.filter((o) => o.toUpperCase().includes(needle));
   }, [options, q]);
 
@@ -187,55 +265,17 @@ const PrettyDropdown: React.FC<{
 
   const teams = mode === "game" ? parseTeamsFromText(selectedLabel) : value ? [value] : [];
 
-  return (
-    <div ref={wrapRef} className="relative flex-1">
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => !disabled && setOpen((s) => !s)}
-        className={`w-full flex items-center justify-between gap-2 bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none transition ${
-          disabled ? "opacity-60 cursor-not-allowed" : "hover:border-blue-500/30"
-        }`}
-      >
-        <div className="flex items-center gap-2 min-w-0">
-          {mode === "game" && teams.length > 0 && (
-            <div className="flex -space-x-2">
-              {teams.map((abbr, i) => (
-                <img
-                  key={`${abbr}-${i}`}
-                  src={getLogoUrl(abbr)}
-                  className="w-5 h-5 object-contain bg-slate-800 rounded-full p-0.5 border border-slate-700"
-                  alt={abbr}
-                  loading="lazy"
-                  decoding="async"
-                  onError={(e) => (e.currentTarget.style.display = "none")}
-                  style={{ zIndex: 10 - i }}
-                />
-              ))}
-            </div>
-          )}
-
-          {mode === "team" && value && (
-            <img
-              src={getLogoUrl(value)}
-              className="w-5 h-5 object-contain bg-slate-800 rounded-full p-0.5 border border-slate-700"
-              alt={value}
-              loading="lazy"
-              decoding="async"
-              onError={(e) => (e.currentTarget.style.display = "none")}
-            />
-          )}
-
-          <span className={`truncate ${selectedLabel ? "text-slate-100" : "text-slate-500"}`}>
-            {selectedLabel || placeholder}
-          </span>
-        </div>
-
-        <i className={`fas ${open ? "fa-chevron-up" : "fa-chevron-down"} text-slate-500`} />
-      </button>
-
-      {open && !disabled && (
-        <div className="absolute z-50 mt-2 w-full rounded-2xl border border-slate-700/60 bg-[#050b1a]/95 backdrop-blur-xl shadow-2xl overflow-hidden">
+  const menu = open && !disabled && pos
+    ? createPortal(
+        <div
+          className="z-[9999] rounded-2xl border border-slate-700/60 bg-[#050b1a]/95 backdrop-blur-xl shadow-2xl overflow-hidden"
+          style={{
+            position: "fixed",
+            left: pos.left,
+            top: pos.top,
+            width: pos.width,
+          }}
+        >
           <div className="p-2 border-b border-white/5">
             <div className="flex items-center gap-2 bg-slate-900/50 border border-slate-700/50 rounded-xl px-3 py-2">
               <i className="fas fa-search text-slate-500 text-[11px]" />
@@ -303,24 +343,74 @@ const PrettyDropdown: React.FC<{
               </div>
             )}
           </div>
+        </div>,
+        document.body
+      )
+    : null;
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        disabled={disabled}
+        onClick={() => {
+          if (disabled) return;
+          setOpen((s) => !s);
+        }}
+        className={`w-full flex items-center justify-between gap-2 bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none transition ${
+          disabled ? "opacity-60 cursor-not-allowed" : "hover:border-blue-500/30"
+        }`}
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          {mode === "game" && teams.length > 0 && (
+            <div className="flex -space-x-2">
+              {teams.map((abbr, i) => (
+                <img
+                  key={`${abbr}-${i}`}
+                  src={getLogoUrl(abbr)}
+                  className="w-5 h-5 object-contain bg-slate-800 rounded-full p-0.5 border border-slate-700"
+                  alt={abbr}
+                  loading="lazy"
+                  decoding="async"
+                  onError={(e) => (e.currentTarget.style.display = "none")}
+                  style={{ zIndex: 10 - i }}
+                />
+              ))}
+            </div>
+          )}
+
+          {mode === "team" && value && (
+            <img
+              src={getLogoUrl(value)}
+              className="w-5 h-5 object-contain bg-slate-800 rounded-full p-0.5 border border-slate-700"
+              alt={value}
+              loading="lazy"
+              decoding="async"
+              onError={(e) => (e.currentTarget.style.display = "none")}
+            />
+          )}
+
+          <span className={`truncate ${selectedLabel ? "text-slate-100" : "text-slate-500"}`}>
+            {selectedLabel || placeholder}
+          </span>
         </div>
-      )}
-    </div>
+
+        <i className={`fas ${open ? "fa-chevron-up" : "fa-chevron-down"} text-slate-500`} />
+      </button>
+
+      {menu}
+    </>
   );
 };
 
 const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
   const [picks, setPicks] = useState<Suggestions>(defaultSuggestions());
-
-  // ✅ modo edição
   const [isEditing, setIsEditing] = useState<boolean>(true);
-
-  // feedback “guardado”
   const [saveState, setSaveState] = useState<"idle" | "saved">("idle");
 
   const [teamPick, setTeamPick] = useState<string>("");
 
-  // ✅ Agora usamos 1 seleção visual por card, mas as opções são partilhadas (mesmo mercado)
   const [gamePickOver15Triple, setGamePickOver15Triple] = useState<string>("");
   const [gamePickOver15Double, setGamePickOver15Double] = useState<string>("");
 
@@ -345,17 +435,14 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
       .filter((s) => s.includes(" VS "));
   }, [predictions]);
 
-  // ✅ Disponíveis por mercado
   const availableTeams = useMemo(() => {
     const chosen = new Set(picks.tripleWin.map((t) => (t || "").trim().toUpperCase()));
     return teams.filter((t) => !chosen.has(t));
   }, [teams, picks.tripleWin]);
 
-  // ✅ OVER 1.5 P1 -> MESMO MERCADO (Triplete + Dupla partilham escolhidos)
+  // ✅ OVER 1.5 P1 partilhado (Triplete+Dupla)
   const availableOver15Shared = useMemo(() => {
-    const chosen = new Set(
-      [...picks.tripleOver15P1, ...picks.doubleOver15P1].map(normalizeGameText)
-    );
+    const chosen = new Set([...picks.tripleOver15P1, ...picks.doubleOver15P1].map(normalizeGameText));
     return gamesOfDay.filter((g) => !chosen.has(normalizeGameText(g)));
   }, [gamesOfDay, picks.tripleOver15P1, picks.doubleOver15P1]);
 
@@ -374,7 +461,6 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
     return gamesOfDay.filter((g) => !chosen.has(normalizeGameText(g)));
   }, [gamesOfDay, picks.drawSuggestions]);
 
-  // ✅ Carregar do storage e definir modo edição
   useEffect(() => {
     try {
       const raw = localStorage.getItem(storageKey(selectedDate));
@@ -399,7 +485,6 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
       setSaveState("idle");
     }
 
-    // limpa selects ao trocar data
     setTeamPick("");
     setGamePickOver15Triple("");
     setGamePickOver15Double("");
@@ -520,14 +605,16 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
           description="Escolhe 3 equipas que achas que vencem (incl. OT)."
         >
           <div className="flex gap-2 mb-4">
-            <PrettyDropdown
-              value={teamPick}
-              onChange={setTeamPick}
-              options={availableTeams}
-              placeholder="Selecionar equipa…"
-              disabled={disabled}
-              mode="team"
-            />
+            <div className="flex-1">
+              <PrettyDropdown
+                value={teamPick}
+                onChange={setTeamPick}
+                options={availableTeams}
+                placeholder="Selecionar equipa…"
+                disabled={disabled}
+                mode="team"
+              />
+            </div>
 
             <button
               onClick={() => {
@@ -576,14 +663,16 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
           description="Escolhe 3 jogos para 2+ golos no 1º período."
         >
           <div className="flex gap-2 mb-4">
-            <PrettyDropdown
-              value={gamePickOver15Triple}
-              onChange={setGamePickOver15Triple}
-              options={availableOver15Shared}
-              placeholder="Selecionar jogo…"
-              disabled={disabled}
-              mode="game"
-            />
+            <div className="flex-1">
+              <PrettyDropdown
+                value={gamePickOver15Triple}
+                onChange={setGamePickOver15Triple}
+                options={availableOver15Shared}
+                placeholder="Selecionar jogo…"
+                disabled={disabled}
+                mode="game"
+              />
+            </div>
 
             <button
               onClick={() => {
@@ -635,14 +724,16 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
           description="Escolhe 2 jogos de alta confiança para golos rápidos."
         >
           <div className="flex gap-2 mb-4">
-            <PrettyDropdown
-              value={gamePickOver15Double}
-              onChange={setGamePickOver15Double}
-              options={availableOver15Shared}
-              placeholder="Selecionar jogo…"
-              disabled={disabled}
-              mode="game"
-            />
+            <div className="flex-1">
+              <PrettyDropdown
+                value={gamePickOver15Double}
+                onChange={setGamePickOver15Double}
+                options={availableOver15Shared}
+                placeholder="Selecionar jogo…"
+                disabled={disabled}
+                mode="game"
+              />
+            </div>
 
             <button
               onClick={() => {
@@ -694,14 +785,16 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
           description="Escolhe 4 jogos com tendência para 5+ golos."
         >
           <div className="flex gap-2 mb-4">
-            <PrettyDropdown
-              value={gamePickOver45Quad}
-              onChange={setGamePickOver45Quad}
-              options={availableQuadOver45}
-              placeholder="Selecionar jogo…"
-              disabled={disabled}
-              mode="game"
-            />
+            <div className="flex-1">
+              <PrettyDropdown
+                value={gamePickOver45Quad}
+                onChange={setGamePickOver45Quad}
+                options={availableQuadOver45}
+                placeholder="Selecionar jogo…"
+                disabled={disabled}
+                mode="game"
+              />
+            </div>
 
             <button
               onClick={() => {
@@ -754,14 +847,16 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
           </h3>
 
           <div className="flex flex-col md:flex-row gap-3 mb-5">
-            <PrettyDropdown
-              value={drawPick}
-              onChange={setDrawPick}
-              options={availableDraw}
-              placeholder="Selecionar jogo…"
-              disabled={disabled}
-              mode="game"
-            />
+            <div className="flex-1">
+              <PrettyDropdown
+                value={drawPick}
+                onChange={setDrawPick}
+                options={availableDraw}
+                placeholder="Selecionar jogo…"
+                disabled={disabled}
+                mode="game"
+              />
+            </div>
 
             <input
               value={drawNote}
@@ -870,14 +965,16 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
           description="Escolhe jogos que achas que passam de 5.5 golos."
         >
           <div className="flex gap-2 mb-4">
-            <PrettyDropdown
-              value={gamePickOver55}
-              onChange={setGamePickOver55}
-              options={availableOver55}
-              placeholder="Selecionar jogo…"
-              disabled={disabled}
-              mode="game"
-            />
+            <div className="flex-1">
+              <PrettyDropdown
+                value={gamePickOver55}
+                onChange={setGamePickOver55}
+                options={availableOver55}
+                placeholder="Selecionar jogo…"
+                disabled={disabled}
+                mode="game"
+              />
+            </div>
 
             <button
               onClick={() => {
