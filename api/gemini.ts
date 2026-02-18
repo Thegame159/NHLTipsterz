@@ -14,7 +14,7 @@ const RL_LIMIT = 30; // 30 req / 10 min / IP
 
 // Intervalo permitido para selectedDate (para evitar abuso)
 const MAX_DAYS_PAST = 30;
-const MAX_DAYS_FUTURE = 7;
+const MAX_DAYS_FUTURE = 20;
 
 // ---------------- REDIS ----------------
 let _redis: ReturnType<typeof createClient> | null = null;
