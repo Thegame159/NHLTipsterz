@@ -1,4 +1,4 @@
-import { NHLAnalysisData } from "../types";
+import { NHLAnalysisData, Suggestions } from "../types";
 
 export class AppError extends Error {
   code?: string;
@@ -20,27 +20,45 @@ function friendlyMessage(status: number, code?: string, backendMessage?: string)
   }
 
   if (status === 400) return "Pedido inválido. Verifica a data selecionada e tenta novamente.";
+  if (status === 403) return "Acesso bloqueado (CORS/origem não permitida).";
   if (status === 500) return "Erro no servidor ao gerar a análise. Tenta novamente.";
   if (status === 503) return "Serviço temporariamente indisponível. Tenta novamente.";
 
   return "Erro ao carregar dados. Tenta novamente.";
 }
 
-// Normaliza o payload do backend para o formato que a UI espera (NHLAnalysisData)
+function defaultSuggestions(): Suggestions {
+  return {
+    tripleWin: [],
+    tripleOver15P1: [],
+    doubleOver15P1: [],
+    drawSuggestions: [],
+    quadrupleOver45: [],
+    over55Suggestions: [],
+  };
+}
+
+// Normaliza e garante o formato que a UI espera (NHLAnalysisData)
 function normalizeToUiShape(raw: any): NHLAnalysisData {
-  const obj = raw && typeof raw === "object" ? raw : {};
+  if (!raw || typeof raw !== "object") {
+    return {
+      predictions: [],
+      suggestions: defaultSuggestions(),
+      lastUpdated: new Date().toISOString(),
+    };
+  }
 
-  const predictions = Array.isArray(obj.predictions) ? obj.predictions : [];
-  const jogos = Array.isArray(obj.jogos) ? obj.jogos : predictions;
+  const predictions = Array.isArray(raw.predictions) ? raw.predictions : [];
+  const suggestions =
+    raw.suggestions && typeof raw.suggestions === "object" ? (raw.suggestions as Suggestions) : defaultSuggestions();
 
-  const suggestions = obj.suggestions && typeof obj.suggestions === "object" ? obj.suggestions : undefined;
+  const lastUpdated = typeof raw.lastUpdated === "string" && raw.lastUpdated.trim() ? raw.lastUpdated : new Date().toISOString();
 
   return {
-    ...obj,
-    jogos,
     predictions,
     suggestions,
-  } as NHLAnalysisData;
+    lastUpdated,
+  };
 }
 
 export const fetchNHLAnalysis = async (
