@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { GamePrediction, Suggestions } from "../types";
 
 interface Props {
@@ -74,8 +74,14 @@ const SuggestionItem: React.FC<{
   const teams = parseTeamsFromText(text);
 
   return (
-    <div className={`flex items-center gap-3 bg-slate-900/60 p-3 rounded-xl border border-slate-700/50 group transition-colors ${disabled ? "opacity-70" : "hover:border-blue-500/30"}`}>
-      <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${badgeColor} text-white shrink-0 shadow-sm`}>
+    <div
+      className={`flex items-center gap-3 bg-slate-900/60 p-3 rounded-xl border border-slate-700/50 group transition-colors ${
+        disabled ? "opacity-70" : "hover:border-blue-500/30"
+      }`}
+    >
+      <div
+        className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${badgeColor} text-white shrink-0 shadow-sm`}
+      >
         {index + 1}
       </div>
 
@@ -97,9 +103,7 @@ const SuggestionItem: React.FC<{
           </div>
         )}
 
-        <span className="text-sm font-semibold text-slate-200 truncate">
-          {text}
-        </span>
+        <span className="text-sm font-semibold text-slate-200 truncate">{text}</span>
       </div>
 
       {onRemove && (
@@ -143,6 +147,168 @@ const CardShell: React.FC<{
   </div>
 );
 
+// ----------------------------
+// ✅ Dropdown bonito (com pesquisa + logos)
+// ----------------------------
+const PrettyDropdown: React.FC<{
+  value: string;
+  onChange: (v: string) => void;
+  options: string[];
+  placeholder: string;
+  disabled?: boolean;
+  mode?: "team" | "game";
+}> = ({ value, onChange, options, placeholder, disabled, mode = "game" }) => {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const onDoc = (e: MouseEvent) => {
+      if (!wrapRef.current) return;
+      if (!wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, []);
+
+  useEffect(() => {
+    // reset search quando abrir/fechar
+    if (!open) setQ("");
+  }, [open]);
+
+  const filtered = useMemo(() => {
+    const needle = q.trim().toUpperCase();
+    if (!needle) return options;
+
+    return options.filter((o) => o.toUpperCase().includes(needle));
+  }, [options, q]);
+
+  const selectedLabel = value || "";
+
+  const teams = mode === "game" ? parseTeamsFromText(selectedLabel) : value ? [value] : [];
+
+  return (
+    <div ref={wrapRef} className="relative flex-1">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => !disabled && setOpen((s) => !s)}
+        className={`w-full flex items-center justify-between gap-2 bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none transition ${
+          disabled ? "opacity-60 cursor-not-allowed" : "hover:border-blue-500/30"
+        }`}
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          {mode === "game" && teams.length > 0 && (
+            <div className="flex -space-x-2">
+              {teams.map((abbr, i) => (
+                <img
+                  key={`${abbr}-${i}`}
+                  src={getLogoUrl(abbr)}
+                  className="w-5 h-5 object-contain bg-slate-800 rounded-full p-0.5 border border-slate-700"
+                  alt={abbr}
+                  loading="lazy"
+                  decoding="async"
+                  onError={(e) => (e.currentTarget.style.display = "none")}
+                  style={{ zIndex: 10 - i }}
+                />
+              ))}
+            </div>
+          )}
+
+          {mode === "team" && value && (
+            <img
+              src={getLogoUrl(value)}
+              className="w-5 h-5 object-contain bg-slate-800 rounded-full p-0.5 border border-slate-700"
+              alt={value}
+              loading="lazy"
+              decoding="async"
+              onError={(e) => (e.currentTarget.style.display = "none")}
+            />
+          )}
+
+          <span className={`truncate ${selectedLabel ? "text-slate-100" : "text-slate-500"}`}>
+            {selectedLabel || placeholder}
+          </span>
+        </div>
+
+        <i className={`fas ${open ? "fa-chevron-up" : "fa-chevron-down"} text-slate-500`} />
+      </button>
+
+      {open && !disabled && (
+        <div className="absolute z-50 mt-2 w-full rounded-2xl border border-slate-700/60 bg-[#050b1a]/95 backdrop-blur-xl shadow-2xl overflow-hidden">
+          <div className="p-2 border-b border-white/5">
+            <div className="flex items-center gap-2 bg-slate-900/50 border border-slate-700/50 rounded-xl px-3 py-2">
+              <i className="fas fa-search text-slate-500 text-[11px]" />
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Pesquisar..."
+                className="w-full bg-transparent outline-none text-[11px] font-bold text-slate-200 placeholder:text-slate-600"
+                autoFocus
+              />
+            </div>
+          </div>
+
+          <div className="max-h-64 overflow-auto p-2">
+            {filtered.length === 0 ? (
+              <div className="py-6 text-center text-[11px] text-slate-600 font-black uppercase tracking-widest">
+                Sem resultados
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {filtered.map((opt) => {
+                  const optTeams = mode === "game" ? parseTeamsFromText(opt) : [opt];
+                  const isSelected = normalizeGameText(opt) === normalizeGameText(value);
+
+                  return (
+                    <button
+                      type="button"
+                      key={opt}
+                      onClick={() => {
+                        onChange(opt);
+                        setOpen(false);
+                      }}
+                      className={`w-full text-left flex items-center justify-between gap-3 px-3 py-2 rounded-xl border transition ${
+                        isSelected
+                          ? "bg-blue-500/10 border-blue-500/30"
+                          : "bg-white/0 border-white/0 hover:bg-white/5 hover:border-white/10"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="flex -space-x-2">
+                          {optTeams.map((abbr, i) => (
+                            <img
+                              key={`${abbr}-${i}`}
+                              src={getLogoUrl(abbr)}
+                              className="w-6 h-6 object-contain bg-slate-800 rounded-full p-0.5 border border-slate-700"
+                              alt={abbr}
+                              loading="lazy"
+                              decoding="async"
+                              onError={(e) => (e.currentTarget.style.display = "none")}
+                              style={{ zIndex: 10 - i }}
+                            />
+                          ))}
+                        </div>
+                        <span className="text-[11px] font-black text-slate-100 truncate">{opt}</span>
+                      </div>
+
+                      {isSelected && (
+                        <span className="text-[10px] font-black text-blue-300 bg-blue-500/10 border border-blue-500/20 px-2 py-1 rounded-lg">
+                          Selecionado
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
   const [picks, setPicks] = useState<Suggestions>(defaultSuggestions());
 
@@ -154,8 +320,10 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
 
   const [teamPick, setTeamPick] = useState<string>("");
 
+  // ✅ Agora usamos 1 seleção visual por card, mas as opções são partilhadas (mesmo mercado)
   const [gamePickOver15Triple, setGamePickOver15Triple] = useState<string>("");
   const [gamePickOver15Double, setGamePickOver15Double] = useState<string>("");
+
   const [gamePickOver45Quad, setGamePickOver45Quad] = useState<string>("");
   const [gamePickOver55, setGamePickOver55] = useState<string>("");
 
@@ -183,15 +351,13 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
     return teams.filter((t) => !chosen.has(t));
   }, [teams, picks.tripleWin]);
 
-  const availableTripleOver15 = useMemo(() => {
-    const chosen = new Set(picks.tripleOver15P1.map(normalizeGameText));
+  // ✅ OVER 1.5 P1 -> MESMO MERCADO (Triplete + Dupla partilham escolhidos)
+  const availableOver15Shared = useMemo(() => {
+    const chosen = new Set(
+      [...picks.tripleOver15P1, ...picks.doubleOver15P1].map(normalizeGameText)
+    );
     return gamesOfDay.filter((g) => !chosen.has(normalizeGameText(g)));
-  }, [gamesOfDay, picks.tripleOver15P1]);
-
-  const availableDoubleOver15 = useMemo(() => {
-    const chosen = new Set(picks.doubleOver15P1.map(normalizeGameText));
-    return gamesOfDay.filter((g) => !chosen.has(normalizeGameText(g)));
-  }, [gamesOfDay, picks.doubleOver15P1]);
+  }, [gamesOfDay, picks.tripleOver15P1, picks.doubleOver15P1]);
 
   const availableQuadOver45 = useMemo(() => {
     const chosen = new Set(picks.quadrupleOver45.map(normalizeGameText));
@@ -208,9 +374,7 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
     return gamesOfDay.filter((g) => !chosen.has(normalizeGameText(g)));
   }, [gamesOfDay, picks.drawSuggestions]);
 
-  // ✅ Carregar do storage e definir modo edição:
-  // - se tiver picks guardadas -> começa em modo "bloqueado" (isEditing=false)
-  // - se não tiver -> começa em edição
+  // ✅ Carregar do storage e definir modo edição
   useEffect(() => {
     try {
       const raw = localStorage.getItem(storageKey(selectedDate));
@@ -227,13 +391,14 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
         drawSuggestions: Array.isArray(parsed?.drawSuggestions) ? parsed.drawSuggestions : [],
       };
       setPicks(loaded);
-      setIsEditing(isEmptyPicks(loaded)); // se tiver vazio -> deixa editar
+      setIsEditing(isEmptyPicks(loaded));
       setSaveState(isEmptyPicks(loaded) ? "idle" : "saved");
     } catch {
       setPicks(defaultSuggestions());
       setIsEditing(true);
       setSaveState("idle");
     }
+
     // limpa selects ao trocar data
     setTeamPick("");
     setGamePickOver15Triple("");
@@ -355,19 +520,14 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
           description="Escolhe 3 equipas que achas que vencem (incl. OT)."
         >
           <div className="flex gap-2 mb-4">
-            <select
+            <PrettyDropdown
               value={teamPick}
-              onChange={(e) => setTeamPick(e.target.value)}
+              onChange={setTeamPick}
+              options={availableTeams}
+              placeholder="Selecionar equipa…"
               disabled={disabled}
-              className={`flex-1 bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none ${
-                disabled ? "opacity-60 cursor-not-allowed" : ""
-              }`}
-            >
-              <option value="">Selecionar equipa…</option>
-              {availableTeams.map((t) => (
-                <option key={t} value={t}>{t}</option>
-              ))}
-            </select>
+              mode="team"
+            />
 
             <button
               onClick={() => {
@@ -387,20 +547,22 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
           </div>
 
           <div className="space-y-3">
-            {picks.tripleWin.length ? picks.tripleWin.map((item, idx) => (
-              <SuggestionItem
-                key={`${item}-${idx}`}
-                text={item}
-                badgeColor="bg-amber-500"
-                index={idx}
-                disabled={disabled}
-                onRemove={() => {
-                  if (disabled) return;
-                  setPicks((p) => ({ ...p, tripleWin: removeAt(p.tripleWin, idx) }));
-                  setSaveState("idle");
-                }}
-              />
-            )) : (
+            {picks.tripleWin.length ? (
+              picks.tripleWin.map((item, idx) => (
+                <SuggestionItem
+                  key={`${item}-${idx}`}
+                  text={item}
+                  badgeColor="bg-amber-500"
+                  index={idx}
+                  disabled={disabled}
+                  onRemove={() => {
+                    if (disabled) return;
+                    setPicks((p) => ({ ...p, tripleWin: removeAt(p.tripleWin, idx) }));
+                    setSaveState("idle");
+                  }}
+                />
+              ))
+            ) : (
               <p className="text-slate-500 italic text-sm py-2">Sem seleções ainda.</p>
             )}
           </div>
@@ -414,23 +576,21 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
           description="Escolhe 3 jogos para 2+ golos no 1º período."
         >
           <div className="flex gap-2 mb-4">
-            <select
+            <PrettyDropdown
               value={gamePickOver15Triple}
-              onChange={(e) => setGamePickOver15Triple(e.target.value)}
+              onChange={setGamePickOver15Triple}
+              options={availableOver15Shared}
+              placeholder="Selecionar jogo…"
               disabled={disabled}
-              className={`flex-1 bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none ${
-                disabled ? "opacity-60 cursor-not-allowed" : ""
-              }`}
-            >
-              <option value="">Selecionar jogo…</option>
-              {availableTripleOver15.map((v) => (
-                <option key={v} value={v}>{v}</option>
-              ))}
-            </select>
+              mode="game"
+            />
 
             <button
               onClick={() => {
-                setPicks((p) => ({ ...p, tripleOver15P1: addGameUnique(p.tripleOver15P1, gamePickOver15Triple, 3) }));
+                setPicks((p) => ({
+                  ...p,
+                  tripleOver15P1: addGameUnique(p.tripleOver15P1, gamePickOver15Triple, 3),
+                }));
                 setGamePickOver15Triple("");
                 setSaveState("idle");
               }}
@@ -446,20 +606,22 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
           </div>
 
           <div className="space-y-3">
-            {picks.tripleOver15P1.length ? picks.tripleOver15P1.map((item, idx) => (
-              <SuggestionItem
-                key={`${item}-${idx}`}
-                text={item}
-                badgeColor="bg-red-500"
-                index={idx}
-                disabled={disabled}
-                onRemove={() => {
-                  if (disabled) return;
-                  setPicks((p) => ({ ...p, tripleOver15P1: removeAt(p.tripleOver15P1, idx) }));
-                  setSaveState("idle");
-                }}
-              />
-            )) : (
+            {picks.tripleOver15P1.length ? (
+              picks.tripleOver15P1.map((item, idx) => (
+                <SuggestionItem
+                  key={`${item}-${idx}`}
+                  text={item}
+                  badgeColor="bg-red-500"
+                  index={idx}
+                  disabled={disabled}
+                  onRemove={() => {
+                    if (disabled) return;
+                    setPicks((p) => ({ ...p, tripleOver15P1: removeAt(p.tripleOver15P1, idx) }));
+                    setSaveState("idle");
+                  }}
+                />
+              ))
+            ) : (
               <p className="text-slate-500 italic text-sm py-2">Sem seleções ainda.</p>
             )}
           </div>
@@ -473,23 +635,21 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
           description="Escolhe 2 jogos de alta confiança para golos rápidos."
         >
           <div className="flex gap-2 mb-4">
-            <select
+            <PrettyDropdown
               value={gamePickOver15Double}
-              onChange={(e) => setGamePickOver15Double(e.target.value)}
+              onChange={setGamePickOver15Double}
+              options={availableOver15Shared}
+              placeholder="Selecionar jogo…"
               disabled={disabled}
-              className={`flex-1 bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none ${
-                disabled ? "opacity-60 cursor-not-allowed" : ""
-              }`}
-            >
-              <option value="">Selecionar jogo…</option>
-              {availableDoubleOver15.map((v) => (
-                <option key={v} value={v}>{v}</option>
-              ))}
-            </select>
+              mode="game"
+            />
 
             <button
               onClick={() => {
-                setPicks((p) => ({ ...p, doubleOver15P1: addGameUnique(p.doubleOver15P1, gamePickOver15Double, 2) }));
+                setPicks((p) => ({
+                  ...p,
+                  doubleOver15P1: addGameUnique(p.doubleOver15P1, gamePickOver15Double, 2),
+                }));
                 setGamePickOver15Double("");
                 setSaveState("idle");
               }}
@@ -505,20 +665,22 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
           </div>
 
           <div className="space-y-3">
-            {picks.doubleOver15P1.length ? picks.doubleOver15P1.map((item, idx) => (
-              <SuggestionItem
-                key={`${item}-${idx}`}
-                text={item}
-                badgeColor="bg-blue-500"
-                index={idx}
-                disabled={disabled}
-                onRemove={() => {
-                  if (disabled) return;
-                  setPicks((p) => ({ ...p, doubleOver15P1: removeAt(p.doubleOver15P1, idx) }));
-                  setSaveState("idle");
-                }}
-              />
-            )) : (
+            {picks.doubleOver15P1.length ? (
+              picks.doubleOver15P1.map((item, idx) => (
+                <SuggestionItem
+                  key={`${item}-${idx}`}
+                  text={item}
+                  badgeColor="bg-blue-500"
+                  index={idx}
+                  disabled={disabled}
+                  onRemove={() => {
+                    if (disabled) return;
+                    setPicks((p) => ({ ...p, doubleOver15P1: removeAt(p.doubleOver15P1, idx) }));
+                    setSaveState("idle");
+                  }}
+                />
+              ))
+            ) : (
               <p className="text-slate-500 italic text-sm py-2">Sem seleções ainda.</p>
             )}
           </div>
@@ -532,23 +694,21 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
           description="Escolhe 4 jogos com tendência para 5+ golos."
         >
           <div className="flex gap-2 mb-4">
-            <select
+            <PrettyDropdown
               value={gamePickOver45Quad}
-              onChange={(e) => setGamePickOver45Quad(e.target.value)}
+              onChange={setGamePickOver45Quad}
+              options={availableQuadOver45}
+              placeholder="Selecionar jogo…"
               disabled={disabled}
-              className={`flex-1 bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none ${
-                disabled ? "opacity-60 cursor-not-allowed" : ""
-              }`}
-            >
-              <option value="">Selecionar jogo…</option>
-              {availableQuadOver45.map((v) => (
-                <option key={v} value={v}>{v}</option>
-              ))}
-            </select>
+              mode="game"
+            />
 
             <button
               onClick={() => {
-                setPicks((p) => ({ ...p, quadrupleOver45: addGameUnique(p.quadrupleOver45, gamePickOver45Quad, 4) }));
+                setPicks((p) => ({
+                  ...p,
+                  quadrupleOver45: addGameUnique(p.quadrupleOver45, gamePickOver45Quad, 4),
+                }));
                 setGamePickOver45Quad("");
                 setSaveState("idle");
               }}
@@ -564,26 +724,28 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
           </div>
 
           <div className="space-y-3">
-            {picks.quadrupleOver45.length ? picks.quadrupleOver45.map((item, idx) => (
-              <SuggestionItem
-                key={`${item}-${idx}`}
-                text={item}
-                badgeColor="bg-emerald-500"
-                index={idx}
-                disabled={disabled}
-                onRemove={() => {
-                  if (disabled) return;
-                  setPicks((p) => ({ ...p, quadrupleOver45: removeAt(p.quadrupleOver45, idx) }));
-                  setSaveState("idle");
-                }}
-              />
-            )) : (
+            {picks.quadrupleOver45.length ? (
+              picks.quadrupleOver45.map((item, idx) => (
+                <SuggestionItem
+                  key={`${item}-${idx}`}
+                  text={item}
+                  badgeColor="bg-emerald-500"
+                  index={idx}
+                  disabled={disabled}
+                  onRemove={() => {
+                    if (disabled) return;
+                    setPicks((p) => ({ ...p, quadrupleOver45: removeAt(p.quadrupleOver45, idx) }));
+                    setSaveState("idle");
+                  }}
+                />
+              ))
+            ) : (
               <p className="text-slate-500 italic text-sm py-2">Sem seleções ainda.</p>
             )}
           </div>
         </CardShell>
 
-        {/* Empate TR (mantive igual em comportamento, mas com disabled) */}
+        {/* Empate TR */}
         <div className="md:col-span-2 bg-slate-800/40 border border-slate-700 rounded-2xl p-6 relative overflow-hidden group">
           <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500" />
           <h3 className="text-xl font-bold flex items-center mb-6 text-indigo-400">
@@ -592,19 +754,14 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
           </h3>
 
           <div className="flex flex-col md:flex-row gap-3 mb-5">
-            <select
+            <PrettyDropdown
               value={drawPick}
-              onChange={(e) => setDrawPick(e.target.value)}
+              onChange={setDrawPick}
+              options={availableDraw}
+              placeholder="Selecionar jogo…"
               disabled={disabled}
-              className={`flex-1 bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none ${
-                disabled ? "opacity-60 cursor-not-allowed" : ""
-              }`}
-            >
-              <option value="">Selecionar jogo…</option>
-              {availableDraw.map((v) => (
-                <option key={v} value={v}>{v}</option>
-              ))}
-            </select>
+              mode="game"
+            />
 
             <input
               value={drawNote}
@@ -642,10 +799,14 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {picks.drawSuggestions.length ? picks.drawSuggestions.map((s, idx) => {
-              const teams = parseTeamsFromText(s.game);
-              return (
-                <div key={`${s.game}-${idx}`} className={`bg-slate-900/80 p-5 rounded-2xl border border-slate-700/50 transition-all ${disabled ? "opacity-75" : "hover:bg-slate-900"}`}>
+            {picks.drawSuggestions.length ? (
+              picks.drawSuggestions.map((s, idx) => (
+                <div
+                  key={`${s.game}-${idx}`}
+                  className={`bg-slate-900/80 p-5 rounded-2xl border border-slate-700/50 transition-all ${
+                    disabled ? "opacity-75" : "hover:bg-slate-900"
+                  }`}
+                >
                   <div className="flex items-center justify-between mb-3">
                     <span className="bg-indigo-500/20 text-indigo-300 text-[10px] font-black px-2 py-0.5 rounded border border-indigo-500/30 uppercase tracking-widest">
                       Draw Candidate
@@ -666,21 +827,20 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
                   </div>
 
                   <div className="flex items-center gap-3 mb-3">
-                    {teams.length > 0 && (
-                      <div className="flex -space-x-2">
-                        {teams.map((abbr, i) => (
-                          <img
-                            key={`${abbr}-${i}`}
-                            src={getLogoUrl(abbr)}
-                            className="w-8 h-8 object-contain drop-shadow-md bg-slate-800 rounded-full p-1 border border-slate-700"
-                            alt={abbr}
-                            loading="lazy"
-                            decoding="async"
-                            onError={(e) => (e.currentTarget.style.display = "none")}
-                          />
-                        ))}
-                      </div>
-                    )}
+                    <div className="flex -space-x-2">
+                      {parseTeamsFromText(s.game).map((abbr, i) => (
+                        <img
+                          key={`${abbr}-${i}`}
+                          src={getLogoUrl(abbr)}
+                          className="w-8 h-8 object-contain drop-shadow-md bg-slate-800 rounded-full p-1 border border-slate-700"
+                          alt={abbr}
+                          loading="lazy"
+                          decoding="async"
+                          onError={(e) => (e.currentTarget.style.display = "none")}
+                          style={{ zIndex: 10 - i }}
+                        />
+                      ))}
+                    </div>
                     <p className="font-bold text-lg text-slate-100">{s.game}</p>
                   </div>
 
@@ -693,8 +853,8 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
                     <p className="text-xs text-slate-500 italic">Sem nota.</p>
                   )}
                 </div>
-              );
-            }) : (
+              ))
+            ) : (
               <div className="col-span-2 text-center py-6 text-slate-500">
                 Ainda não escolheste empates para esta data.
               </div>
@@ -710,19 +870,14 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
           description="Escolhe jogos que achas que passam de 5.5 golos."
         >
           <div className="flex gap-2 mb-4">
-            <select
+            <PrettyDropdown
               value={gamePickOver55}
-              onChange={(e) => setGamePickOver55(e.target.value)}
+              onChange={setGamePickOver55}
+              options={availableOver55}
+              placeholder="Selecionar jogo…"
               disabled={disabled}
-              className={`flex-1 bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none ${
-                disabled ? "opacity-60 cursor-not-allowed" : ""
-              }`}
-            >
-              <option value="">Selecionar jogo…</option>
-              {availableOver55.map((v) => (
-                <option key={v} value={v}>{v}</option>
-              ))}
-            </select>
+              mode="game"
+            />
 
             <button
               onClick={() => {
@@ -742,20 +897,22 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
           </div>
 
           <div className="space-y-3">
-            {picks.over55Suggestions.length ? picks.over55Suggestions.map((item, idx) => (
-              <SuggestionItem
-                key={`${item}-${idx}`}
-                text={item}
-                badgeColor="bg-pink-500"
-                index={idx}
-                disabled={disabled}
-                onRemove={() => {
-                  if (disabled) return;
-                  setPicks((p) => ({ ...p, over55Suggestions: removeAt(p.over55Suggestions, idx) }));
-                  setSaveState("idle");
-                }}
-              />
-            )) : (
+            {picks.over55Suggestions.length ? (
+              picks.over55Suggestions.map((item, idx) => (
+                <SuggestionItem
+                  key={`${item}-${idx}`}
+                  text={item}
+                  badgeColor="bg-pink-500"
+                  index={idx}
+                  disabled={disabled}
+                  onRemove={() => {
+                    if (disabled) return;
+                    setPicks((p) => ({ ...p, over55Suggestions: removeAt(p.over55Suggestions, idx) }));
+                    setSaveState("idle");
+                  }}
+                />
+              ))
+            ) : (
               <p className="text-slate-500 italic text-sm py-2">Sem seleções ainda.</p>
             )}
           </div>
