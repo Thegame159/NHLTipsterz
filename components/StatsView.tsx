@@ -44,7 +44,7 @@ const TEAM_FULLNAMES: Record<string, string[]> = {
   NJD: ["new jersey devils", "devils", "new jersey", "nj devils"],
   NSH: ["nashville predators", "predators", "nashville"],
   NYI: ["new york islanders", "islanders", "ny islanders", "nyi"],
-  // ✅ reforço para Rangers + variações comuns
+  // ✅ Rangers + variações
   NYR: ["new york rangers", "rangers", "ny rangers", "nyr", "new york ranger"],
   OTT: ["ottawa senators", "senators", "ottawa"],
   PHI: ["philadelphia flyers", "flyers", "philadelphia"],
@@ -61,6 +61,9 @@ const TEAM_FULLNAMES: Record<string, string[]> = {
   UTA: ["utah hockey club", "utah"],
 };
 
+// ✅ Só aceitamos estas abreviações como válidas
+const NHL_ABBRS = new Set(Object.keys(TEAM_FULLNAMES));
+
 const norm = (s: string) =>
   (s || "")
     .toLowerCase()
@@ -73,9 +76,9 @@ function guessAbbrFromText(text: string): string | null {
   const t = norm(text);
   if (!t) return null;
 
-  // abreviação direta (primeira ocorrência) — pode falhar se apanhar "VS", por isso filtramos
+  // ✅ abreviação direta: mas só se for uma abreviação NHL real
   const mm = (text || "").toUpperCase().match(/\b[A-Z]{2,4}\b/g) || [];
-  const direct = mm.find((x) => !["OT", "VS", "V"].includes(x));
+  const direct = mm.find((x) => NHL_ABBRS.has(x) && !["OT", "VS", "V"].includes(x));
   if (direct) return direct;
 
   // nomes completos/curtos
@@ -107,16 +110,16 @@ const splitMatchup = (text: string): [string, string] | null => {
   return [parts[0], parts[1]];
 };
 
-// ✅ Melhorado: se não houver abreviações suficientes, tenta nomes completos
+// ✅ Melhorado: filtra tokens tipo NEW/YORK, só aceita abreviações NHL
 const parseTeamsFromText = (text: string): string[] => {
   const cleaned = normalizeGameText(text);
   const raw = cleaned.toUpperCase();
 
   const abbrMatches = raw.match(/\b[A-Z]{2,4}\b/g) || [];
-  const abbr = abbrMatches.filter((s) => !["OT", "VS", "V"].includes(s));
+  const abbr = abbrMatches.filter((s) => NHL_ABBRS.has(s) && !["OT", "VS", "V"].includes(s));
   if (abbr.length >= 2) return abbr.slice(0, 2);
 
-  // fallback: nomes completos tipo "New York Rangers"
+  // fallback: nomes completos "New York Rangers VS Boston Bruins"
   const sp = splitMatchup(cleaned);
   if (sp) {
     const a = guessAbbrFromText(sp[0]);
@@ -125,19 +128,18 @@ const parseTeamsFromText = (text: string): string[] => {
     if (out.length >= 2) return out.slice(0, 2);
   }
 
-  // fallback single
+  // single fallback
   const single = guessAbbrFromText(cleaned);
   return single ? [single] : [];
 };
 
+// ✅ Single team: só abreviações NHL reais, senão tenta nomes completos
 const parseTeamSingle = (text: string): string | null => {
-  // 1) abreviação direta
   const raw = (text || "").toUpperCase();
   const mm = raw.match(/\b[A-Z]{2,4}\b/g) || [];
-  const direct = mm.find((x) => !["OT", "VS", "V"].includes(x));
+  const direct = mm.find((x) => NHL_ABBRS.has(x) && !["OT", "VS", "V"].includes(x));
   if (direct) return direct;
 
-  // 2) nome completo
   return guessAbbrFromText(text);
 };
 
@@ -228,10 +230,8 @@ function evalMarkets(
   const evalGamePick = (text: string, fn: (g: ApiResultGame) => boolean): PickEval => {
     const cleaned = normalizeGameText(text);
 
-    // 1) tenta abreviações
     let teams = parseTeamsFromText(cleaned);
 
-    // 2) fallback: nomes completos "Boston Bruins VS Toronto Maple Leafs"
     if (teams.length < 2) {
       const sp = splitMatchup(cleaned);
       if (!sp) return { label: text, ok: null, reason: "Não consegui ler as equipas." };
@@ -251,14 +251,12 @@ function evalMarkets(
   };
 
   const evalWinTeam = (text: string): PickEval => {
-    // ✅ agora suporta abreviação OU nome completo (ex: New York Rangers)
     const team = parseTeamSingle(text);
 
     if (!team) return { label: text, ok: null, reason: "Não consegui ler a equipa." };
 
     const game = Object.values(byMatchup).find((g) => g.awayAbbr === team || g.homeAbbr === team);
 
-    // ✅ em vez de “equipa não encontrada”, tratamos como “dados ainda não disponíveis”
     if (!game) {
       return {
         label: text,
@@ -275,8 +273,12 @@ function evalMarkets(
 
   const out: Record<string, PickEval[]> = {
     "Vitória (incl. OT)": (sug.tripleWin || []).map(evalWinTeam),
-    "Over 1.5 P1 (Triplete)": (sug.tripleOver15P1 || []).map((t) => evalGamePick(t, (g) => g.p1Away + g.p1Home >= 2)),
-    "Over 1.5 P1 (Dupla)": (sug.doubleOver15P1 || []).map((t) => evalGamePick(t, (g) => g.p1Away + g.p1Home >= 2)),
+    "Over 1.5 P1 (Triplete)": (sug.tripleOver15P1 || []).map((t) =>
+      evalGamePick(t, (g) => g.p1Away + g.p1Home >= 2)
+    ),
+    "Over 1.5 P1 (Dupla)": (sug.doubleOver15P1 || []).map((t) =>
+      evalGamePick(t, (g) => g.p1Away + g.p1Home >= 2)
+    ),
     "Empate TR": (sug.drawSuggestions || []).map((d) => evalGamePick(d.game, (g) => g.regAway === g.regHome)),
     "Over 4.5": (sug.quadrupleOver45 || []).map((t) => evalGamePick(t, (g) => g.finalAway + g.finalHome >= 5)),
     "Over 5.5": (sug.over55Suggestions || []).map((t) => evalGamePick(t, (g) => g.finalAway + g.finalHome >= 6)),
@@ -287,7 +289,7 @@ function evalMarkets(
 
   for (const market of Object.keys(out)) {
     for (const p of out[market]) {
-      if (p.ok === null) continue; // pendentes não contam
+      if (p.ok === null) continue;
       total++;
       if (p.ok) correct++;
     }
@@ -341,10 +343,7 @@ const PickLine: React.FC<{ p: PickEval }> = ({ p }) => {
       ? "text-rose-400 bg-rose-500/10 border-rose-500/20"
       : "text-slate-400 bg-white/5 border-white/10";
 
-  // ✅ Agora tenta:
-  // 1) p.teams (já resolvido no eval)
-  // 2) parseTeamsFromText (abreviações OU nomes completos)
-  // 3) guessAbbrFromText (single team)
+  // ✅ respeita p.teams (já resolvido no eval) e evita NEW/YORK
   let teams: string[] = p.teams && p.teams.length ? p.teams : parseTeamsFromText(p.label);
 
   if (!teams.length) {
@@ -352,8 +351,7 @@ const PickLine: React.FC<{ p: PickEval }> = ({ p }) => {
     if (single) teams = [single];
   }
 
-  // Normaliza para abreviações e remove vazios
-  teams = teams.map((t) => (t || "").trim().toUpperCase()).filter(Boolean);
+  teams = teams.map((t) => (t || "").trim().toUpperCase()).filter((t) => NHL_ABBRS.has(t));
 
   return (
     <div className="flex items-center justify-between gap-3 bg-slate-900/50 border border-slate-700/40 rounded-xl p-3">
@@ -407,7 +405,7 @@ const MarketBlock: React.FC<{ title: string; picks: PickEval[] }> = ({ title, pi
 );
 
 const StatsView: React.FC = () => {
-  const [reports, setReports] = useState<DayReport[]>([]);
+  const [reports, setReports] = useState<any[]>([]);
   const [openDate, setOpenDate] = useState<string>("");
 
   const dates = useMemo(() => {
@@ -435,7 +433,7 @@ const StatsView: React.FC = () => {
         }))
       );
 
-      const next: DayReport[] = [];
+      const next: any[] = [];
 
       for (const date of dates) {
         try {
@@ -553,7 +551,7 @@ const StatsView: React.FC = () => {
       </div>
 
       <div className="space-y-3">
-        {reports.map((r) => {
+        {reports.map((r: any) => {
           const isOpen = openDate === r.date;
           return (
             <div key={r.date} className="space-y-4">
@@ -587,7 +585,7 @@ const StatsView: React.FC = () => {
 
                         {Object.keys(r.auto.byMarket).length ? (
                           <div className="space-y-6">
-                            {Object.entries(r.auto.byMarket).map(([k, v]) => (
+                            {Object.entries(r.auto.byMarket).map(([k, v]: any) => (
                               <MarketBlock key={`a-${k}`} title={k} picks={v} />
                             ))}
                           </div>
@@ -608,7 +606,7 @@ const StatsView: React.FC = () => {
 
                         {Object.keys(r.mine.byMarket).length ? (
                           <div className="space-y-6">
-                            {Object.entries(r.mine.byMarket).map(([k, v]) => (
+                            {Object.entries(r.mine.byMarket).map(([k, v]: any) => (
                               <MarketBlock key={`m-${k}`} title={k} picks={v} />
                             ))}
                           </div>
