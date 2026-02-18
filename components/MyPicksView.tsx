@@ -35,11 +35,23 @@ const getLogoUrl = (abbr: string) => {
   return `https://a.espncdn.com/i/teamlogos/nhl/500/${code}.png`;
 };
 
-// Para as tuas picks vamos guardar texto com abreviações (ex: "OTT vs DET", "BOS")
+// Normaliza texto de jogo para formato consistente: "AAA VS BBB"
+const normalizeGameText = (s: string) =>
+  (s || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+VS\s+/g, " VS ")
+    .replace(/\s+@\s+/g, " VS ")
+    .replace(/\s+V\s+/g, " VS ")
+    .replace(/\s+/g, " ")
+    .replace(" vs ", " VS ");
+
 const parseTeamsFromText = (text: string): string[] => {
   const raw = (text || "").trim();
   const abbrMatches = raw.match(/\b[A-Z]{2,4}\b/g) || [];
-  const cleaned = abbrMatches.map(s => s.toUpperCase()).filter(s => s !== "OT" && s !== "VS" && s !== "V");
+  const cleaned = abbrMatches
+    .map((s) => s.toUpperCase())
+    .filter((s) => s !== "OT" && s !== "VS" && s !== "V");
   if (cleaned.length >= 2) return cleaned.slice(0, 2);
   if (cleaned.length === 1) return cleaned;
   return [];
@@ -123,12 +135,18 @@ const CardShell: React.FC<{
 const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
   const [picks, setPicks] = useState<Suggestions>(defaultSuggestions());
 
-  // UI states (seletores)
   const [teamPick, setTeamPick] = useState<string>("");
-  const [gamePick, setGamePick] = useState<string>("");
+
+  // ✅ Separar picks por card (cada um tem o seu)
+  const [gamePickOver15Triple, setGamePickOver15Triple] = useState<string>("");
+  const [gamePickOver15Double, setGamePickOver15Double] = useState<string>("");
+  const [gamePickOver45Quad, setGamePickOver45Quad] = useState<string>("");
+  const [gamePickOver55, setGamePickOver55] = useState<string>("");
+
   const [drawPick, setDrawPick] = useState<string>("");
   const [drawNote, setDrawNote] = useState<string>("");
 
+  // equipas do dia
   const teams = useMemo(() => {
     const set = new Set<string>();
     for (const g of predictions) {
@@ -138,13 +156,45 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
     return Array.from(set).sort();
   }, [predictions]);
 
-  const games = useMemo(() => {
+  // jogos do dia (normalizados)
+  const gamesOfDay = useMemo(() => {
     return predictions
-      .map((g) => `${(g.awayTeamAbbr || "").toUpperCase()} vs ${(g.homeTeamAbbr || "").toUpperCase()}`)
-      .filter((s) => !s.includes(" vs "));
+      .map((g) => normalizeGameText(`${g.awayTeamAbbr} vs ${g.homeTeamAbbr}`))
+      .filter((s) => s.includes(" VS "));
   }, [predictions]);
 
-  // Carregar do localStorage quando muda a data
+  // ✅ Disponíveis por mercado
+  const availableTeams = useMemo(() => {
+    const chosen = new Set(picks.tripleWin.map((t) => (t || "").trim().toUpperCase()));
+    return teams.filter((t) => !chosen.has(t));
+  }, [teams, picks.tripleWin]);
+
+  const availableTripleOver15 = useMemo(() => {
+    const chosen = new Set(picks.tripleOver15P1.map(normalizeGameText));
+    return gamesOfDay.filter((g) => !chosen.has(normalizeGameText(g)));
+  }, [gamesOfDay, picks.tripleOver15P1]);
+
+  const availableDoubleOver15 = useMemo(() => {
+    const chosen = new Set(picks.doubleOver15P1.map(normalizeGameText));
+    return gamesOfDay.filter((g) => !chosen.has(normalizeGameText(g)));
+  }, [gamesOfDay, picks.doubleOver15P1]);
+
+  const availableQuadOver45 = useMemo(() => {
+    const chosen = new Set(picks.quadrupleOver45.map(normalizeGameText));
+    return gamesOfDay.filter((g) => !chosen.has(normalizeGameText(g)));
+  }, [gamesOfDay, picks.quadrupleOver45]);
+
+  const availableOver55 = useMemo(() => {
+    const chosen = new Set(picks.over55Suggestions.map(normalizeGameText));
+    return gamesOfDay.filter((g) => !chosen.has(normalizeGameText(g)));
+  }, [gamesOfDay, picks.over55Suggestions]);
+
+  const availableDraw = useMemo(() => {
+    const chosen = new Set(picks.drawSuggestions.map((d) => normalizeGameText(d.game)));
+    return gamesOfDay.filter((g) => !chosen.has(normalizeGameText(g)));
+  }, [gamesOfDay, picks.drawSuggestions]);
+
+  // carregar
   useEffect(() => {
     try {
       const raw = localStorage.getItem(storageKey(selectedDate));
@@ -153,7 +203,6 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
         return;
       }
       const parsed = JSON.parse(raw);
-      // merge defensivo
       setPicks({
         ...defaultSuggestions(),
         ...parsed,
@@ -164,7 +213,7 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
     }
   }, [selectedDate]);
 
-  // Guardar sempre que muda
+  // guardar
   useEffect(() => {
     try {
       localStorage.setItem(storageKey(selectedDate), JSON.stringify(picks));
@@ -174,7 +223,7 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
   }, [picks, selectedDate]);
 
   const addUnique = (arr: string[], value: string, max: number) => {
-    const v = value.trim().toUpperCase();
+    const v = (value || "").trim().toUpperCase();
     if (!v) return arr;
     if (arr.includes(v)) return arr;
     if (arr.length >= max) return arr;
@@ -182,9 +231,9 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
   };
 
   const addGameUnique = (arr: string[], value: string, max: number) => {
-    const v = value.trim().toUpperCase();
+    const v = normalizeGameText(value);
     if (!v) return arr;
-    if (arr.includes(v)) return arr;
+    if (arr.map(normalizeGameText).includes(v)) return arr;
     if (arr.length >= max) return arr;
     return [...arr, v];
   };
@@ -217,7 +266,7 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {/* Triplete de Vitórias (equipa única) */}
+        {/* Triplete de Vitórias */}
         <CardShell
           title="Triplete de Vitórias"
           icon="fa-award"
@@ -231,21 +280,17 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
               className="flex-1 bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none"
             >
               <option value="">Selecionar equipa…</option>
-              {teams.map((t) => (
+              {availableTeams.map((t) => (
                 <option key={t} value={t}>{t}</option>
               ))}
             </select>
 
             <button
               onClick={() => {
-                setPicks((p) => ({
-                  ...p,
-                  tripleWin: addUnique(p.tripleWin, teamPick, 3),
-                }));
+                setPicks((p) => ({ ...p, tripleWin: addUnique(p.tripleWin, teamPick, 3) }));
                 setTeamPick("");
               }}
               className="bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/30 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition"
-              title="Adicionar"
             >
               + Add
             </button>
@@ -275,24 +320,20 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
         >
           <div className="flex gap-2 mb-4">
             <select
-              value={gamePick}
-              onChange={(e) => setGamePick(e.target.value)}
+              value={gamePickOver15Triple}
+              onChange={(e) => setGamePickOver15Triple(e.target.value)}
               className="flex-1 bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none"
             >
               <option value="">Selecionar jogo…</option>
-              {predictions.map((g) => {
-                const v = `${g.awayTeamAbbr.toUpperCase()} vs ${g.homeTeamAbbr.toUpperCase()}`;
-                return <option key={g.id} value={v}>{v}</option>;
-              })}
+              {availableTripleOver15.map((v) => (
+                <option key={v} value={v}>{v}</option>
+              ))}
             </select>
 
             <button
               onClick={() => {
-                setPicks((p) => ({
-                  ...p,
-                  tripleOver15P1: addGameUnique(p.tripleOver15P1, gamePick, 3),
-                }));
-                setGamePick("");
+                setPicks((p) => ({ ...p, tripleOver15P1: addGameUnique(p.tripleOver15P1, gamePickOver15Triple, 3) }));
+                setGamePickOver15Triple("");
               }}
               className="bg-red-500/20 hover:bg-red-500/30 text-red-200 border border-red-500/30 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition"
             >
@@ -324,24 +365,20 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
         >
           <div className="flex gap-2 mb-4">
             <select
-              value={gamePick}
-              onChange={(e) => setGamePick(e.target.value)}
+              value={gamePickOver15Double}
+              onChange={(e) => setGamePickOver15Double(e.target.value)}
               className="flex-1 bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none"
             >
               <option value="">Selecionar jogo…</option>
-              {predictions.map((g) => {
-                const v = `${g.awayTeamAbbr.toUpperCase()} vs ${g.homeTeamAbbr.toUpperCase()}`;
-                return <option key={g.id} value={v}>{v}</option>;
-              })}
+              {availableDoubleOver15.map((v) => (
+                <option key={v} value={v}>{v}</option>
+              ))}
             </select>
 
             <button
               onClick={() => {
-                setPicks((p) => ({
-                  ...p,
-                  doubleOver15P1: addGameUnique(p.doubleOver15P1, gamePick, 2),
-                }));
-                setGamePick("");
+                setPicks((p) => ({ ...p, doubleOver15P1: addGameUnique(p.doubleOver15P1, gamePickOver15Double, 2) }));
+                setGamePickOver15Double("");
               }}
               className="bg-blue-500/20 hover:bg-blue-500/30 text-blue-200 border border-blue-500/30 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition"
             >
@@ -373,24 +410,20 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
         >
           <div className="flex gap-2 mb-4">
             <select
-              value={gamePick}
-              onChange={(e) => setGamePick(e.target.value)}
+              value={gamePickOver45Quad}
+              onChange={(e) => setGamePickOver45Quad(e.target.value)}
               className="flex-1 bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none"
             >
               <option value="">Selecionar jogo…</option>
-              {predictions.map((g) => {
-                const v = `${g.awayTeamAbbr.toUpperCase()} vs ${g.homeTeamAbbr.toUpperCase()}`;
-                return <option key={g.id} value={v}>{v}</option>;
-              })}
+              {availableQuadOver45.map((v) => (
+                <option key={v} value={v}>{v}</option>
+              ))}
             </select>
 
             <button
               onClick={() => {
-                setPicks((p) => ({
-                  ...p,
-                  quadrupleOver45: addGameUnique(p.quadrupleOver45, gamePick, 4),
-                }));
-                setGamePick("");
+                setPicks((p) => ({ ...p, quadrupleOver45: addGameUnique(p.quadrupleOver45, gamePickOver45Quad, 4) }));
+                setGamePickOver45Quad("");
               }}
               className="bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border border-emerald-500/30 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition"
             >
@@ -413,7 +446,7 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
           </div>
         </CardShell>
 
-        {/* Empate TR (2 colunas) */}
+        {/* Empate TR */}
         <div className="md:col-span-2 bg-slate-800/40 border border-slate-700 rounded-2xl p-6 relative overflow-hidden group">
           <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500" />
           <h3 className="text-xl font-bold flex items-center mb-6 text-indigo-400">
@@ -428,10 +461,9 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
               className="flex-1 bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none"
             >
               <option value="">Selecionar jogo…</option>
-              {predictions.map((g) => {
-                const v = `${g.awayTeamAbbr.toUpperCase()} vs ${g.homeTeamAbbr.toUpperCase()}`;
-                return <option key={g.id} value={v}>{v}</option>;
-              })}
+              {availableDraw.map((v) => (
+                <option key={v} value={v}>{v}</option>
+              ))}
             </select>
 
             <input
@@ -443,18 +475,12 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
 
             <button
               onClick={() => {
-                const g = drawPick.trim().toUpperCase();
+                const g = normalizeGameText(drawPick);
                 if (!g) return;
 
                 setPicks((p) => {
-                  if (p.drawSuggestions.some((x) => x.game.toUpperCase() === g)) return p;
-                  return {
-                    ...p,
-                    drawSuggestions: [
-                      ...p.drawSuggestions,
-                      { game: g, explanation: (drawNote || "").trim() },
-                    ],
-                  };
+                  if (p.drawSuggestions.some((x) => normalizeGameText(x.game) === g)) return p;
+                  return { ...p, drawSuggestions: [...p.drawSuggestions, { game: g, explanation: (drawNote || "").trim() }] };
                 });
 
                 setDrawPick("");
@@ -505,9 +531,7 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
                   {s.explanation ? (
                     <div className="flex gap-3">
                       <i className="fas fa-quote-left text-indigo-500/30 text-2xl mt-1" />
-                      <p className="text-sm text-slate-400 leading-relaxed italic line-clamp-4">
-                        {s.explanation}
-                      </p>
+                      <p className="text-sm text-slate-400 leading-relaxed italic line-clamp-4">{s.explanation}</p>
                     </div>
                   ) : (
                     <p className="text-xs text-slate-500 italic">Sem nota.</p>
@@ -527,28 +551,24 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
           title="Over 5.5 Plus"
           icon="fa-plus-circle"
           gradient="bg-gradient-to-br from-pink-500 to-fuchsia-700"
-          description="Escolhe jogos que achas que passam de 5.5 golos (sem limite rígido)."
+          description="Escolhe jogos que achas que passam de 5.5 golos."
         >
           <div className="flex gap-2 mb-4">
             <select
-              value={gamePick}
-              onChange={(e) => setGamePick(e.target.value)}
+              value={gamePickOver55}
+              onChange={(e) => setGamePickOver55(e.target.value)}
               className="flex-1 bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none"
             >
               <option value="">Selecionar jogo…</option>
-              {predictions.map((g) => {
-                const v = `${g.awayTeamAbbr.toUpperCase()} vs ${g.homeTeamAbbr.toUpperCase()}`;
-                return <option key={g.id} value={v}>{v}</option>;
-              })}
+              {availableOver55.map((v) => (
+                <option key={v} value={v}>{v}</option>
+              ))}
             </select>
 
             <button
               onClick={() => {
-                setPicks((p) => ({
-                  ...p,
-                  over55Suggestions: addGameUnique(p.over55Suggestions, gamePick, 12),
-                }));
-                setGamePick("");
+                setPicks((p) => ({ ...p, over55Suggestions: addGameUnique(p.over55Suggestions, gamePickOver55, 12) }));
+                setGamePickOver55("");
               }}
               className="bg-pink-500/20 hover:bg-pink-500/30 text-pink-200 border border-pink-500/30 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition"
             >
