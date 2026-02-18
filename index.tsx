@@ -1,4 +1,3 @@
-
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
@@ -14,3 +13,12 @@ root.render(
     <App />
   </React.StrictMode>
 );
+
+// ✅ PWA Service Worker (necessário para instalar como app e usar o ícone do manifest)
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((err) => {
+      console.debug('SW registration failed:', err);
+    });
+  });
+}
