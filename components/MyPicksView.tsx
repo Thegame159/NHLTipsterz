@@ -176,14 +176,14 @@ const CardShell: React.FC<{
 );
 
 // ----------------------------
-// ✅ Dropdown (Portal + fixed) + onSelect callback
+// ✅ Dropdown FIXADO (Portal + fixed) com outside-click robusto
 // ----------------------------
 type MenuPos = { left: number; top: number; width: number };
 
 const PrettyDropdown: React.FC<{
   value: string;
   onChange: (v: string) => void;
-  onSelect?: (v: string) => void; // ✅ novo
+  onSelect?: (v: string) => void;
   options: string[];
   placeholder: string;
   disabled?: boolean;
@@ -192,17 +192,17 @@ const PrettyDropdown: React.FC<{
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [pos, setPos] = useState<MenuPos | null>(null);
+
   const btnRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
 
   const computePos = () => {
     const el = btnRef.current;
     if (!el) return;
-
     const r = el.getBoundingClientRect();
     const top = Math.min(window.innerHeight - 8, r.bottom + 8);
     const left = Math.max(8, r.left);
     const width = Math.max(180, r.width);
-
     setPos({ left, top, width });
   };
 
@@ -232,15 +232,25 @@ const PrettyDropdown: React.FC<{
     return () => document.removeEventListener("keydown", onKey);
   }, []);
 
+  // ✅ CRÍTICO: usar pointerdown e ignorar cliques dentro do menu/trigger
   useEffect(() => {
-    const onDoc = (e: MouseEvent) => {
-      const el = btnRef.current;
-      if (!el) return;
-      if (el.contains(e.target as Node)) return;
+    if (!open) return;
+
+    const onDocPointerDown = (e: PointerEvent) => {
+      const btn = btnRef.current;
+      const menu = menuRef.current;
+
+      const target = e.target as Node | null;
+      if (!target) return;
+
+      if (btn && btn.contains(target)) return;
+      if (menu && menu.contains(target)) return;
+
       setOpen(false);
     };
-    if (open) document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
+
+    document.addEventListener("pointerdown", onDocPointerDown, { capture: true });
+    return () => document.removeEventListener("pointerdown", onDocPointerDown, { capture: true } as any);
   }, [open]);
 
   useEffect(() => {
@@ -260,6 +270,7 @@ const PrettyDropdown: React.FC<{
     open && !disabled && pos
       ? createPortal(
           <div
+            ref={menuRef}
             className="z-[9999] rounded-2xl border border-slate-700/60 bg-[#050b1a]/95 backdrop-blur-xl shadow-2xl overflow-hidden"
             style={{
               position: "fixed",
@@ -290,22 +301,21 @@ const PrettyDropdown: React.FC<{
                 <div className="space-y-1">
                   {filtered.map((opt) => {
                     const optTeams = mode === "game" ? parseTeamsFromText(opt) : [opt];
-                    const isSelected = normalizeGameText(opt) === normalizeGameText(value);
 
                     return (
                       <button
                         type="button"
                         key={opt}
-                        onClick={() => {
+                        // ✅ usar pointerdown para garantir seleção antes de fechar
+                        onPointerDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+
                           onChange(opt);
-                          onSelect?.(opt); // ✅ auto add
+                          onSelect?.(opt);
                           setOpen(false);
                         }}
-                        className={`w-full text-left flex items-center justify-between gap-3 px-3 py-2 rounded-xl border transition ${
-                          isSelected
-                            ? "bg-blue-500/10 border-blue-500/30"
-                            : "bg-white/0 border-white/0 hover:bg-white/5 hover:border-white/10"
-                        }`}
+                        className="w-full text-left flex items-center justify-between gap-3 px-3 py-2 rounded-xl border transition bg-white/0 border-white/0 hover:bg-white/5 hover:border-white/10"
                       >
                         <div className="flex items-center gap-3 min-w-0">
                           <div className="flex -space-x-2">
@@ -317,19 +327,13 @@ const PrettyDropdown: React.FC<{
                                 alt={abbr}
                                 loading="lazy"
                                 decoding="async"
-                                onError={(e) => (e.currentTarget.style.display = "none")}
+                                onError={(ev) => ((ev.currentTarget.style.display = "none") as any)}
                                 style={{ zIndex: 10 - i }}
                               />
                             ))}
                           </div>
                           <span className="text-[11px] font-black text-slate-100 truncate">{opt}</span>
                         </div>
-
-                        {isSelected && (
-                          <span className="text-[10px] font-black text-blue-300 bg-blue-500/10 border border-blue-500/20 px-2 py-1 rounded-lg">
-                            Selecionado
-                          </span>
-                        )}
                       </button>
                     );
                   })}
