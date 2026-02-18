@@ -176,38 +176,34 @@ const CardShell: React.FC<{
 );
 
 // ----------------------------
-// ✅ Dropdown bonito (Portal + position:fixed) -> não fica tapado por overflow-hidden
+// ✅ Dropdown (Portal + fixed) + onSelect callback
 // ----------------------------
-type MenuPos = { left: number; top: number; width: number; openUp: boolean };
+type MenuPos = { left: number; top: number; width: number };
 
 const PrettyDropdown: React.FC<{
   value: string;
   onChange: (v: string) => void;
+  onSelect?: (v: string) => void; // ✅ novo
   options: string[];
   placeholder: string;
   disabled?: boolean;
   mode?: "team" | "game";
-}> = ({ value, onChange, options, placeholder, disabled, mode = "game" }) => {
+}> = ({ value, onChange, onSelect, options, placeholder, disabled, mode = "game" }) => {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [pos, setPos] = useState<MenuPos | null>(null);
   const btnRef = useRef<HTMLButtonElement | null>(null);
-
-  const MENU_EST_HEIGHT = 340; // header + lista (aprox)
 
   const computePos = () => {
     const el = btnRef.current;
     if (!el) return;
 
     const r = el.getBoundingClientRect();
-    const spaceBelow = window.innerHeight - r.bottom;
-    const openUp = spaceBelow < MENU_EST_HEIGHT && r.top > spaceBelow;
-
-    const top = openUp ? Math.max(8, r.top - 8 - MENU_EST_HEIGHT) : Math.min(window.innerHeight - 8, r.bottom + 8);
+    const top = Math.min(window.innerHeight - 8, r.bottom + 8);
     const left = Math.max(8, r.left);
     const width = Math.max(180, r.width);
 
-    setPos({ left, top, width, openUp });
+    setPos({ left, top, width });
   };
 
   useEffect(() => {
@@ -240,11 +236,7 @@ const PrettyDropdown: React.FC<{
     const onDoc = (e: MouseEvent) => {
       const el = btnRef.current;
       if (!el) return;
-
-      // se clicar no botão -> deixa o toggle tratar
       if (el.contains(e.target as Node)) return;
-
-      // se clicar fora -> fecha
       setOpen(false);
     };
     if (open) document.addEventListener("mousedown", onDoc);
@@ -262,91 +254,92 @@ const PrettyDropdown: React.FC<{
   }, [options, q]);
 
   const selectedLabel = value || "";
-
   const teams = mode === "game" ? parseTeamsFromText(selectedLabel) : value ? [value] : [];
 
-  const menu = open && !disabled && pos
-    ? createPortal(
-        <div
-          className="z-[9999] rounded-2xl border border-slate-700/60 bg-[#050b1a]/95 backdrop-blur-xl shadow-2xl overflow-hidden"
-          style={{
-            position: "fixed",
-            left: pos.left,
-            top: pos.top,
-            width: pos.width,
-          }}
-        >
-          <div className="p-2 border-b border-white/5">
-            <div className="flex items-center gap-2 bg-slate-900/50 border border-slate-700/50 rounded-xl px-3 py-2">
-              <i className="fas fa-search text-slate-500 text-[11px]" />
-              <input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Pesquisar..."
-                className="w-full bg-transparent outline-none text-[11px] font-bold text-slate-200 placeholder:text-slate-600"
-                autoFocus
-              />
+  const menu =
+    open && !disabled && pos
+      ? createPortal(
+          <div
+            className="z-[9999] rounded-2xl border border-slate-700/60 bg-[#050b1a]/95 backdrop-blur-xl shadow-2xl overflow-hidden"
+            style={{
+              position: "fixed",
+              left: pos.left,
+              top: pos.top,
+              width: pos.width,
+            }}
+          >
+            <div className="p-2 border-b border-white/5">
+              <div className="flex items-center gap-2 bg-slate-900/50 border border-slate-700/50 rounded-xl px-3 py-2">
+                <i className="fas fa-search text-slate-500 text-[11px]" />
+                <input
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder="Pesquisar..."
+                  className="w-full bg-transparent outline-none text-[11px] font-bold text-slate-200 placeholder:text-slate-600"
+                  autoFocus
+                />
+              </div>
             </div>
-          </div>
 
-          <div className="max-h-64 overflow-auto p-2">
-            {filtered.length === 0 ? (
-              <div className="py-6 text-center text-[11px] text-slate-600 font-black uppercase tracking-widest">
-                Sem resultados
-              </div>
-            ) : (
-              <div className="space-y-1">
-                {filtered.map((opt) => {
-                  const optTeams = mode === "game" ? parseTeamsFromText(opt) : [opt];
-                  const isSelected = normalizeGameText(opt) === normalizeGameText(value);
+            <div className="max-h-64 overflow-auto p-2">
+              {filtered.length === 0 ? (
+                <div className="py-6 text-center text-[11px] text-slate-600 font-black uppercase tracking-widest">
+                  Sem resultados
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  {filtered.map((opt) => {
+                    const optTeams = mode === "game" ? parseTeamsFromText(opt) : [opt];
+                    const isSelected = normalizeGameText(opt) === normalizeGameText(value);
 
-                  return (
-                    <button
-                      type="button"
-                      key={opt}
-                      onClick={() => {
-                        onChange(opt);
-                        setOpen(false);
-                      }}
-                      className={`w-full text-left flex items-center justify-between gap-3 px-3 py-2 rounded-xl border transition ${
-                        isSelected
-                          ? "bg-blue-500/10 border-blue-500/30"
-                          : "bg-white/0 border-white/0 hover:bg-white/5 hover:border-white/10"
-                      }`}
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="flex -space-x-2">
-                          {optTeams.map((abbr, i) => (
-                            <img
-                              key={`${abbr}-${i}`}
-                              src={getLogoUrl(abbr)}
-                              className="w-6 h-6 object-contain bg-slate-800 rounded-full p-0.5 border border-slate-700"
-                              alt={abbr}
-                              loading="lazy"
-                              decoding="async"
-                              onError={(e) => (e.currentTarget.style.display = "none")}
-                              style={{ zIndex: 10 - i }}
-                            />
-                          ))}
+                    return (
+                      <button
+                        type="button"
+                        key={opt}
+                        onClick={() => {
+                          onChange(opt);
+                          onSelect?.(opt); // ✅ auto add
+                          setOpen(false);
+                        }}
+                        className={`w-full text-left flex items-center justify-between gap-3 px-3 py-2 rounded-xl border transition ${
+                          isSelected
+                            ? "bg-blue-500/10 border-blue-500/30"
+                            : "bg-white/0 border-white/0 hover:bg-white/5 hover:border-white/10"
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="flex -space-x-2">
+                            {optTeams.map((abbr, i) => (
+                              <img
+                                key={`${abbr}-${i}`}
+                                src={getLogoUrl(abbr)}
+                                className="w-6 h-6 object-contain bg-slate-800 rounded-full p-0.5 border border-slate-700"
+                                alt={abbr}
+                                loading="lazy"
+                                decoding="async"
+                                onError={(e) => (e.currentTarget.style.display = "none")}
+                                style={{ zIndex: 10 - i }}
+                              />
+                            ))}
+                          </div>
+                          <span className="text-[11px] font-black text-slate-100 truncate">{opt}</span>
                         </div>
-                        <span className="text-[11px] font-black text-slate-100 truncate">{opt}</span>
-                      </div>
 
-                      {isSelected && (
-                        <span className="text-[10px] font-black text-blue-300 bg-blue-500/10 border border-blue-500/20 px-2 py-1 rounded-lg">
-                          Selecionado
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>,
-        document.body
-      )
-    : null;
+                        {isSelected && (
+                          <span className="text-[10px] font-black text-blue-300 bg-blue-500/10 border border-blue-500/20 px-2 py-1 rounded-lg">
+                            Selecionado
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>,
+          document.body
+        )
+      : null;
 
   return (
     <>
@@ -609,6 +602,12 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
               <PrettyDropdown
                 value={teamPick}
                 onChange={setTeamPick}
+                onSelect={(v) => {
+                  if (disabled) return;
+                  setPicks((p) => ({ ...p, tripleWin: addUnique(p.tripleWin, v, 3) }));
+                  setTeamPick("");
+                  setSaveState("idle");
+                }}
                 options={availableTeams}
                 placeholder="Selecionar equipa…"
                 disabled={disabled}
@@ -667,6 +666,12 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
               <PrettyDropdown
                 value={gamePickOver15Triple}
                 onChange={setGamePickOver15Triple}
+                onSelect={(v) => {
+                  if (disabled) return;
+                  setPicks((p) => ({ ...p, tripleOver15P1: addGameUnique(p.tripleOver15P1, v, 3) }));
+                  setGamePickOver15Triple("");
+                  setSaveState("idle");
+                }}
                 options={availableOver15Shared}
                 placeholder="Selecionar jogo…"
                 disabled={disabled}
@@ -676,10 +681,7 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
 
             <button
               onClick={() => {
-                setPicks((p) => ({
-                  ...p,
-                  tripleOver15P1: addGameUnique(p.tripleOver15P1, gamePickOver15Triple, 3),
-                }));
+                setPicks((p) => ({ ...p, tripleOver15P1: addGameUnique(p.tripleOver15P1, gamePickOver15Triple, 3) }));
                 setGamePickOver15Triple("");
                 setSaveState("idle");
               }}
@@ -728,6 +730,12 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
               <PrettyDropdown
                 value={gamePickOver15Double}
                 onChange={setGamePickOver15Double}
+                onSelect={(v) => {
+                  if (disabled) return;
+                  setPicks((p) => ({ ...p, doubleOver15P1: addGameUnique(p.doubleOver15P1, v, 2) }));
+                  setGamePickOver15Double("");
+                  setSaveState("idle");
+                }}
                 options={availableOver15Shared}
                 placeholder="Selecionar jogo…"
                 disabled={disabled}
@@ -737,10 +745,7 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
 
             <button
               onClick={() => {
-                setPicks((p) => ({
-                  ...p,
-                  doubleOver15P1: addGameUnique(p.doubleOver15P1, gamePickOver15Double, 2),
-                }));
+                setPicks((p) => ({ ...p, doubleOver15P1: addGameUnique(p.doubleOver15P1, gamePickOver15Double, 2) }));
                 setGamePickOver15Double("");
                 setSaveState("idle");
               }}
@@ -789,6 +794,12 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
               <PrettyDropdown
                 value={gamePickOver45Quad}
                 onChange={setGamePickOver45Quad}
+                onSelect={(v) => {
+                  if (disabled) return;
+                  setPicks((p) => ({ ...p, quadrupleOver45: addGameUnique(p.quadrupleOver45, v, 4) }));
+                  setGamePickOver45Quad("");
+                  setSaveState("idle");
+                }}
                 options={availableQuadOver45}
                 placeholder="Selecionar jogo…"
                 disabled={disabled}
@@ -798,10 +809,7 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
 
             <button
               onClick={() => {
-                setPicks((p) => ({
-                  ...p,
-                  quadrupleOver45: addGameUnique(p.quadrupleOver45, gamePickOver45Quad, 4),
-                }));
+                setPicks((p) => ({ ...p, quadrupleOver45: addGameUnique(p.quadrupleOver45, gamePickOver45Quad, 4) }));
                 setGamePickOver45Quad("");
                 setSaveState("idle");
               }}
@@ -969,6 +977,12 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
               <PrettyDropdown
                 value={gamePickOver55}
                 onChange={setGamePickOver55}
+                onSelect={(v) => {
+                  if (disabled) return;
+                  setPicks((p) => ({ ...p, over55Suggestions: addGameUnique(p.over55Suggestions, v, 12) }));
+                  setGamePickOver55("");
+                  setSaveState("idle");
+                }}
                 options={availableOver55}
                 placeholder="Selecionar jogo…"
                 disabled={disabled}
