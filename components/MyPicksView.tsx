@@ -73,6 +73,27 @@ const normalizeGameText = (s: string) =>
     .replace(/\s+/g, " ")
     .replace(" vs ", " VS ");
 
+// ✅ NOVO: obtém YYYY-MM-DD do jogo (robusto a diferentes campos)
+const getGameDay = (g: any): string => {
+  // se já vier direto como YYYY-MM-DD
+  if (typeof g?.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(g.date)) return g.date;
+  if (typeof g?.gameDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(g.gameDate)) return g.gameDate;
+  if (typeof g?.day === "string" && /^\d{4}-\d{2}-\d{2}$/.test(g.day)) return g.day;
+
+  // se vier em ISO tipo 2026-02-25T00:30:00Z
+  const iso =
+    (typeof g?.startTime === "string" && g.startTime) ||
+    (typeof g?.start === "string" && g.start) ||
+    (typeof g?.commenceTime === "string" && g.commenceTime) ||
+    (typeof g?.gameTime === "string" && g.gameTime) ||
+    (typeof g?.utcTime === "string" && g.utcTime) ||
+    "";
+
+  if (iso && typeof iso === "string" && iso.includes("T")) return iso.slice(0, 10);
+
+  return "";
+};
+
 const parseTeamsFromText = (text: string): string[] => {
   const raw = (text || "").trim();
   const abbrMatches = raw.match(/\b[A-Z]{2,4}\b/g) || [];
@@ -417,20 +438,28 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
   const [drawPick, setDrawPick] = useState<string>("");
   const [drawNote, setDrawNote] = useState<string>("");
 
+  // ✅ NOVO: filtra predictions para o dia selecionado (evita jogos de outros dias nas combos)
+  const predictionsOfDay = useMemo(() => {
+    return (predictions || []).filter((g: any) => getGameDay(g) === selectedDate);
+  }, [predictions, selectedDate]);
+
   const teams = useMemo(() => {
     const set = new Set<string>();
-    for (const g of predictions) {
-      if (g.homeTeamAbbr) set.add(g.homeTeamAbbr.toUpperCase());
-      if (g.awayTeamAbbr) set.add(g.awayTeamAbbr.toUpperCase());
+    for (const g of predictionsOfDay) {
+      if ((g as any).homeTeamAbbr) set.add((g as any).homeTeamAbbr.toUpperCase());
+      if ((g as any).awayTeamAbbr) set.add((g as any).awayTeamAbbr.toUpperCase());
     }
     return Array.from(set).sort();
-  }, [predictions]);
+  }, [predictionsOfDay]);
 
   const gamesOfDay = useMemo(() => {
-    return predictions
-      .map((g) => normalizeGameText(`${g.awayTeamAbbr} vs ${g.homeTeamAbbr}`))
-      .filter((s) => s.includes(" VS "));
-  }, [predictions]);
+    const set = new Set<string>();
+    for (const g of predictionsOfDay) {
+      const txt = normalizeGameText(`${(g as any).awayTeamAbbr} vs ${(g as any).homeTeamAbbr}`);
+      if (txt.includes(" VS ")) set.add(txt);
+    }
+    return Array.from(set).sort();
+  }, [predictionsOfDay]);
 
   const availableTeams = useMemo(() => {
     const chosen = new Set(picks.tripleWin.map((t) => (t || "").trim().toUpperCase()));
@@ -685,7 +714,10 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
 
             <button
               onClick={() => {
-                setPicks((p) => ({ ...p, tripleOver15P1: addGameUnique(p.tripleOver15P1, gamePickOver15Triple, 3) }));
+                setPicks((p) => ({
+                  ...p,
+                  tripleOver15P1: addGameUnique(p.tripleOver15P1, gamePickOver15Triple, 3),
+                }));
                 setGamePickOver15Triple("");
                 setSaveState("idle");
               }}
@@ -749,7 +781,10 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
 
             <button
               onClick={() => {
-                setPicks((p) => ({ ...p, doubleOver15P1: addGameUnique(p.doubleOver15P1, gamePickOver15Double, 2) }));
+                setPicks((p) => ({
+                  ...p,
+                  doubleOver15P1: addGameUnique(p.doubleOver15P1, gamePickOver15Double, 2),
+                }));
                 setGamePickOver15Double("");
                 setSaveState("idle");
               }}
@@ -813,7 +848,10 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
 
             <button
               onClick={() => {
-                setPicks((p) => ({ ...p, quadrupleOver45: addGameUnique(p.quadrupleOver45, gamePickOver45Quad, 4) }));
+                setPicks((p) => ({
+                  ...p,
+                  quadrupleOver45: addGameUnique(p.quadrupleOver45, gamePickOver45Quad, 4),
+                }));
                 setGamePickOver45Quad("");
                 setSaveState("idle");
               }}
