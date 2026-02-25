@@ -70,28 +70,33 @@ const normalizeGameText = (s: string) =>
     .replace(/\s+VS\s+/g, " VS ")
     .replace(/\s+@\s+/g, " VS ")
     .replace(/\s+V\s+/g, " VS ")
-    .replace(/\s+/g, " ")
-    .replace(" vs ", " VS ");
+    .replace(/\s+/g, " ");
 
-// ✅ NOVO: obtém YYYY-MM-DD do jogo (robusto a diferentes campos)
-const getGameDay = (g: any): string => {
-  // se já vier direto como YYYY-MM-DD
-  if (typeof g?.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(g.date)) return g.date;
-  if (typeof g?.gameDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(g.gameDate)) return g.gameDate;
-  if (typeof g?.day === "string" && /^\d{4}-\d{2}-\d{2}$/.test(g.day)) return g.day;
-
-  // se vier em ISO tipo 2026-02-25T00:30:00Z
-  const iso =
-    (typeof g?.startTime === "string" && g.startTime) ||
-    (typeof g?.start === "string" && g.start) ||
-    (typeof g?.commenceTime === "string" && g.commenceTime) ||
-    (typeof g?.gameTime === "string" && g.gameTime) ||
-    (typeof g?.utcTime === "string" && g.utcTime) ||
-    "";
-
-  if (iso && typeof iso === "string" && iso.includes("T")) return iso.slice(0, 10);
-
+// ✅ FIX: converter qualquer formato para YYYY-MM-DD (inclui ISO em date/gameDate/day)
+const toYMD = (v: any): string => {
+  if (!v) return "";
+  if (typeof v === "string") {
+    const s = v.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    if (s.includes("T") && /^\d{4}-\d{2}-\d{2}T/.test(s)) return s.slice(0, 10);
+  }
+  if (v instanceof Date && !isNaN(v.getTime())) return v.toISOString().slice(0, 10);
   return "";
+};
+
+// ✅ NOVO (robusto): obtém YYYY-MM-DD do jogo
+const getGameDay = (g: any): string => {
+  return (
+    toYMD(g?.date) ||
+    toYMD(g?.gameDate) ||
+    toYMD(g?.day) ||
+    toYMD(g?.startTime) ||
+    toYMD(g?.start) ||
+    toYMD(g?.commenceTime) ||
+    toYMD(g?.gameTime) ||
+    toYMD(g?.utcTime) ||
+    ""
+  );
 };
 
 const parseTeamsFromText = (text: string): string[] => {
@@ -438,10 +443,13 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
   const [drawPick, setDrawPick] = useState<string>("");
   const [drawNote, setDrawNote] = useState<string>("");
 
-  // ✅ NOVO: filtra predictions para o dia selecionado (evita jogos de outros dias nas combos)
+  // ✅ FIX: normaliza selectedDate para YYYY-MM-DD (caso venha ISO)
+  const selectedYMD = useMemo(() => toYMD(selectedDate) || (selectedDate || "").slice(0, 10), [selectedDate]);
+
+  // ✅ filtra predictions para o dia selecionado (evita jogos de outros dias nas combos)
   const predictionsOfDay = useMemo(() => {
-    return (predictions || []).filter((g: any) => getGameDay(g) === selectedDate);
-  }, [predictions, selectedDate]);
+    return (predictions || []).filter((g: any) => getGameDay(g) === selectedYMD);
+  }, [predictions, selectedYMD]);
 
   const teams = useMemo(() => {
     const set = new Set<string>();
@@ -489,7 +497,7 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
 
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(storageKey(selectedDate));
+      const raw = localStorage.getItem(storageKey(selectedYMD || selectedDate));
       if (!raw) {
         setPicks(defaultSuggestions());
         setIsEditing(true);
@@ -518,7 +526,7 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
     setGamePickOver55("");
     setDrawPick("");
     setDrawNote("");
-  }, [selectedDate]);
+  }, [selectedDate, selectedYMD]);
 
   const addUnique = (arr: string[], value: string, max: number) => {
     const v = (value || "").trim().toUpperCase();
@@ -540,7 +548,7 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
 
   const savePicks = () => {
     try {
-      localStorage.setItem(storageKey(selectedDate), JSON.stringify(picks));
+      localStorage.setItem(storageKey(selectedYMD || selectedDate), JSON.stringify(picks));
       setSaveState("saved");
       setIsEditing(false);
     } catch {
@@ -575,7 +583,7 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
             MINHAS <span className="text-blue-500">PICKS</span>
           </h2>
           <p className="text-slate-400 text-sm max-w-lg">
-            Escolhe manualmente as tuas seleções para {selectedDate}.{" "}
+            Escolhe manualmente as tuas seleções para {selectedYMD || selectedDate}.{" "}
             {disabled ? "Modo bloqueado (clica Editar para alterar)." : "Modo edição ativo."}
           </p>
         </div>
