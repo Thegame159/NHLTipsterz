@@ -1,9 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Suggestions } from "../types";
 
-type StoredAuto = { savedAt: number; suggestions: Suggestions };
-type StoredMine = { savedAt?: number; suggestions: Suggestions } | Suggestions;
-
 type ApiResultGame = {
   gameId: number;
   awayAbbr: string;
@@ -24,7 +21,13 @@ type ApiResultsResponse = {
   byMatchup: Record<string, ApiResultGame>;
 };
 
-// ----------------- TEAM NAME -> ABBR (para Auto / nomes completos) -----------------
+type HistoryItem = {
+  date: string;
+  auto: null | { savedAt: number; suggestions: Suggestions };
+  mine: null | { savedAt: number; suggestions: Suggestions };
+};
+
+// ----------------- TEAM NAME -> ABBR -----------------
 const TEAM_FULLNAMES: Record<string, string[]> = {
   ANA: ["anaheim ducks", "ducks", "anaheim"],
   BOS: ["boston bruins", "bruins", "boston"],
@@ -60,7 +63,6 @@ const TEAM_FULLNAMES: Record<string, string[]> = {
   UTA: ["utah hockey club", "utah"],
 };
 
-// ✅ Só aceitamos estas abreviações como válidas
 const NHL_ABBRS = new Set(Object.keys(TEAM_FULLNAMES));
 
 const norm = (s: string) =>
@@ -75,12 +77,10 @@ function guessAbbrFromText(text: string): string | null {
   const t = norm(text);
   if (!t) return null;
 
-  // ✅ abreviação direta: mas só se for uma abreviação NHL real
   const mm = (text || "").toUpperCase().match(/\b[A-Z]{2,4}\b/g) || [];
   const direct = mm.find((x) => NHL_ABBRS.has(x) && !["OT", "VS", "V"].includes(x));
   if (direct) return direct;
 
-  // nomes completos/curtos
   for (const [abbr, names] of Object.entries(TEAM_FULLNAMES)) {
     for (const n of names) {
       if (t.includes(n)) return abbr;
@@ -89,7 +89,6 @@ function guessAbbrFromText(text: string): string | null {
   return null;
 }
 
-// ----------------- Helpers -----------------
 const normalizeGameText = (s: string) =>
   (s || "")
     .trim()
@@ -109,7 +108,6 @@ const splitMatchup = (text: string): [string, string] | null => {
   return [parts[0], parts[1]];
 };
 
-// ✅ Melhorado: filtra tokens tipo NEW/YORK, só aceita abreviações NHL
 const parseTeamsFromText = (text: string): string[] => {
   const cleaned = normalizeGameText(text);
   const raw = cleaned.toUpperCase();
@@ -118,7 +116,6 @@ const parseTeamsFromText = (text: string): string[] => {
   const abbr = abbrMatches.filter((s) => NHL_ABBRS.has(s) && !["OT", "VS", "V"].includes(s));
   if (abbr.length >= 2) return abbr.slice(0, 2);
 
-  // fallback: nomes completos "New York Rangers VS Boston Bruins"
   const sp = splitMatchup(cleaned);
   if (sp) {
     const a = guessAbbrFromText(sp[0]);
@@ -127,18 +124,15 @@ const parseTeamsFromText = (text: string): string[] => {
     if (out.length >= 2) return out.slice(0, 2);
   }
 
-  // single fallback
   const single = guessAbbrFromText(cleaned);
   return single ? [single] : [];
 };
 
-// ✅ Single team: só abreviações NHL reais, senão tenta nomes completos
 const parseTeamSingle = (text: string): string | null => {
   const raw = (text || "").toUpperCase();
   const mm = raw.match(/\b[A-Z]{2,4}\b/g) || [];
   const direct = mm.find((x) => NHL_ABBRS.has(x) && !["OT", "VS", "V"].includes(x));
   if (direct) return direct;
-
   return guessAbbrFromText(text);
 };
 
@@ -187,67 +181,35 @@ const getLogoUrl = (abbr: string) => {
   return `https://a.espncdn.com/i/teamlogos/nhl/500/${code}.png`;
 };
 
-function readAllDates(prefix: string): string[] {
-  const dates: string[] = [];
-  for (let i = 0; i < localStorage.length; i++) {
-    const k = localStorage.key(i) || "";
-    if (!k.startsWith(prefix)) continue;
-    const date = k.replace(prefix, "");
-    if (/^\d{4}-\d{2}-\d{2}$/.test(date)) dates.push(date);
-  }
-  dates.sort((a, b) => (a < b ? 1 : -1));
-  return dates;
-}
-
-function safeReadJson<T>(key: string): T | null {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return null;
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
-
-// ----------------- Manual evaluation (localStorage) -----------------
-type ManualValue = boolean | null; // true=certo, false=errado, null=pendente
+// ----------------- Manual store (AGORA NO BACKEND) -----------------
+type ManualValue = boolean | null;
 type ManualSide = "auto" | "mine";
 type ManualStore = {
   savedAt: number;
-  auto: Record<string, Record<string, ManualValue>>; // market -> label -> value
+  auto: Record<string, Record<string, ManualValue>>;
   mine: Record<string, Record<string, ManualValue>>;
 };
 
-function manualKey(date: string) {
-  return `manual_eval_${date}`;
+async function fetchManual(date: string): Promise<ManualStore | null> {
+  const r = await fetch(`/api/manual?date=${date}`);
+  if (!r.ok) return null;
+  const data = await r.json().catch(() => null);
+  return data?.store ?? null;
 }
 
-function readManual(date: string): ManualStore | null {
-  return safeReadJson<ManualStore>(manualKey(date));
+async function saveManual(date: string, store: ManualStore) {
+  await fetch(`/api/manual?date=${date}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ store }),
+  });
 }
 
-function writeManual(date: string, store: ManualStore) {
-  try {
-    localStorage.setItem(manualKey(date), JSON.stringify(store));
-  } catch {
-    // ignore
-  }
+async function clearManual(date: string) {
+  await fetch(`/api/manual?date=${date}`, { method: "DELETE" });
 }
 
-function clearManual(date: string) {
-  try {
-    localStorage.removeItem(manualKey(date));
-  } catch {
-    // ignore
-  }
-}
-
-function getManualValue(
-  store: ManualStore | null,
-  side: ManualSide,
-  market: string,
-  label: string
-): ManualValue | undefined {
+function getManualValue(store: ManualStore | null, side: ManualSide, market: string, label: string): ManualValue | undefined {
   if (!store) return undefined;
   const byMarket = store[side] || {};
   const m = byMarket[market];
@@ -255,23 +217,19 @@ function getManualValue(
   return m[label];
 }
 
-function setManualValue(date: string, side: ManualSide, market: string, label: string, value: ManualValue) {
-  const cur = readManual(date);
-  const next: ManualStore = cur ?? { savedAt: Date.now(), auto: {}, mine: {} };
+function setManualValueInStore(store: ManualStore | null, side: ManualSide, market: string, label: string, value: ManualValue): ManualStore {
+  const next: ManualStore = store ?? { savedAt: Date.now(), auto: {}, mine: {} };
   next.savedAt = Date.now();
   next[side] = next[side] || {};
   next[side][market] = next[side][market] || {};
   next[side][market][label] = value;
-  writeManual(date, next);
+  return next;
 }
 
 // ----------------- Eval -----------------
 type PickEval = { label: string; ok: boolean | null; reason?: string; teams?: string[]; manual?: boolean };
 
-function evalMarkets(
-  sug: Suggestions,
-  results: ApiResultsResponse
-): { correct: number; total: number; byMarket: Record<string, PickEval[]> } {
+function evalMarkets(sug: Suggestions, results: ApiResultsResponse) {
   const byMatchup = results.byMatchup || {};
 
   const evalGamePick = (text: string, fn: (g: ApiResultGame) => boolean): PickEval => {
@@ -299,20 +257,13 @@ function evalMarkets(
 
   const evalWinTeam = (text: string): PickEval => {
     const team = parseTeamSingle(text);
-
     if (!team) return { label: text, ok: null, reason: "Não consegui ler a equipa." };
 
     const game = Object.values(byMatchup).find((g) => g.awayAbbr === team || g.homeAbbr === team);
 
     if (!game) {
-      return {
-        label: text,
-        ok: null,
-        teams: [team],
-        reason: "Resultados do dia ainda não disponíveis para esta equipa.",
-      };
+      return { label: text, ok: null, teams: [team], reason: "Resultados do dia ainda não disponíveis para esta equipa." };
     }
-
     if (game.status !== "FINAL") return { label: text, ok: null, teams: [team], reason: "Jogo ainda não terminou." };
 
     return { label: text, ok: game.winnerAbbr === team, teams: [team] };
@@ -320,39 +271,22 @@ function evalMarkets(
 
   const out: Record<string, PickEval[]> = {
     "Vitória (incl. OT)": (sug.tripleWin || []).map(evalWinTeam),
-    "Over 1.5 P1 (Triplete)": (sug.tripleOver15P1 || []).map((t) =>
-      evalGamePick(t, (g) => g.p1Away + g.p1Home >= 2)
-    ),
-    "Over 1.5 P1 (Dupla)": (sug.doubleOver15P1 || []).map((t) =>
-      evalGamePick(t, (g) => g.p1Away + g.p1Home >= 2)
-    ),
+    "Over 1.5 P1 (Triplete)": (sug.tripleOver15P1 || []).map((t) => evalGamePick(t, (g) => g.p1Away + g.p1Home >= 2)),
+    "Over 1.5 P1 (Dupla)": (sug.doubleOver15P1 || []).map((t) => evalGamePick(t, (g) => g.p1Away + g.p1Home >= 2)),
     "Empate TR": (sug.drawSuggestions || []).map((d) => evalGamePick(d.game, (g) => g.regAway === g.regHome)),
     "Over 4.5": (sug.quadrupleOver45 || []).map((t) => evalGamePick(t, (g) => g.finalAway + g.finalHome >= 5)),
     "Over 5.5": (sug.over55Suggestions || []).map((t) => evalGamePick(t, (g) => g.finalAway + g.finalHome >= 6)),
   };
 
-  let correct = 0;
-  let total = 0;
-
-  for (const market of Object.keys(out)) {
-    for (const p of out[market]) {
-      if (p.ok === null) continue;
-      total++;
-      if (p.ok) correct++;
-    }
-  }
-
-  return { correct, total, byMarket: out };
+  return out;
 }
 
 function applyManualOverridesToByMarket(
-  date: string,
+  store: ManualStore | null,
   side: ManualSide,
   byMarket: Record<string, PickEval[]>
 ): { correct: number; total: number; byMarket: Record<string, PickEval[]>; hasManual: boolean } {
-  const store = readManual(date);
   let hasManual = false;
-
   const nextByMarket: Record<string, PickEval[]> = {};
 
   for (const [market, picks] of Object.entries(byMarket || {})) {
@@ -374,7 +308,6 @@ function applyManualOverridesToByMarket(
     });
   }
 
-  // recalc
   let correct = 0;
   let total = 0;
   for (const picks of Object.values(nextByMarket)) {
@@ -477,11 +410,7 @@ const PickLine: React.FC<{
               )}
             </div>
 
-            {p.reason && (
-              <div className="text-[11px] text-slate-500 truncate">
-                {p.reason}
-              </div>
-            )}
+            {p.reason && <div className="text-[11px] text-slate-500 truncate">{p.reason}</div>}
           </div>
         </div>
 
@@ -491,7 +420,6 @@ const PickLine: React.FC<{
         </div>
       </div>
 
-      {/* ✅ BOTÕES: no mobile aparecem por baixo; no desktop ficam alinhados à direita */}
       {editable && onSet && (
         <div className="mt-3 flex flex-col sm:flex-row sm:justify-end gap-2">
           <button
@@ -501,7 +429,6 @@ const PickLine: React.FC<{
               onSet(true);
             }}
             className="w-full sm:w-auto px-3 py-2 rounded-lg border text-[10px] font-black bg-emerald-500/10 border-emerald-500/20 text-emerald-300 hover:bg-emerald-500/15"
-            title="Marcar como certo"
           >
             Certo
           </button>
@@ -513,7 +440,6 @@ const PickLine: React.FC<{
               onSet(false);
             }}
             className="w-full sm:w-auto px-3 py-2 rounded-lg border text-[10px] font-black bg-rose-500/10 border-rose-500/20 text-rose-300 hover:bg-rose-500/15"
-            title="Marcar como errado"
           >
             Errado
           </button>
@@ -525,7 +451,6 @@ const PickLine: React.FC<{
               onSet(null);
             }}
             className="w-full sm:w-auto px-3 py-2 rounded-lg border text-[10px] font-black bg-white/5 border-white/10 text-slate-300 hover:bg-white/10"
-            title="Marcar como pendente"
           >
             Pend.
           </button>
@@ -575,15 +500,29 @@ const MarketBlock: React.FC<{
 const StatsView: React.FC = () => {
   const [reports, setReports] = useState<any[]>([]);
   const [openDate, setOpenDate] = useState<string>("");
-  const [editDate, setEditDate] = useState<string>(""); // data em modo edição manual
-  const [, forceRerender] = useState(0); // para refletir alterações manuais imediatamente
+  const [editDate, setEditDate] = useState<string>("");
+  const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
+  const [manualByDate, setManualByDate] = useState<Record<string, ManualStore | null>>({});
 
-  const dates = useMemo(() => {
-    const autoDates = typeof window !== "undefined" ? readAllDates("auto_picks_") : [];
-    const myDates = typeof window !== "undefined" ? readAllDates("my_picks_") : [];
-    const set = new Set<string>([...autoDates, ...myDates]);
-    return Array.from(set).sort((a, b) => (a < b ? 1 : -1));
+  // carrega histórico global
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const r = await fetch("/api/history?limit=120");
+      if (!r.ok) {
+        if (!cancelled) setHistoryItems([]);
+        return;
+      }
+      const data = await r.json().catch(() => null);
+      const items: HistoryItem[] = Array.isArray(data?.items) ? data.items : [];
+      if (!cancelled) setHistoryItems(items);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  const dates = useMemo(() => historyItems.map((x) => x.date), [historyItems]);
 
   useEffect(() => {
     if (!dates.length) {
@@ -607,28 +546,28 @@ const StatsView: React.FC = () => {
       const next: any[] = [];
 
       for (const date of dates) {
+        const history = historyItems.find((x) => x.date === date) || null;
+        const autoSug: Suggestions | null = history?.auto?.suggestions ?? null;
+        const mineSug: Suggestions | null = history?.mine?.suggestions ?? null;
+
         try {
-          const r = await fetch(`/api/results?date=${date}`);
-          if (!r.ok) throw new Error(`results HTTP ${r.status}`);
-          const results = (await r.json()) as ApiResultsResponse;
+          const [rRes, manualStore] = await Promise.all([
+            fetch(`/api/results?date=${date}`),
+            fetchManual(date),
+          ]);
 
-          const autoRaw = safeReadJson<StoredAuto>(`auto_picks_${date}`);
-          const myRaw = safeReadJson<StoredMine>(`my_picks_${date}`);
+          if (!rRes.ok) throw new Error(`results HTTP ${rRes.status}`);
+          const results = (await rRes.json()) as ApiResultsResponse;
 
-          const autoSug: Suggestions | null = autoRaw?.suggestions ?? null;
+          if (!cancelled) {
+            setManualByDate((prev) => ({ ...prev, [date]: manualStore }));
+          }
 
-          const mineSug: Suggestions | null =
-            myRaw && (myRaw as any).suggestions
-              ? (myRaw as any).suggestions
-              : myRaw && (myRaw as any).tripleWin
-              ? ((myRaw as any) as Suggestions)
-              : null;
+          const autoByMarketBase = autoSug ? evalMarkets(autoSug, results) : {};
+          const mineByMarketBase = mineSug ? evalMarkets(mineSug, results) : {};
 
-          const autoEvalBase = autoSug ? evalMarkets(autoSug, results) : { correct: 0, total: 0, byMarket: {} };
-          const mineEvalBase = mineSug ? evalMarkets(mineSug, results) : { correct: 0, total: 0, byMarket: {} };
-
-          const autoApplied = applyManualOverridesToByMarket(date, "auto", autoEvalBase.byMarket);
-          const mineApplied = applyManualOverridesToByMarket(date, "mine", mineEvalBase.byMarket);
+          const autoApplied = applyManualOverridesToByMarket(manualStore, "auto", autoByMarketBase as any);
+          const mineApplied = applyManualOverridesToByMarket(manualStore, "mine", mineByMarketBase as any);
 
           const autoPct = autoSug && autoApplied.total > 0 ? (autoApplied.correct / autoApplied.total) * 100 : null;
           const minePct = mineSug && mineApplied.total > 0 ? (mineApplied.correct / mineApplied.total) * 100 : null;
@@ -658,7 +597,7 @@ const StatsView: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [dates]);
+  }, [dates, historyItems]);
 
   const totals = useMemo(() => {
     let aC = 0,
@@ -681,14 +620,26 @@ const StatsView: React.FC = () => {
     };
   }, [reports]);
 
-  const reloadOneDateFromStorage = (date: string) => {
+  async function setManual(date: string, side: ManualSide, market: string, label: string, value: ManualValue) {
+    const cur = manualByDate[date] ?? null;
+    const next = setManualValueInStore(cur, side, market, label, value);
+
+    setManualByDate((prev) => ({ ...prev, [date]: next }));
+
+    try {
+      await saveManual(date, next);
+    } catch {
+      // ignore
+    }
+
+    // re-run only this date UI by forcing full refresh of reports from current state
     setReports((prev) =>
       prev.map((r) => {
         if (r.date !== date) return r;
         if (r.resultsStatus !== "ready") return r;
 
-        const autoApplied = applyManualOverridesToByMarket(date, "auto", r.auto.byMarket);
-        const mineApplied = applyManualOverridesToByMarket(date, "mine", r.mine.byMarket);
+        const autoApplied = applyManualOverridesToByMarket(next, "auto", r.auto.byMarket);
+        const mineApplied = applyManualOverridesToByMarket(next, "mine", r.mine.byMarket);
 
         const autoPct = autoApplied.total > 0 ? (autoApplied.correct / autoApplied.total) * 100 : r.auto.percent;
         const minePct = mineApplied.total > 0 ? (mineApplied.correct / mineApplied.total) * 100 : r.mine.percent;
@@ -701,8 +652,37 @@ const StatsView: React.FC = () => {
         };
       })
     );
-    forceRerender((x) => x + 1);
-  };
+  }
+
+  async function clearManualForDate(date: string) {
+    try {
+      await clearManual(date);
+    } catch {
+      // ignore
+    }
+    setManualByDate((prev) => ({ ...prev, [date]: null }));
+
+    // forçar reload das percentagens removendo manual (fica tudo automático)
+    setReports((prev) =>
+      prev.map((r) => {
+        if (r.date !== date) return r;
+        if (r.resultsStatus !== "ready") return r;
+
+        const autoApplied = applyManualOverridesToByMarket(null, "auto", r.auto.byMarket);
+        const mineApplied = applyManualOverridesToByMarket(null, "mine", r.mine.byMarket);
+
+        const autoPct = autoApplied.total > 0 ? (autoApplied.correct / autoApplied.total) * 100 : r.auto.percent;
+        const minePct = mineApplied.total > 0 ? (mineApplied.correct / mineApplied.total) * 100 : r.mine.percent;
+
+        return {
+          ...r,
+          auto: { ...r.auto, correct: autoApplied.correct, total: autoApplied.total, percent: autoPct, byMarket: autoApplied.byMarket },
+          mine: { ...r.mine, correct: mineApplied.correct, total: mineApplied.total, percent: minePct, byMarket: mineApplied.byMarket },
+          hasManual: false,
+        };
+      })
+    );
+  }
 
   if (!dates.length) {
     return (
@@ -723,10 +703,7 @@ const StatsView: React.FC = () => {
             <span className="text-indigo-300">STATS</span> HISTÓRICO
           </h2>
           <p className="text-slate-400 text-sm max-w-2xl">
-            Taxa de acerto das escolhas automáticas vs as tuas. Os jogos “pendentes” não contam para a percentagem.{" "}
-            <span className="text-slate-500">
-              Agora também podes marcar resultados manualmente quando a API não reconhecer o jogo.
-            </span>
+            Taxa de acerto das escolhas automáticas vs as tuas. Os jogos “pendentes” não contam para a percentagem.
           </p>
         </div>
 
@@ -798,10 +775,7 @@ const StatsView: React.FC = () => {
                       </button>
 
                       <button
-                        onClick={() => {
-                          clearManual(r.date);
-                          reloadOneDateFromStorage(r.date);
-                        }}
+                        onClick={() => clearManualForDate(r.date)}
                         className="px-3 py-2 rounded-lg border text-[10px] font-black uppercase tracking-widest bg-rose-500/10 border-rose-500/20 text-rose-200 hover:bg-rose-500/15"
                         title="Apaga as marcações manuais deste dia"
                       >
@@ -842,10 +816,7 @@ const StatsView: React.FC = () => {
                                 editable={isEditingThisDate}
                                 onSetPick={
                                   isEditingThisDate
-                                    ? (label, val) => {
-                                        setManualValue(r.date, "auto", k, label, val);
-                                        reloadOneDateFromStorage(r.date);
-                                      }
+                                    ? (label, val) => setManual(r.date, "auto", k, label, val)
                                     : undefined
                                 }
                               />
@@ -876,10 +847,7 @@ const StatsView: React.FC = () => {
                                 editable={isEditingThisDate}
                                 onSetPick={
                                   isEditingThisDate
-                                    ? (label, val) => {
-                                        setManualValue(r.date, "mine", k, label, val);
-                                        reloadOneDateFromStorage(r.date);
-                                      }
+                                    ? (label, val) => setManual(r.date, "mine", k, label, val)
                                     : undefined
                                 }
                               />
