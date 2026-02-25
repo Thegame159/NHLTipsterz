@@ -4,7 +4,6 @@ import { GamePrediction, Suggestions } from "../types";
 
 interface Props {
   predictions: GamePrediction[];
-  suggestions: Suggestions; // ✅ NOVO: vem do mesmo sítio que alimenta as DICAS
   selectedDate: string; // YYYY-MM-DD (loadedDate)
 }
 
@@ -16,8 +15,6 @@ const defaultSuggestions = (): Suggestions => ({
   quadrupleOver45: [],
   over55Suggestions: [],
 });
-
-const storageKey = (date: string) => `my_picks_${date}`;
 
 const getLogoUrl = (abbr: string) => {
   const map: Record<string, string> = {
@@ -71,19 +68,27 @@ const normalizeGameText = (s: string) =>
     .replace(/\s+VS\s+/g, " VS ")
     .replace(/\s+@\s+/g, " VS ")
     .replace(/\s+V\s+/g, " VS ")
-    .replace(/\s+/g, " ");
-
-// ✅ normaliza texto das suggestions -> "AAA VS BBB"
-const normalizeSuggestionToGame = (s: string) =>
-  (s || "")
-    .trim()
-    .toUpperCase()
-    .replace(/\(\d+%\)/g, "") // remove (75%)
-    .replace(/\s+@\s+/g, " VS ")
-    .replace(/\s+VS\s+/g, " VS ")
-    .replace(/\s+V\s+/g, " VS ")
     .replace(/\s+/g, " ")
-    .trim();
+    .replace(" vs ", " VS ");
+
+// obtém YYYY-MM-DD do jogo
+const getGameDay = (g: any): string => {
+  if (typeof g?.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(g.date)) return g.date;
+  if (typeof g?.gameDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(g.gameDate)) return g.gameDate;
+  if (typeof g?.day === "string" && /^\d{4}-\d{2}-\d{2}$/.test(g.day)) return g.day;
+
+  const iso =
+    (typeof g?.startTime === "string" && g.startTime) ||
+    (typeof g?.start === "string" && g.start) ||
+    (typeof g?.commenceTime === "string" && g.commenceTime) ||
+    (typeof g?.gameTime === "string" && g.gameTime) ||
+    (typeof g?.utcTime === "string" && g.utcTime) ||
+    (typeof g?.dateTime === "string" && g.dateTime) ||
+    "";
+
+  if (iso && typeof iso === "string" && iso.includes("T")) return iso.slice(0, 10);
+  return "";
+};
 
 const parseTeamsFromText = (text: string): string[] => {
   const raw = (text || "").trim();
@@ -119,9 +124,7 @@ const SuggestionItem: React.FC<{
         disabled ? "opacity-70" : "hover:border-blue-500/30"
       }`}
     >
-      <div
-        className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${badgeColor} text-white shrink-0 shadow-sm`}
-      >
+      <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${badgeColor} text-white shrink-0 shadow-sm`}>
         {index + 1}
       </div>
 
@@ -249,7 +252,6 @@ const PrettyDropdown: React.FC<{
     const onDocPointerDown = (e: PointerEvent) => {
       const btn = btnRef.current;
       const menu = menuRef.current;
-
       const target = e.target as Node | null;
       if (!target) return;
 
@@ -282,12 +284,7 @@ const PrettyDropdown: React.FC<{
           <div
             ref={menuRef}
             className="z-[9999] rounded-2xl border border-slate-700/60 bg-[#050b1a]/95 backdrop-blur-xl shadow-2xl overflow-hidden"
-            style={{
-              position: "fixed",
-              left: pos.left,
-              top: pos.top,
-              width: pos.width,
-            }}
+            style={{ position: "fixed", left: pos.left, top: pos.top, width: pos.width }}
           >
             <div className="p-2 border-b border-white/5">
               <div className="flex items-center gap-2 bg-slate-900/50 border border-slate-700/50 rounded-xl px-3 py-2">
@@ -409,7 +406,7 @@ const PrettyDropdown: React.FC<{
   );
 };
 
-const MyPicksView: React.FC<Props> = ({ predictions, suggestions, selectedDate }) => {
+const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
   const [picks, setPicks] = useState<Suggestions>(defaultSuggestions());
   const [isEditing, setIsEditing] = useState<boolean>(true);
   const [saveState, setSaveState] = useState<"idle" | "saved">("idle");
@@ -425,64 +422,28 @@ const MyPicksView: React.FC<Props> = ({ predictions, suggestions, selectedDate }
   const [drawPick, setDrawPick] = useState<string>("");
   const [drawNote, setDrawNote] = useState<string>("");
 
-  // ✅ Fonte principal: suggestions (porque é o que funciona no teu sistema)
-  const allSuggestionStrings = useMemo(() => {
-    const flat: string[] = [
-      ...(suggestions?.tripleWin || []),
-      ...(suggestions?.tripleOver15P1 || []),
-      ...(suggestions?.doubleOver15P1 || []),
-      ...(suggestions?.quadrupleOver45 || []),
-      ...(suggestions?.over55Suggestions || []),
-      ...((suggestions?.drawSuggestions || []).map((d) => d.game) || []),
-    ];
-    return flat.filter(Boolean);
-  }, [suggestions]);
+  // filtra predictions para o dia selecionado
+  const predictionsOfDay = useMemo(() => {
+    return (predictions || []).filter((g: any) => getGameDay(g) === selectedDate);
+  }, [predictions, selectedDate]);
 
-  const gamesFromSuggestions = useMemo(() => {
+  const teams = useMemo(() => {
     const set = new Set<string>();
-    for (const s of allSuggestionStrings) {
-      const g = normalizeSuggestionToGame(s);
-      if (g.includes(" VS ")) set.add(g);
+    for (const g of predictionsOfDay) {
+      if ((g as any).homeTeamAbbr) set.add((g as any).homeTeamAbbr.toUpperCase());
+      if ((g as any).awayTeamAbbr) set.add((g as any).awayTeamAbbr.toUpperCase());
     }
     return Array.from(set).sort();
-  }, [allSuggestionStrings]);
+  }, [predictionsOfDay]);
 
-  const teamsFromSuggestions = useMemo(() => {
+  const gamesOfDay = useMemo(() => {
     const set = new Set<string>();
-    for (const g of gamesFromSuggestions) {
-      const abbr = g.match(/\b[A-Z]{2,4}\b/g) || [];
-      for (const t of abbr) {
-        if (t !== "VS" && t !== "OT" && t !== "V") set.add(t);
-      }
+    for (const g of predictionsOfDay) {
+      const txt = normalizeGameText(`${(g as any).awayTeamAbbr} vs ${(g as any).homeTeamAbbr}`);
+      if (txt.includes(" VS ")) set.add(txt);
     }
     return Array.from(set).sort();
-  }, [gamesFromSuggestions]);
-
-  // ✅ Fallback: se por algum motivo suggestions vierem vazias, tenta usar predictions (como tinhas)
-  const gamesFromPredictions = useMemo(() => {
-    const set = new Set<string>();
-    for (const g of predictions || []) {
-      const away = (g as any)?.awayTeamAbbr;
-      const home = (g as any)?.homeTeamAbbr;
-      if (away && home) set.add(normalizeGameText(`${away} vs ${home}`));
-    }
-    return Array.from(set).sort();
-  }, [predictions]);
-
-  const teamsFromPredictions = useMemo(() => {
-    const set = new Set<string>();
-    for (const g of predictions || []) {
-      const a = (g as any)?.awayTeamAbbr;
-      const h = (g as any)?.homeTeamAbbr;
-      if (a) set.add(String(a).toUpperCase());
-      if (h) set.add(String(h).toUpperCase());
-    }
-    return Array.from(set).sort();
-  }, [predictions]);
-
-  // ✅ Escolha final: usa suggestions se existirem
-  const gamesOfDay = gamesFromSuggestions.length ? gamesFromSuggestions : gamesFromPredictions;
-  const teams = teamsFromSuggestions.length ? teamsFromSuggestions : teamsFromPredictions;
+  }, [predictionsOfDay]);
 
   const availableTeams = useMemo(() => {
     const chosen = new Set(picks.tripleWin.map((t) => (t || "").trim().toUpperCase()));
@@ -509,37 +470,51 @@ const MyPicksView: React.FC<Props> = ({ predictions, suggestions, selectedDate }
     return gamesOfDay.filter((g) => !chosen.has(normalizeGameText(g)));
   }, [gamesOfDay, picks.drawSuggestions]);
 
+  // ✅ Carrega picks “mine” do backend (Redis)
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(storageKey(selectedDate));
-      if (!raw) {
-        setPicks(defaultSuggestions());
-        setIsEditing(true);
-        setSaveState("idle");
-        return;
-      }
-      const parsed = JSON.parse(raw);
-      const loaded: Suggestions = {
-        ...defaultSuggestions(),
-        ...parsed,
-        drawSuggestions: Array.isArray(parsed?.drawSuggestions) ? parsed.drawSuggestions : [],
-      };
-      setPicks(loaded);
-      setIsEditing(isEmptyPicks(loaded));
-      setSaveState(isEmptyPicks(loaded) ? "idle" : "saved");
-    } catch {
-      setPicks(defaultSuggestions());
-      setIsEditing(true);
-      setSaveState("idle");
-    }
+    let cancelled = false;
 
-    setTeamPick("");
-    setGamePickOver15Triple("");
-    setGamePickOver15Double("");
-    setGamePickOver45Quad("");
-    setGamePickOver55("");
-    setDrawPick("");
-    setDrawNote("");
+    (async () => {
+      try {
+        const r = await fetch(`/api/history?date=${selectedDate}`);
+        if (!r.ok) {
+          if (!cancelled) {
+            setPicks(defaultSuggestions());
+            setIsEditing(true);
+            setSaveState("idle");
+          }
+          return;
+        }
+
+        const data = await r.json().catch(() => null);
+        const mineSug: Suggestions | null = data?.mine?.suggestions ?? null;
+
+        if (!cancelled) {
+          const loaded = mineSug ? { ...defaultSuggestions(), ...mineSug } : defaultSuggestions();
+          setPicks(loaded);
+          setIsEditing(isEmptyPicks(loaded));
+          setSaveState(isEmptyPicks(loaded) ? "idle" : "saved");
+        }
+      } catch {
+        if (!cancelled) {
+          setPicks(defaultSuggestions());
+          setIsEditing(true);
+          setSaveState("idle");
+        }
+      }
+
+      setTeamPick("");
+      setGamePickOver15Triple("");
+      setGamePickOver15Double("");
+      setGamePickOver45Quad("");
+      setGamePickOver55("");
+      setDrawPick("");
+      setDrawNote("");
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [selectedDate]);
 
   const addUnique = (arr: string[], value: string, max: number) => {
@@ -560,9 +535,14 @@ const MyPicksView: React.FC<Props> = ({ predictions, suggestions, selectedDate }
 
   const removeAt = <T,>(arr: T[], idx: number) => arr.filter((_, i) => i !== idx);
 
-  const savePicks = () => {
+  const savePicks = async () => {
     try {
-      localStorage.setItem(storageKey(selectedDate), JSON.stringify(picks));
+      await fetch("/api/history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date: selectedDate, side: "mine", suggestions: picks }),
+      });
+
       setSaveState("saved");
       setIsEditing(false);
     } catch {
@@ -599,12 +579,6 @@ const MyPicksView: React.FC<Props> = ({ predictions, suggestions, selectedDate }
           <p className="text-slate-400 text-sm max-w-lg">
             Escolhe manualmente as tuas seleções para {selectedDate}.{" "}
             {disabled ? "Modo bloqueado (clica Editar para alterar)." : "Modo edição ativo."}
-          </p>
-
-          {/* ✅ Debug discreto para confirmares (podes remover depois) */}
-          <p className="text-[10px] text-slate-600 mt-2">
-            Jogos (suggestions): <span className="text-slate-400 font-black">{gamesFromSuggestions.length}</span> | Jogos (predictions):{" "}
-            <span className="text-slate-400 font-black">{gamesFromPredictions.length}</span>
           </p>
         </div>
 
@@ -649,9 +623,7 @@ const MyPicksView: React.FC<Props> = ({ predictions, suggestions, selectedDate }
         </div>
       </div>
 
-      {/* GRID */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {/* Triplete de Vitórias */}
         <CardShell
           title="Triplete de Vitórias"
           icon="fa-award"
@@ -715,7 +687,6 @@ const MyPicksView: React.FC<Props> = ({ predictions, suggestions, selectedDate }
           </div>
         </CardShell>
 
-        {/* Triplete Over 1.5 P1 */}
         <CardShell
           title="Triplete Over 1.5 P1"
           icon="fa-fire-alt"
@@ -782,7 +753,6 @@ const MyPicksView: React.FC<Props> = ({ predictions, suggestions, selectedDate }
           </div>
         </CardShell>
 
-        {/* Dupla Over 1.5 P1 */}
         <CardShell
           title="Dupla Over 1.5 P1"
           icon="fa-bolt"
@@ -849,7 +819,6 @@ const MyPicksView: React.FC<Props> = ({ predictions, suggestions, selectedDate }
           </div>
         </CardShell>
 
-        {/* Quadriplete O4.5 */}
         <CardShell
           title="Quadriplete O4.5"
           icon="fa-hockey-puck"
@@ -916,7 +885,6 @@ const MyPicksView: React.FC<Props> = ({ predictions, suggestions, selectedDate }
           </div>
         </CardShell>
 
-        {/* Empate TR */}
         <div className="md:col-span-2 bg-slate-800/40 border border-slate-700 rounded-2xl p-6 relative overflow-hidden group">
           <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500" />
           <h3 className="text-xl font-bold flex items-center mb-6 text-indigo-400">
@@ -953,10 +921,7 @@ const MyPicksView: React.FC<Props> = ({ predictions, suggestions, selectedDate }
 
                 setPicks((p) => {
                   if (p.drawSuggestions.some((x) => normalizeGameText(x.game) === g)) return p;
-                  return {
-                    ...p,
-                    drawSuggestions: [...p.drawSuggestions, { game: g, explanation: (drawNote || "").trim() }],
-                  };
+                  return { ...p, drawSuggestions: [...p.drawSuggestions, { game: g, explanation: (drawNote || "").trim() }] };
                 });
 
                 setDrawPick("");
@@ -1031,14 +996,11 @@ const MyPicksView: React.FC<Props> = ({ predictions, suggestions, selectedDate }
                 </div>
               ))
             ) : (
-              <div className="col-span-2 text-center py-6 text-slate-500">
-                Ainda não escolheste empates para esta data.
-              </div>
+              <div className="col-span-2 text-center py-6 text-slate-500">Ainda não escolheste empates para esta data.</div>
             )}
           </div>
         </div>
 
-        {/* Over 5.5 Plus */}
         <CardShell
           title="Over 5.5 Plus"
           icon="fa-plus-circle"
