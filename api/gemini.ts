@@ -1,12 +1,16 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { GoogleGenAI } from "@google/genai";
 import { createClient } from "redis";
+import crypto from "crypto";
 
 export const config = { runtime: "nodejs" };
 
 // Cache do Gemini (predictions) e das lesões
 const GEMINI_TTL_MS = 1000 * 60 * 60 * 12; // 12h
-const INJURIES_TTL_MS = 1000 * 60 * 60 * 6; // 6h
+
+// Lesões mudam muito: cache mais curto
+const INJURIES_TTL_MS_DEFAULT = 1000 * 60 * 30; // 30 min
+const INJURIES_TTL_MS_NEAR_TODAY = 1000 * 60 * 15; // 15 min (hoje/ontem/amanhã)
 
 // Rate limit
 const RL_WINDOW_SEC = 600; // 10 min
@@ -126,6 +130,10 @@ async function fetchWithTimeout(url: string, init: RequestInit | undefined, time
   }
 }
 
+function sha256(text: string) {
+  return crypto.createHash("sha256").update(text).digest("hex");
+}
+
 // ---------------- NHL SCHEDULE (real) ----------------
 type ScheduleGame = {
   id: number;
@@ -228,15 +236,35 @@ async function fetchEspnBrazilInjuriesHtml(): Promise<{ ok: boolean; status: num
   return { ok: res.ok, status: res.status, url, html };
 }
 
-async function extractInjuriesWithGemini(apiKey: string, html: string): Promise<InjuriesExtractResult> {
-  const ai = new GoogleGenAI({ apiKey });
+function mergeExtracted(results: InjuriesExtractResult[]): InjuriesExtractResult {
+  const map = new Map<string, Set<string>>();
 
-  const MAX_CHARS = 180_000;
-  const clipped = html.length > MAX_CHARS ? html.slice(0, MAX_CHARS) : html;
+  for (const r of results) {
+    for (const t of r.teams || []) {
+      const team = String(t.team || "").trim();
+      if (!team) continue;
 
+      const set = map.get(team) ?? new Set<string>();
+      for (const inj of t.injuries || []) {
+        const s = String(inj || "").trim();
+        if (s) set.add(s);
+      }
+      map.set(team, set);
+    }
+  }
+
+  return {
+    teams: Array.from(map.entries()).map(([team, set]) => ({
+      team,
+      injuries: Array.from(set),
+    })),
+  };
+}
+
+async function extractInjuriesChunkWithGemini(ai: GoogleGenAI, chunk: string): Promise<InjuriesExtractResult> {
   const prompt = `
-Vais receber HTML da página de lesões da NHL da ESPN Brasil.
-A tua tarefa é APENAS extrair as lesões listadas no HTML. NÃO INVENTES NADA.
+Vais receber um excerto de HTML da página de lesões da NHL (ESPN Brasil).
+A tua tarefa é APENAS extrair as lesões listadas NESSE HTML. NÃO INVENTES NADA.
 
 Regras:
 - Se não encontrares uma equipa ou jogador no HTML, não cries entradas.
@@ -253,7 +281,7 @@ Cada item em "injuries" deve ser uma linha curta por jogador (ex: "Nome (OUT) - 
 Se não encontrares lesões, devolve: { "teams": [] }
 
 HTML:
-${clipped}
+${chunk}
 `.trim();
 
   const resp = await ai.models.generateContent({
@@ -277,20 +305,64 @@ ${clipped}
   return { teams };
 }
 
-async function getInjuriesByAbbr(apiKey: string, teamsOnDate: Set<string>) {
-  const redis = await getRedis();
-  const cacheKey = "espn_br_injuries_extracted_v1";
+async function extractInjuriesWithGemini(apiKey: string, html: string): Promise<InjuriesExtractResult> {
+  const ai = new GoogleGenAI({ apiKey });
 
-  if (redis) {
+  // Em vez de cortar a página, fazemos chunking (evita perder equipas no final do HTML)
+  const MAX_CHARS_PER_CHUNK = 90_000; // mais seguro para contexto e tokens
+  const OVERLAP = 2_000; // overlap pequeno para não cortar blocos a meio
+
+  const chunks: string[] = [];
+  if (!html) return { teams: [] };
+
+  let i = 0;
+  while (i < html.length) {
+    const end = Math.min(i + MAX_CHARS_PER_CHUNK, html.length);
+    const chunk = html.slice(i, end);
+    chunks.push(chunk);
+    if (end >= html.length) break;
+    i = end - OVERLAP;
+    if (i < 0) i = 0;
+  }
+
+  // Limite de chunks para evitar custos abusivos se HTML vier gigante
+  const MAX_CHUNKS = 6;
+  const clippedChunks = chunks.slice(0, MAX_CHUNKS);
+
+  const partials: InjuriesExtractResult[] = [];
+  for (const c of clippedChunks) {
+    try {
+      const part = await extractInjuriesChunkWithGemini(ai, c);
+      partials.push(part);
+    } catch (e) {
+      console.error("Chunk extraction failed:", e);
+    }
+  }
+
+  return mergeExtracted(partials);
+}
+
+async function getInjuriesByAbbr(
+  apiKey: string,
+  teamsOnDate: Set<string>,
+  opts: { injuriesTtlMs: number; refresh: boolean }
+) {
+  const redis = await getRedis();
+
+  // cache por DIA (UTC) + versão
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const cacheKey = `espn_br_injuries_extracted_v2:${todayKey}`;
+
+  if (redis && !opts.refresh) {
     try {
       const raw = await redis.get(cacheKey);
       const cached = raw ? safeJsonParse(raw) : null;
-      if (cached?.savedAt && Date.now() - cached.savedAt < INJURIES_TTL_MS && cached?.data?.teams) {
+      if (cached?.savedAt && Date.now() - cached.savedAt < opts.injuriesTtlMs && cached?.data?.teams) {
         const extracted: InjuriesExtractResult = cached.data;
         const mapped = mapExtractedToAbbr(extracted, teamsOnDate);
         return {
           ...mapped,
-          meta: { hit: true, key: cacheKey, savedAt: cached.savedAt },
+          meta: { hit: true, key: cacheKey, savedAt: cached.savedAt, htmlHash: cached.htmlHash ?? null },
         };
       }
     } catch (e) {
@@ -299,12 +371,17 @@ async function getInjuriesByAbbr(apiKey: string, teamsOnDate: Set<string>) {
   }
 
   const htmlRes = await fetchEspnBrazilInjuriesHtml();
+  const htmlHash = sha256(htmlRes.html || "");
   const extracted = await extractInjuriesWithGemini(apiKey, htmlRes.html);
   const mapped = mapExtractedToAbbr(extracted, teamsOnDate);
 
   if (redis) {
     try {
-      await redis.set(cacheKey, JSON.stringify({ savedAt: Date.now(), data: extracted }), { PX: INJURIES_TTL_MS });
+      await redis.set(
+        cacheKey,
+        JSON.stringify({ savedAt: Date.now(), htmlHash, data: extracted }),
+        { PX: opts.injuriesTtlMs }
+      );
     } catch (e) {
       console.error("Injuries cache save failed:", e);
     }
@@ -315,6 +392,7 @@ async function getInjuriesByAbbr(apiKey: string, teamsOnDate: Set<string>) {
     meta: {
       hit: false,
       key: cacheKey,
+      htmlHash,
       espn: { ok: htmlRes.ok, status: htmlRes.status, url: htmlRes.url, htmlLen: htmlRes.html.length },
     },
   };
@@ -436,11 +514,8 @@ function setCors(req: VercelRequest, res: VercelResponse) {
   if (!origin) {
     res.setHeader("Access-Control-Allow-Origin", "https://nhl-tipsterz.vercel.app");
   } else if (!allowlist.has(origin)) {
-    // Origin existe mas não é permitida
-    // Nota: não respondemos com "*" para não permitir sites aleatórios chamarem a tua API
     res.setHeader("Access-Control-Allow-Origin", "https://nhl-tipsterz.vercel.app");
     res.setHeader("Vary", "Origin");
-    // devolvemos 403 no handler para ficar explícito
     (res as any).__corsBlocked = true;
   } else {
     res.setHeader("Access-Control-Allow-Origin", origin);
@@ -498,6 +573,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // TTL dinâmico (mais curto para datas “próximas”)
     const geminiTtlMs = Math.abs(diffDays) <= 1 ? 1000 * 60 * 60 * 2 : GEMINI_TTL_MS;
 
+    // Lesões: mais curto perto de hoje
+    const injuriesTtlMs = Math.abs(diffDays) <= 1 ? INJURIES_TTL_MS_NEAR_TODAY : INJURIES_TTL_MS_DEFAULT;
+
+    // Permite forçar refresh: /api/gemini?refresh=1
+    const refresh = String((req.query as any)?.refresh ?? "") === "1";
+
     // 1) schedule real
     const scheduleGames = await fetchNhlScheduleGames(selectedDate);
     if (!scheduleGames.length) {
@@ -518,8 +599,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (a) teamAbbrs.add(a);
     }
 
-    // 3) Injuries (ESPN HTML -> Gemini extract) com cache 6h
-    const injuriesPack = await getInjuriesByAbbr(apiKey, teamAbbrs);
+    // 3) Injuries (ESPN HTML -> Gemini extract)
+    const injuriesPack = await getInjuriesByAbbr(apiKey, teamAbbrs, { injuriesTtlMs, refresh });
 
     // 4) Gemini predictions (cache)
     const geminiCacheKey = `gemini_only:${selectedDate}`;
@@ -608,7 +689,9 @@ ${JSON.stringify(gamesForAI, null, 2)}
     if (debug) {
       finalData.meta = {
         selectedDate,
+        refresh,
         cache: { geminiHit, geminiKey: geminiCacheKey, injuries: injuriesPack.meta },
+        injuriesTtlMs,
         injuriesCounts: injuriesPack.injuriesCounts,
         injuriesMatch: injuriesPack.debugMatch,
         extractedTeams: injuriesPack.extractedTeams,
