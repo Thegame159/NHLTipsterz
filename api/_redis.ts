@@ -11,6 +11,7 @@ export async function getRedis() {
   const client = createClient({ url });
   client.on("error", (err) => console.error("Redis error:", err));
   await client.connect();
+
   _redis = client;
   return _redis;
 }
