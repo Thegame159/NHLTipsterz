@@ -1,6 +1,4 @@
-Perfeito! Vou criar o ficheiro completo do componente MyPicksView.tsx, já com todas as tuas funcionalidades e a alteração na função savePicks para enviar corretamente para /api/history e guardar no localStorage.
 
-Aqui está o ficheiro pronto para copiares/colares:
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
