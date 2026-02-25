@@ -513,16 +513,29 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
 
   const removeAt = <T,>(arr: T[], idx: number) => arr.filter((_, i) => i !== idx);
 
-  const savePicks = () => {
-    try {
-      localStorage.setItem(storageKey(selectedDate), JSON.stringify(picks));
-      setSaveState("saved");
-      setIsEditing(false);
-    } catch {
-      // ignore
-    }
-  };
+  
+const savePicks = async () => {
+  try {
+    // Guarda no localStorage (como já fazia)
+    localStorage.setItem(storageKey(selectedDate), JSON.stringify(picks));
 
+    // 🔥 Envia também para o backend para aparecer nas STATS
+    await fetch("/api/history", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        date: selectedDate,
+        side: "mine",
+        suggestions: picks,
+      }),
+    });
+
+    setSaveState("saved");
+    setIsEditing(false);
+  } catch (err) {
+    console.error("Erro ao guardar picks:", err);
+  }
+};
   const enableEditing = () => {
     setIsEditing(true);
     setSaveState("idle");
