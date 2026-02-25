@@ -97,8 +97,7 @@ const normalizeGameText = (s: string) =>
     .replace(/\s+VS\s+/g, " VS ")
     .replace(/\s+@\s+/g, " VS ")
     .replace(/\s+V\s+/g, " VS ")
-    .replace(/\s+/g, " ")
-    .replace(" vs ", " VS ");
+    .replace(/\s+/g, " ");
 
 const splitMatchup = (text: string): [string, string] | null => {
   const cleaned = normalizeGameText(text);
@@ -226,12 +225,30 @@ function setManualValueInStore(store: ManualStore | null, side: ManualSide, mark
   return next;
 }
 
+// ----------------- Result matching (ROBUSTO) -----------------
+function findGame(results: ApiResultsResponse, a: string, b: string): ApiResultGame | undefined {
+  const A = (a || "").trim().toUpperCase();
+  const B = (b || "").trim().toUpperCase();
+  if (!A || !B) return undefined;
+
+  const by = results.byMatchup || {};
+  const k1 = `${A} VS ${B}`;
+  const k2 = `${B} VS ${A}`;
+  if (by[k1]) return by[k1];
+  if (by[k2]) return by[k2];
+
+  const games = results.games || [];
+  return games.find(
+    (g) =>
+      (g.awayAbbr === A && g.homeAbbr === B) ||
+      (g.awayAbbr === B && g.homeAbbr === A)
+  );
+}
+
 // ----------------- Eval -----------------
 type PickEval = { label: string; ok: boolean | null; reason?: string; teams?: string[]; manual?: boolean };
 
 function evalMarkets(sug: Suggestions, results: ApiResultsResponse) {
-  const byMatchup = results.byMatchup || {};
-
   const evalGamePick = (text: string, fn: (g: ApiResultGame) => boolean): PickEval => {
     const cleaned = normalizeGameText(text);
 
@@ -247,8 +264,8 @@ function evalMarkets(sug: Suggestions, results: ApiResultsResponse) {
 
     if (teams.length < 2) return { label: text, ok: null, reason: "Não consegui ler as equipas." };
 
-    const key = `${teams[0]} VS ${teams[1]}`;
-    const g = byMatchup[key];
+    // ✅ NOVO: em vez de depender da string exata do byMatchup, encontra pelo par de equipas
+    const g = findGame(results, teams[0], teams[1]);
     if (!g) return { label: text, ok: null, teams, reason: "Jogo não encontrado na API." };
     if (g.status !== "FINAL") return { label: text, ok: null, teams, reason: "Jogo ainda não terminou." };
 
@@ -259,7 +276,9 @@ function evalMarkets(sug: Suggestions, results: ApiResultsResponse) {
     const team = parseTeamSingle(text);
     if (!team) return { label: text, ok: null, reason: "Não consegui ler a equipa." };
 
-    const game = Object.values(byMatchup).find((g) => g.awayAbbr === team || g.homeAbbr === team);
+    // continua ok: procura qualquer jogo do dia onde essa equipa aparece
+    const byMatchup = results.byMatchup || {};
+    const game = Object.values(byMatchup).find((g) => g.awayAbbr === team || g.homeAbbr === team) || (results.games || []).find((g) => g.awayAbbr === team || g.homeAbbr === team);
 
     if (!game) {
       return { label: text, ok: null, teams: [team], reason: "Resultados do dia ainda não disponíveis para esta equipa." };
@@ -551,10 +570,7 @@ const StatsView: React.FC = () => {
         const mineSug: Suggestions | null = history?.mine?.suggestions ?? null;
 
         try {
-          const [rRes, manualStore] = await Promise.all([
-            fetch(`/api/results?date=${date}`),
-            fetchManual(date),
-          ]);
+          const [rRes, manualStore] = await Promise.all([fetch(`/api/results?date=${date}`), fetchManual(date)]);
 
           if (!rRes.ok) throw new Error(`results HTTP ${rRes.status}`);
           const results = (await rRes.json()) as ApiResultsResponse;
@@ -785,15 +801,11 @@ const StatsView: React.FC = () => {
                   </div>
 
                   {r.resultsStatus === "loading" && (
-                    <div className="text-[11px] text-slate-500 font-black uppercase tracking-widest">
-                      A carregar resultados…
-                    </div>
+                    <div className="text-[11px] text-slate-500 font-black uppercase tracking-widest">A carregar resultados…</div>
                   )}
 
                   {r.resultsStatus === "error" && (
-                    <div className="text-[11px] text-rose-400 font-black">
-                      Erro a obter resultados: {r.error}
-                    </div>
+                    <div className="text-[11px] text-rose-400 font-black">Erro a obter resultados: {r.error}</div>
                   )}
 
                   {r.resultsStatus === "ready" && (
@@ -814,18 +826,12 @@ const StatsView: React.FC = () => {
                                 title={k}
                                 picks={v}
                                 editable={isEditingThisDate}
-                                onSetPick={
-                                  isEditingThisDate
-                                    ? (label, val) => setManual(r.date, "auto", k, label, val)
-                                    : undefined
-                                }
+                                onSetPick={isEditingThisDate ? (label, val) => setManual(r.date, "auto", k, label, val) : undefined}
                               />
                             ))}
                           </div>
                         ) : (
-                          <div className="text-[11px] text-slate-600 italic">
-                            Sem snapshot Auto para esta data (faz “Analisar” para guardar).
-                          </div>
+                          <div className="text-[11px] text-slate-600 italic">Sem snapshot Auto para esta data (faz “Analisar” para guardar).</div>
                         )}
                       </div>
 
@@ -845,11 +851,7 @@ const StatsView: React.FC = () => {
                                 title={k}
                                 picks={v}
                                 editable={isEditingThisDate}
-                                onSetPick={
-                                  isEditingThisDate
-                                    ? (label, val) => setManual(r.date, "mine", k, label, val)
-                                    : undefined
-                                }
+                                onSetPick={isEditingThisDate ? (label, val) => setManual(r.date, "mine", k, label, val) : undefined}
                               />
                             ))}
                           </div>
