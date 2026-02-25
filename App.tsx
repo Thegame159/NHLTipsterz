@@ -322,7 +322,12 @@ const App: React.FC = () => {
             ) : activeTab === 'mypicks' ? (
               <>
                 {loadedDate && data ? (
-                  <MyPicksView predictions={data.predictions} selectedDate={loadedDate} />
+                  // ✅ FIX: passar suggestions também (mesma fonte das DICAS)
+                  <MyPicksView
+                    predictions={data.predictions}
+                    suggestions={data.suggestions}
+                    selectedDate={loadedDate}
+                  />
                 ) : (
                   <div className="py-24 text-center text-slate-600 text-[10px] font-black uppercase tracking-widest">
                     Escolhe uma data e clica em Analisar
