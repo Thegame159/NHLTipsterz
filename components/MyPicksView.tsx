@@ -72,7 +72,6 @@ const normalizeGameText = (s: string) =>
     .replace(/\s+V\s+/g, " VS ")
     .replace(/\s+/g, " ");
 
-// ✅ FIX: converter qualquer formato para YYYY-MM-DD (inclui ISO em date/gameDate/day)
 const toYMD = (v: any): string => {
   if (!v) return "";
   if (typeof v === "string") {
@@ -84,19 +83,55 @@ const toYMD = (v: any): string => {
   return "";
 };
 
-// ✅ NOVO (robusto): obtém YYYY-MM-DD do jogo
+// ✅ converte ISO em YYYY-MM-DD num timezone específico (ex: NHL day = America/New_York)
+const ymdInTimeZone = (iso: string, timeZone: string): string => {
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(d);
+
+    const y = parts.find((p) => p.type === "year")?.value;
+    const m = parts.find((p) => p.type === "month")?.value;
+    const day = parts.find((p) => p.type === "day")?.value;
+    if (!y || !m || !day) return "";
+    return `${y}-${m}-${day}`;
+  } catch {
+    return "";
+  }
+};
+
+// ✅ data do jogo: tenta campos diretos; se for ISO/Z usa "NHL day" (America/New_York)
 const getGameDay = (g: any): string => {
-  return (
-    toYMD(g?.date) ||
-    toYMD(g?.gameDate) ||
-    toYMD(g?.day) ||
-    toYMD(g?.startTime) ||
-    toYMD(g?.start) ||
-    toYMD(g?.commenceTime) ||
-    toYMD(g?.gameTime) ||
-    toYMD(g?.utcTime) ||
-    ""
-  );
+  // campos já em YYYY-MM-DD
+  const direct = toYMD(g?.date) || toYMD(g?.gameDate) || toYMD(g?.day);
+  if (direct) return direct;
+
+  // ISO possíveis
+  const iso =
+    (typeof g?.startTime === "string" && g.startTime) ||
+    (typeof g?.start === "string" && g.start) ||
+    (typeof g?.commenceTime === "string" && g.commenceTime) ||
+    (typeof g?.gameTime === "string" && g.gameTime) ||
+    (typeof g?.utcTime === "string" && g.utcTime) ||
+    (typeof g?.date === "string" && g.date) ||
+    (typeof g?.gameDate === "string" && g.gameDate) ||
+    "";
+
+  if (iso && typeof iso === "string" && iso.includes("T")) {
+    // NHL day (muito importante para jogos perto da meia-noite UTC)
+    const nhlDay = ymdInTimeZone(iso, "America/New_York");
+    if (nhlDay) return nhlDay;
+
+    // fallback UTC
+    return iso.slice(0, 10);
+  }
+
+  return "";
 };
 
 const parseTeamsFromText = (text: string): string[] => {
@@ -117,6 +152,52 @@ const isEmptyPicks = (p: Suggestions) =>
   p.quadrupleOver45.length === 0 &&
   p.over55Suggestions.length === 0 &&
   p.drawSuggestions.length === 0;
+
+// ✅ tenta extrair ABR de vários formatos possíveis
+const pickStr = (v: any): string => (typeof v === "string" ? v.trim() : "");
+const getTeamAbbr = (g: any, side: "home" | "away"): string => {
+  const candidates = [
+    g?.[`${side}TeamAbbr`],
+    g?.[`${side}Abbr`],
+    g?.[side]?.abbr,
+    g?.[side]?.abbreviation,
+    g?.[side]?.teamAbbr,
+    g?.teams?.[side]?.abbr,
+    g?.teams?.[side]?.abbreviation,
+    g?.matchup?.[side]?.abbr,
+    g?.matchup?.[side]?.abbreviation,
+    g?.game?.[side]?.abbr,
+    g?.game?.[side]?.abbreviation,
+  ];
+
+  for (const c of candidates) {
+    const s = pickStr(c);
+    if (s) return s.toUpperCase();
+  }
+  return "";
+};
+
+// ✅ nome/label do jogo com fallback
+const getGameLabel = (g: any): string => {
+  const away = getTeamAbbr(g, "away");
+  const home = getTeamAbbr(g, "home");
+  if (away && home) return normalizeGameText(`${away} vs ${home}`);
+
+  const candidates = [
+    g?.matchupText,
+    g?.gameText,
+    g?.name,
+    g?.title,
+    g?.gameName,
+    g?.eventName,
+  ];
+  for (const c of candidates) {
+    const s = pickStr(c);
+    if (s) return normalizeGameText(s);
+  }
+
+  return "";
+};
 
 const SuggestionItem: React.FC<{
   text: string;
@@ -201,9 +282,6 @@ const CardShell: React.FC<{
   </div>
 );
 
-// ----------------------------
-// ✅ Dropdown FIXADO (Portal + fixed) com outside-click robusto
-// ----------------------------
 type MenuPos = { left: number; top: number; width: number };
 
 const PrettyDropdown: React.FC<{
@@ -247,7 +325,6 @@ const PrettyDropdown: React.FC<{
       window.removeEventListener("scroll", onScroll, true);
       window.removeEventListener("resize", onResize);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   useEffect(() => {
@@ -258,14 +335,12 @@ const PrettyDropdown: React.FC<{
     return () => document.removeEventListener("keydown", onKey);
   }, []);
 
-  // ✅ CRÍTICO: usar pointerdown e ignorar cliques dentro do menu/trigger
   useEffect(() => {
     if (!open) return;
 
     const onDocPointerDown = (e: PointerEvent) => {
       const btn = btnRef.current;
       const menu = menuRef.current;
-
       const target = e.target as Node | null;
       if (!target) return;
 
@@ -332,11 +407,9 @@ const PrettyDropdown: React.FC<{
                       <button
                         type="button"
                         key={opt}
-                        // ✅ usar pointerdown para garantir seleção antes de fechar
                         onPointerDown={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-
                           onChange(opt);
                           onSelect?.(opt);
                           setOpen(false);
@@ -443,19 +516,22 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
   const [drawPick, setDrawPick] = useState<string>("");
   const [drawNote, setDrawNote] = useState<string>("");
 
-  // ✅ FIX: normaliza selectedDate para YYYY-MM-DD (caso venha ISO)
   const selectedYMD = useMemo(() => toYMD(selectedDate) || (selectedDate || "").slice(0, 10), [selectedDate]);
 
-  // ✅ filtra predictions para o dia selecionado (evita jogos de outros dias nas combos)
+  // ✅ filtra predictions para o dia selecionado (NHL day-aware)
   const predictionsOfDay = useMemo(() => {
-    return (predictions || []).filter((g: any) => getGameDay(g) === selectedYMD);
+    const list = predictions || [];
+    if (!selectedYMD) return list;
+    return list.filter((g: any) => getGameDay(g) === selectedYMD);
   }, [predictions, selectedYMD]);
 
   const teams = useMemo(() => {
     const set = new Set<string>();
     for (const g of predictionsOfDay) {
-      if ((g as any).homeTeamAbbr) set.add((g as any).homeTeamAbbr.toUpperCase());
-      if ((g as any).awayTeamAbbr) set.add((g as any).awayTeamAbbr.toUpperCase());
+      const h = getTeamAbbr(g, "home");
+      const a = getTeamAbbr(g, "away");
+      if (h) set.add(h);
+      if (a) set.add(a);
     }
     return Array.from(set).sort();
   }, [predictionsOfDay]);
@@ -463,8 +539,8 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
   const gamesOfDay = useMemo(() => {
     const set = new Set<string>();
     for (const g of predictionsOfDay) {
-      const txt = normalizeGameText(`${(g as any).awayTeamAbbr} vs ${(g as any).homeTeamAbbr}`);
-      if (txt.includes(" VS ")) set.add(txt);
+      const label = getGameLabel(g);
+      if (label && label.includes(" VS ")) set.add(label);
     }
     return Array.from(set).sort();
   }, [predictionsOfDay]);
@@ -474,7 +550,6 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
     return teams.filter((t) => !chosen.has(t));
   }, [teams, picks.tripleWin]);
 
-  // ✅ OVER 1.5 P1 partilhado (Triplete+Dupla)
   const availableOver15Shared = useMemo(() => {
     const chosen = new Set([...picks.tripleOver15P1, ...picks.doubleOver15P1].map(normalizeGameText));
     return gamesOfDay.filter((g) => !chosen.has(normalizeGameText(g)));
@@ -585,6 +660,13 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
           <p className="text-slate-400 text-sm max-w-lg">
             Escolhe manualmente as tuas seleções para {selectedYMD || selectedDate}.{" "}
             {disabled ? "Modo bloqueado (clica Editar para alterar)." : "Modo edição ativo."}
+          </p>
+
+          {/* ✅ micro-debug visual (não incomoda) */}
+          <p className="text-[10px] text-slate-600 mt-2">
+            Jogos carregados para o dia: <span className="text-slate-400 font-black">{predictionsOfDay.length}</span> | Opções:
+            {" "}
+            <span className="text-slate-400 font-black">{gamesOfDay.length}</span>
           </p>
         </div>
 
