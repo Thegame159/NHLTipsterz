@@ -242,7 +242,12 @@ function clearManual(date: string) {
   }
 }
 
-function getManualValue(store: ManualStore | null, side: ManualSide, market: string, label: string): ManualValue | undefined {
+function getManualValue(
+  store: ManualStore | null,
+  side: ManualSide,
+  market: string,
+  label: string
+): ManualValue | undefined {
   if (!store) return undefined;
   const byMarket = store[side] || {};
   const m = byMarket[market];
@@ -262,14 +267,6 @@ function setManualValue(date: string, side: ManualSide, market: string, label: s
 
 // ----------------- Eval -----------------
 type PickEval = { label: string; ok: boolean | null; reason?: string; teams?: string[]; manual?: boolean };
-
-type DayReport = {
-  date: string;
-  auto: { percent: number | null; correct: number; total: number; byMarket: Record<string, PickEval[]> };
-  mine: { percent: number | null; correct: number; total: number; byMarket: Record<string, PickEval[]> };
-  resultsStatus: "loading" | "ready" | "error";
-  error?: string;
-};
 
 function evalMarkets(
   sug: Suggestions,
@@ -367,7 +364,12 @@ function applyManualOverridesToByMarket(
         ...p,
         ok: manual,
         manual: true,
-        reason: manual === null ? "Marcado como pendente (manual)." : manual ? "Marcado como certo (manual)." : "Marcado como errado (manual).",
+        reason:
+          manual === null
+            ? "Marcado como pendente (manual)."
+            : manual
+            ? "Marcado como certo (manual)."
+            : "Marcado como errado (manual).",
       };
     });
   }
@@ -435,7 +437,6 @@ const PickLine: React.FC<{
       ? "text-rose-400 bg-rose-500/10 border-rose-500/20"
       : "text-slate-400 bg-white/5 border-white/10";
 
-  // ✅ respeita p.teams (já resolvido no eval) e evita NEW/YORK
   let teams: string[] = p.teams && p.teams.length ? p.teams : parseTeamsFromText(p.label);
 
   if (!teams.length) {
@@ -446,83 +447,90 @@ const PickLine: React.FC<{
   teams = teams.map((t) => (t || "").trim().toUpperCase()).filter((t) => NHL_ABBRS.has(t));
 
   return (
-    <div className="flex items-center justify-between gap-3 bg-slate-900/50 border border-slate-700/40 rounded-xl p-3">
-      <div className="flex items-center gap-3 overflow-hidden">
-        {teams.length > 0 && (
-          <div className="flex -space-x-2">
-            {teams.map((abbr, i) => (
-              <img
-                key={`${abbr}-${i}`}
-                src={getLogoUrl(abbr)}
-                className="w-6 h-6 object-contain drop-shadow-md bg-slate-800 rounded-full p-0.5 border border-slate-700"
-                alt={abbr}
-                loading="lazy"
-                decoding="async"
-                onError={(e) => (e.currentTarget.style.display = "none")}
-                style={{ zIndex: 10 - i }}
-              />
-            ))}
-          </div>
-        )}
+    <div className="bg-slate-900/50 border border-slate-700/40 rounded-xl p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3 overflow-hidden">
+          {teams.length > 0 && (
+            <div className="flex -space-x-2">
+              {teams.map((abbr, i) => (
+                <img
+                  key={`${abbr}-${i}`}
+                  src={getLogoUrl(abbr)}
+                  className="w-6 h-6 object-contain drop-shadow-md bg-slate-800 rounded-full p-0.5 border border-slate-700"
+                  alt={abbr}
+                  loading="lazy"
+                  decoding="async"
+                  onError={(e) => (e.currentTarget.style.display = "none")}
+                  style={{ zIndex: 10 - i }}
+                />
+              ))}
+            </div>
+          )}
 
-        <div className="min-w-0">
-          <div className="text-sm font-bold text-slate-100 truncate flex items-center gap-2">
-            <span className="truncate">{p.label}</span>
-            {p.manual && (
-              <span className="shrink-0 text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border border-indigo-500/30 bg-indigo-500/10 text-indigo-300">
-                Manual
-              </span>
+          <div className="min-w-0">
+            <div className="text-sm font-bold text-slate-100 truncate flex items-center gap-2">
+              <span className="truncate">{p.label}</span>
+              {p.manual && (
+                <span className="shrink-0 text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border border-indigo-500/30 bg-indigo-500/10 text-indigo-300">
+                  Manual
+                </span>
+              )}
+            </div>
+
+            {p.reason && (
+              <div className="text-[11px] text-slate-500 truncate">
+                {p.reason}
+              </div>
             )}
           </div>
-          {p.ok === null && p.reason && <div className="text-[11px] text-slate-500 truncate">{p.reason}</div>}
-          {p.ok !== null && p.manual && p.reason && <div className="text-[11px] text-slate-500 truncate">{p.reason}</div>}
         </div>
-      </div>
-
-      <div className="flex items-center gap-2 shrink-0">
-        {editable && onSet && (
-          <div className="hidden sm:flex items-center gap-1">
-            <button
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                onSet(true);
-              }}
-              className="px-2 py-1 rounded-lg border text-[10px] font-black bg-emerald-500/10 border-emerald-500/20 text-emerald-300 hover:bg-emerald-500/15"
-              title="Marcar como certo"
-            >
-              Certo
-            </button>
-            <button
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                onSet(false);
-              }}
-              className="px-2 py-1 rounded-lg border text-[10px] font-black bg-rose-500/10 border-rose-500/20 text-rose-300 hover:bg-rose-500/15"
-              title="Marcar como errado"
-            >
-              Errado
-            </button>
-            <button
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                onSet(null);
-              }}
-              className="px-2 py-1 rounded-lg border text-[10px] font-black bg-white/5 border-white/10 text-slate-300 hover:bg-white/10"
-              title="Marcar como pendente"
-            >
-              Pend.
-            </button>
-          </div>
-        )}
 
         <div className={`shrink-0 px-2.5 py-1 rounded-lg border text-[11px] font-black flex items-center gap-2 ${color}`}>
           <i className={`fas ${icon}`} />
           {p.ok === true ? "Certo" : p.ok === false ? "Errado" : "Pendente"}
         </div>
       </div>
+
+      {/* ✅ BOTÕES: no mobile aparecem por baixo; no desktop ficam alinhados à direita */}
+      {editable && onSet && (
+        <div className="mt-3 flex flex-col sm:flex-row sm:justify-end gap-2">
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onSet(true);
+            }}
+            className="w-full sm:w-auto px-3 py-2 rounded-lg border text-[10px] font-black bg-emerald-500/10 border-emerald-500/20 text-emerald-300 hover:bg-emerald-500/15"
+            title="Marcar como certo"
+          >
+            Certo
+          </button>
+
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onSet(false);
+            }}
+            className="w-full sm:w-auto px-3 py-2 rounded-lg border text-[10px] font-black bg-rose-500/10 border-rose-500/20 text-rose-300 hover:bg-rose-500/15"
+            title="Marcar como errado"
+          >
+            Errado
+          </button>
+
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onSet(null);
+            }}
+            className="w-full sm:w-auto px-3 py-2 rounded-lg border text-[10px] font-black bg-white/5 border-white/10 text-slate-300 hover:bg-white/10"
+            title="Marcar como pendente"
+          >
+            Pend.
+          </button>
+        </div>
+      )}
     </div>
   );
 };
@@ -619,7 +627,6 @@ const StatsView: React.FC = () => {
           const autoEvalBase = autoSug ? evalMarkets(autoSug, results) : { correct: 0, total: 0, byMarket: {} };
           const mineEvalBase = mineSug ? evalMarkets(mineSug, results) : { correct: 0, total: 0, byMarket: {} };
 
-          // aplica overrides manuais por dia (se existirem)
           const autoApplied = applyManualOverridesToByMarket(date, "auto", autoEvalBase.byMarket);
           const mineApplied = applyManualOverridesToByMarket(date, "mine", mineEvalBase.byMarket);
 
@@ -675,8 +682,6 @@ const StatsView: React.FC = () => {
   }, [reports]);
 
   const reloadOneDateFromStorage = (date: string) => {
-    // força apenas rerender; o cálculo real é refeito quando reabrir/atualizar.
-    // Para refletir imediatamente, vamos recomputar em memória o report aberto:
     setReports((prev) =>
       prev.map((r) => {
         if (r.date !== date) return r;
@@ -685,8 +690,8 @@ const StatsView: React.FC = () => {
         const autoApplied = applyManualOverridesToByMarket(date, "auto", r.auto.byMarket);
         const mineApplied = applyManualOverridesToByMarket(date, "mine", r.mine.byMarket);
 
-        const autoPct = r.auto.total > 0 ? (autoApplied.correct / autoApplied.total) * 100 : r.auto.percent;
-        const minePct = r.mine.total > 0 ? (mineApplied.correct / mineApplied.total) * 100 : r.mine.percent;
+        const autoPct = autoApplied.total > 0 ? (autoApplied.correct / autoApplied.total) * 100 : r.auto.percent;
+        const minePct = mineApplied.total > 0 ? (mineApplied.correct / mineApplied.total) * 100 : r.mine.percent;
 
         return {
           ...r,
@@ -806,11 +811,15 @@ const StatsView: React.FC = () => {
                   </div>
 
                   {r.resultsStatus === "loading" && (
-                    <div className="text-[11px] text-slate-500 font-black uppercase tracking-widest">A carregar resultados…</div>
+                    <div className="text-[11px] text-slate-500 font-black uppercase tracking-widest">
+                      A carregar resultados…
+                    </div>
                   )}
 
                   {r.resultsStatus === "error" && (
-                    <div className="text-[11px] text-rose-400 font-black">Erro a obter resultados: {r.error}</div>
+                    <div className="text-[11px] text-rose-400 font-black">
+                      Erro a obter resultados: {r.error}
+                    </div>
                   )}
 
                   {r.resultsStatus === "ready" && (
@@ -880,13 +889,6 @@ const StatsView: React.FC = () => {
                           <div className="text-[11px] text-slate-600 italic">Sem picks guardadas para esta data.</div>
                         )}
                       </div>
-                    </div>
-                  )}
-
-                  {isEditingThisDate && (
-                    <div className="text-[11px] text-slate-500">
-                      Dica: em ecrãs pequenos, os botões “Certo/Errado/Pend.” aparecem melhor em desktop (sm+).  
-                      Mesmo assim, a tua marcação fica guardada e conta para as percentagens.
                     </div>
                   )}
                 </div>
