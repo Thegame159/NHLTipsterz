@@ -106,16 +106,7 @@ const App: React.FC = () => {
   const minDate = new Date(Date.now() - 30 * 86400000).toISOString().split("T")[0];
   const maxDate = new Date(Date.now() + 20 * 86400000).toISOString().split("T")[0]; // ✅ 20 dias
 
-  const saveAutoSnapshot = (date: string, analysis: NHLAnalysisData) => {
-    try {
-      localStorage.setItem(
-        `auto_picks_${date}`,
-        JSON.stringify({ savedAt: Date.now(), suggestions: analysis.suggestions })
-      );
-    } catch {
-      // ignore
-    }
-  };
+
 
   const loadData = async (date: string) => {
     const reqId = ++requestIdRef.current;
@@ -149,8 +140,17 @@ const App: React.FC = () => {
       setData(analysis);
       setLoadedDate(date);
 
-      // ✅ guarda snapshot Auto para Stats
-      saveAutoSnapshot(date, analysis);
+      // ✅ Guarda snapshot AUTO no histórico global (Redis)
+try {
+  await fetch("/api/history", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ date, side: "auto", suggestions: analysis.suggestions }),
+  });
+} catch {
+  // ignore
+}
+     
 
       setLoading(false);
     } catch (err: any) {
