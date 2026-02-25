@@ -4,6 +4,7 @@ import { GamePrediction, Suggestions } from "../types";
 
 interface Props {
   predictions: GamePrediction[];
+  suggestions: Suggestions; // ✅ NOVO: vem do mesmo sítio que alimenta as DICAS
   selectedDate: string; // YYYY-MM-DD (loadedDate)
 }
 
@@ -72,67 +73,17 @@ const normalizeGameText = (s: string) =>
     .replace(/\s+V\s+/g, " VS ")
     .replace(/\s+/g, " ");
 
-const toYMD = (v: any): string => {
-  if (!v) return "";
-  if (typeof v === "string") {
-    const s = v.trim();
-    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-    if (s.includes("T") && /^\d{4}-\d{2}-\d{2}T/.test(s)) return s.slice(0, 10);
-  }
-  if (v instanceof Date && !isNaN(v.getTime())) return v.toISOString().slice(0, 10);
-  return "";
-};
-
-// ✅ converte ISO em YYYY-MM-DD num timezone específico (ex: NHL day = America/New_York)
-const ymdInTimeZone = (iso: string, timeZone: string): string => {
-  try {
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return "";
-    const parts = new Intl.DateTimeFormat("en-CA", {
-      timeZone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).formatToParts(d);
-
-    const y = parts.find((p) => p.type === "year")?.value;
-    const m = parts.find((p) => p.type === "month")?.value;
-    const day = parts.find((p) => p.type === "day")?.value;
-    if (!y || !m || !day) return "";
-    return `${y}-${m}-${day}`;
-  } catch {
-    return "";
-  }
-};
-
-// ✅ data do jogo: tenta campos diretos; se for ISO/Z usa "NHL day" (America/New_York)
-const getGameDay = (g: any): string => {
-  // campos já em YYYY-MM-DD
-  const direct = toYMD(g?.date) || toYMD(g?.gameDate) || toYMD(g?.day);
-  if (direct) return direct;
-
-  // ISO possíveis
-  const iso =
-    (typeof g?.startTime === "string" && g.startTime) ||
-    (typeof g?.start === "string" && g.start) ||
-    (typeof g?.commenceTime === "string" && g.commenceTime) ||
-    (typeof g?.gameTime === "string" && g.gameTime) ||
-    (typeof g?.utcTime === "string" && g.utcTime) ||
-    (typeof g?.date === "string" && g.date) ||
-    (typeof g?.gameDate === "string" && g.gameDate) ||
-    "";
-
-  if (iso && typeof iso === "string" && iso.includes("T")) {
-    // NHL day (muito importante para jogos perto da meia-noite UTC)
-    const nhlDay = ymdInTimeZone(iso, "America/New_York");
-    if (nhlDay) return nhlDay;
-
-    // fallback UTC
-    return iso.slice(0, 10);
-  }
-
-  return "";
-};
+// ✅ normaliza texto das suggestions -> "AAA VS BBB"
+const normalizeSuggestionToGame = (s: string) =>
+  (s || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\(\d+%\)/g, "") // remove (75%)
+    .replace(/\s+@\s+/g, " VS ")
+    .replace(/\s+VS\s+/g, " VS ")
+    .replace(/\s+V\s+/g, " VS ")
+    .replace(/\s+/g, " ")
+    .trim();
 
 const parseTeamsFromText = (text: string): string[] => {
   const raw = (text || "").trim();
@@ -152,52 +103,6 @@ const isEmptyPicks = (p: Suggestions) =>
   p.quadrupleOver45.length === 0 &&
   p.over55Suggestions.length === 0 &&
   p.drawSuggestions.length === 0;
-
-// ✅ tenta extrair ABR de vários formatos possíveis
-const pickStr = (v: any): string => (typeof v === "string" ? v.trim() : "");
-const getTeamAbbr = (g: any, side: "home" | "away"): string => {
-  const candidates = [
-    g?.[`${side}TeamAbbr`],
-    g?.[`${side}Abbr`],
-    g?.[side]?.abbr,
-    g?.[side]?.abbreviation,
-    g?.[side]?.teamAbbr,
-    g?.teams?.[side]?.abbr,
-    g?.teams?.[side]?.abbreviation,
-    g?.matchup?.[side]?.abbr,
-    g?.matchup?.[side]?.abbreviation,
-    g?.game?.[side]?.abbr,
-    g?.game?.[side]?.abbreviation,
-  ];
-
-  for (const c of candidates) {
-    const s = pickStr(c);
-    if (s) return s.toUpperCase();
-  }
-  return "";
-};
-
-// ✅ nome/label do jogo com fallback
-const getGameLabel = (g: any): string => {
-  const away = getTeamAbbr(g, "away");
-  const home = getTeamAbbr(g, "home");
-  if (away && home) return normalizeGameText(`${away} vs ${home}`);
-
-  const candidates = [
-    g?.matchupText,
-    g?.gameText,
-    g?.name,
-    g?.title,
-    g?.gameName,
-    g?.eventName,
-  ];
-  for (const c of candidates) {
-    const s = pickStr(c);
-    if (s) return normalizeGameText(s);
-  }
-
-  return "";
-};
 
 const SuggestionItem: React.FC<{
   text: string;
@@ -282,6 +187,9 @@ const CardShell: React.FC<{
   </div>
 );
 
+// ----------------------------
+// Dropdown (Portal + fixed)
+// ----------------------------
 type MenuPos = { left: number; top: number; width: number };
 
 const PrettyDropdown: React.FC<{
@@ -341,6 +249,7 @@ const PrettyDropdown: React.FC<{
     const onDocPointerDown = (e: PointerEvent) => {
       const btn = btnRef.current;
       const menu = menuRef.current;
+
       const target = e.target as Node | null;
       if (!target) return;
 
@@ -500,7 +409,7 @@ const PrettyDropdown: React.FC<{
   );
 };
 
-const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
+const MyPicksView: React.FC<Props> = ({ predictions, suggestions, selectedDate }) => {
   const [picks, setPicks] = useState<Suggestions>(defaultSuggestions());
   const [isEditing, setIsEditing] = useState<boolean>(true);
   const [saveState, setSaveState] = useState<"idle" | "saved">("idle");
@@ -516,34 +425,64 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
   const [drawPick, setDrawPick] = useState<string>("");
   const [drawNote, setDrawNote] = useState<string>("");
 
-  const selectedYMD = useMemo(() => toYMD(selectedDate) || (selectedDate || "").slice(0, 10), [selectedDate]);
+  // ✅ Fonte principal: suggestions (porque é o que funciona no teu sistema)
+  const allSuggestionStrings = useMemo(() => {
+    const flat: string[] = [
+      ...(suggestions?.tripleWin || []),
+      ...(suggestions?.tripleOver15P1 || []),
+      ...(suggestions?.doubleOver15P1 || []),
+      ...(suggestions?.quadrupleOver45 || []),
+      ...(suggestions?.over55Suggestions || []),
+      ...((suggestions?.drawSuggestions || []).map((d) => d.game) || []),
+    ];
+    return flat.filter(Boolean);
+  }, [suggestions]);
 
-  // ✅ filtra predictions para o dia selecionado (NHL day-aware)
-  const predictionsOfDay = useMemo(() => {
-    const list = predictions || [];
-    if (!selectedYMD) return list;
-    return list.filter((g: any) => getGameDay(g) === selectedYMD);
-  }, [predictions, selectedYMD]);
-
-  const teams = useMemo(() => {
+  const gamesFromSuggestions = useMemo(() => {
     const set = new Set<string>();
-    for (const g of predictionsOfDay) {
-      const h = getTeamAbbr(g, "home");
-      const a = getTeamAbbr(g, "away");
-      if (h) set.add(h);
-      if (a) set.add(a);
+    for (const s of allSuggestionStrings) {
+      const g = normalizeSuggestionToGame(s);
+      if (g.includes(" VS ")) set.add(g);
     }
     return Array.from(set).sort();
-  }, [predictionsOfDay]);
+  }, [allSuggestionStrings]);
 
-  const gamesOfDay = useMemo(() => {
+  const teamsFromSuggestions = useMemo(() => {
     const set = new Set<string>();
-    for (const g of predictionsOfDay) {
-      const label = getGameLabel(g);
-      if (label && label.includes(" VS ")) set.add(label);
+    for (const g of gamesFromSuggestions) {
+      const abbr = g.match(/\b[A-Z]{2,4}\b/g) || [];
+      for (const t of abbr) {
+        if (t !== "VS" && t !== "OT" && t !== "V") set.add(t);
+      }
     }
     return Array.from(set).sort();
-  }, [predictionsOfDay]);
+  }, [gamesFromSuggestions]);
+
+  // ✅ Fallback: se por algum motivo suggestions vierem vazias, tenta usar predictions (como tinhas)
+  const gamesFromPredictions = useMemo(() => {
+    const set = new Set<string>();
+    for (const g of predictions || []) {
+      const away = (g as any)?.awayTeamAbbr;
+      const home = (g as any)?.homeTeamAbbr;
+      if (away && home) set.add(normalizeGameText(`${away} vs ${home}`));
+    }
+    return Array.from(set).sort();
+  }, [predictions]);
+
+  const teamsFromPredictions = useMemo(() => {
+    const set = new Set<string>();
+    for (const g of predictions || []) {
+      const a = (g as any)?.awayTeamAbbr;
+      const h = (g as any)?.homeTeamAbbr;
+      if (a) set.add(String(a).toUpperCase());
+      if (h) set.add(String(h).toUpperCase());
+    }
+    return Array.from(set).sort();
+  }, [predictions]);
+
+  // ✅ Escolha final: usa suggestions se existirem
+  const gamesOfDay = gamesFromSuggestions.length ? gamesFromSuggestions : gamesFromPredictions;
+  const teams = teamsFromSuggestions.length ? teamsFromSuggestions : teamsFromPredictions;
 
   const availableTeams = useMemo(() => {
     const chosen = new Set(picks.tripleWin.map((t) => (t || "").trim().toUpperCase()));
@@ -572,7 +511,7 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
 
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(storageKey(selectedYMD || selectedDate));
+      const raw = localStorage.getItem(storageKey(selectedDate));
       if (!raw) {
         setPicks(defaultSuggestions());
         setIsEditing(true);
@@ -601,7 +540,7 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
     setGamePickOver55("");
     setDrawPick("");
     setDrawNote("");
-  }, [selectedDate, selectedYMD]);
+  }, [selectedDate]);
 
   const addUnique = (arr: string[], value: string, max: number) => {
     const v = (value || "").trim().toUpperCase();
@@ -623,7 +562,7 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
 
   const savePicks = () => {
     try {
-      localStorage.setItem(storageKey(selectedYMD || selectedDate), JSON.stringify(picks));
+      localStorage.setItem(storageKey(selectedDate), JSON.stringify(picks));
       setSaveState("saved");
       setIsEditing(false);
     } catch {
@@ -658,15 +597,14 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
             MINHAS <span className="text-blue-500">PICKS</span>
           </h2>
           <p className="text-slate-400 text-sm max-w-lg">
-            Escolhe manualmente as tuas seleções para {selectedYMD || selectedDate}.{" "}
+            Escolhe manualmente as tuas seleções para {selectedDate}.{" "}
             {disabled ? "Modo bloqueado (clica Editar para alterar)." : "Modo edição ativo."}
           </p>
 
-          {/* ✅ micro-debug visual (não incomoda) */}
+          {/* ✅ Debug discreto para confirmares (podes remover depois) */}
           <p className="text-[10px] text-slate-600 mt-2">
-            Jogos carregados para o dia: <span className="text-slate-400 font-black">{predictionsOfDay.length}</span> | Opções:
-            {" "}
-            <span className="text-slate-400 font-black">{gamesOfDay.length}</span>
+            Jogos (suggestions): <span className="text-slate-400 font-black">{gamesFromSuggestions.length}</span> | Jogos (predictions):{" "}
+            <span className="text-slate-400 font-black">{gamesFromPredictions.length}</span>
           </p>
         </div>
 
@@ -1015,7 +953,10 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
 
                 setPicks((p) => {
                   if (p.drawSuggestions.some((x) => normalizeGameText(x.game) === g)) return p;
-                  return { ...p, drawSuggestions: [...p.drawSuggestions, { game: g, explanation: (drawNote || "").trim() }] };
+                  return {
+                    ...p,
+                    drawSuggestions: [...p.drawSuggestions, { game: g, explanation: (drawNote || "").trim() }],
+                  };
                 });
 
                 setDrawPick("");
