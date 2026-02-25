@@ -104,28 +104,34 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
   };
 
   const savePicks = async () => {
-    try {
-      // 1) guarda local
-      localStorage.setItem(storageKey(selectedDate), JSON.stringify(picks));
+  try {
+    const res = await fetch("/api/history", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        date: selectedDate,
+        mine: {
+          savedAt: Date.now(),
+          suggestions: picks,
+        },
+      }),
+    });
 
-      // 2) guarda no backend NO FORMATO QUE O STATS ESPERA
-      await fetch("/api/history", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          date: selectedDate,
-          mine: {
-            savedAt: Date.now(),
-            suggestions: picks,
-          },
-        }),
-      });
+    const data = await res.json();
+    console.log("SAVE RESPONSE:", data);
 
-      console.log("Picks saved!");
-    } catch (err) {
-      console.error("Failed to save picks:", err);
+    if (!res.ok) {
+      alert("Erro ao guardar picks");
+      return;
     }
-  };
+
+    alert("Picks guardadas com sucesso!");
+  } catch (err) {
+    console.error("Failed to save picks:", err);
+  }
+};
 
   return (
     <div>
