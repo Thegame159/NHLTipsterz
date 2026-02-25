@@ -1,4 +1,4 @@
-import type { NextApiRequest, NextApiResponse } from "next";
+import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getRedis } from "./_redis";
 
 export const config = { runtime: "nodejs" };
@@ -20,7 +20,7 @@ function safeJsonParse(raw: any) {
   }
 }
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const redis = await getRedis();
     if (!redis) return res.status(500).json({ message: "REDIS_URL não definida." });
