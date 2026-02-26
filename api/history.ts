@@ -30,24 +30,15 @@ function safeJsonParse(input: any) {
   }
 }
 
-/**
- * Normaliza labels de sugestões que às vezes vêm como:
- * - "2025020917 (EDM)" -> "EDM"
- * - "2025020912 (TBL vs TOR)" -> "TBL vs TOR"
- * e mantém strings normais intactas.
- */
 function cleanSuggestionLabel(value: any): string {
   let s = String(value ?? "").trim();
   if (!s) return s;
 
-  // Caso mais comum: "digits (....)"
   const m = s.match(/^\s*\d+\s*\(([^)]+)\)\s*$/);
   if (m?.[1]) return m[1].trim();
 
-  // Remove prefixo numérico solto: "2025020917 EDM" -> "EDM"
   s = s.replace(/^\s*\d+\s+/, "").trim();
 
-  // Se ainda estiver "(EDM)", tira parênteses
   const p = s.match(/^\(([^)]+)\)$/);
   if (p?.[1]) return p[1].trim();
 
@@ -59,19 +50,9 @@ function normalizeSuggestionsDeep(input: any) {
 
   const out: any = Array.isArray(input) ? [...input] : { ...input };
 
-  // arrays de strings
   const normalizeStringArray = (arr: any) =>
     Array.isArray(arr) ? arr.map(cleanSuggestionLabel).filter((x) => String(x).trim().length > 0) : [];
 
-  // Estrutura esperada:
-  // {
-  //   tripleWin: string[],
-  //   tripleOver15P1: string[],
-  //   doubleOver15P1: string[],
-  //   drawSuggestions: { game, explanation }[],
-  //   quadrupleOver45: string[],
-  //   over55Suggestions: string[]
-  // }
   if ("tripleWin" in out) out.tripleWin = normalizeStringArray(out.tripleWin);
   if ("tripleOver15P1" in out) out.tripleOver15P1 = normalizeStringArray(out.tripleOver15P1);
   if ("doubleOver15P1" in out) out.doubleOver15P1 = normalizeStringArray(out.doubleOver15P1);
@@ -109,16 +90,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const date = String((body as any)?.date || "").trim();
       if (!date || !isDate(date)) return res.status(400).json({ message: "Invalid date" });
 
-      // compat 1: { date, side:"auto"|"mine", suggestions }
       const side: HistorySide | undefined =
         (body as any)?.side === "auto" || (body as any)?.side === "mine" ? (body as any).side : undefined;
       const suggestionsRaw = (body as any)?.suggestions ?? undefined;
 
-      // compat 2: { date, auto:{savedAt,suggestions} } / { date, mine:{...} }
       const autoObj = (body as any)?.auto ?? undefined;
       const mineObj = (body as any)?.mine ?? undefined;
-
-      // compat 3 (antigo): { date, picks } => assume mine
       const picks = (body as any)?.picks ?? undefined;
 
       let existing: StoreItem = { date, auto: null, mine: null };
@@ -126,9 +103,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const existingRaw = await redis.get(keyForDate(date));
         const existingParsed = safeJsonParse(existingRaw);
         if (existingParsed && typeof existingParsed === "object") existing = existingParsed as StoreItem;
-      } catch {
-        // ok
-      }
+      } catch {}
 
       if (autoObj) existing.auto = normalizeSideObject(autoObj);
       if (mineObj) existing.mine = normalizeSideObject(mineObj);
@@ -146,7 +121,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (req.method === "GET") {
-      // (Opcional) listagem pode ser reintroduzida depois via SCAN REST
       return res.status(200).json({ ok: true, items: [] });
     }
 
