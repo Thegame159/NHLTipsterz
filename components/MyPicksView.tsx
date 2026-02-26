@@ -122,7 +122,7 @@ const IconDropdown: React.FC<{
   }, []);
 
   return (
-    <div ref={wrapRef} className="relative flex-1">
+    <div ref={wrapRef} className={`relative flex-1 ${open ? "z-[60]" : ""}`}>
       <button
         type="button"
         onClick={() => setOpen((s) => !s)}
@@ -155,7 +155,7 @@ const IconDropdown: React.FC<{
       </button>
 
       {open && (
-        <div className="absolute z-50 mt-2 w-full max-h-72 overflow-auto rounded-2xl border border-slate-700/60 bg-[#070f22]/95 backdrop-blur-xl shadow-2xl">
+        <div className="absolute z-[9999] mt-2 w-full max-h-72 overflow-auto rounded-2xl border border-slate-700/60 bg-[#070f22]/95 backdrop-blur-xl shadow-2xl">
           <div className="p-2 space-y-1">
             {options.map((o) => (
               <button
