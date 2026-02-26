@@ -104,7 +104,11 @@ const PortalMenu: React.FC<{
   onClose: () => void;
   children: React.ReactNode;
 }> = ({ open, anchorEl, onClose, children }) => {
-  const [pos, setPos] = useState<{ top: number; left: number; width: number }>({ top: 0, left: 0, width: 280 });
+  const [pos, setPos] = useState<{ top: number; left: number; width: number }>({
+    top: 0,
+    left: 0,
+    width: 280,
+  });
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -169,6 +173,11 @@ const IconDropdown: React.FC<{
   const btnRef = useRef<HTMLButtonElement | null>(null);
 
   const selected = options.find((o) => o.value === value) || null;
+  const selectedTeams = useMemo(() => {
+    if (!selected) return [];
+    const teams = selected.teams?.length ? selected.teams : parseTeamsFromText(selected.label);
+    return (teams || []).slice(0, 2);
+  }, [selected]);
 
   return (
     <div className="flex-1">
@@ -183,9 +192,36 @@ const IconDropdown: React.FC<{
             : "bg-slate-900/40 border-white/10 text-slate-200 hover:bg-slate-900/60"
         }`}
       >
-        <span className="truncate">
-          {selected ? selected.label : <span className="text-slate-400">{placeholder}</span>}
+        {/* ✅ AQUI: mostrar ícone(s) + label quando selecionado */}
+        <span className="min-w-0 flex items-center gap-2 truncate">
+          {selected ? (
+            <>
+              {selectedTeams.length > 0 ? (
+                <span className="flex -space-x-2 shrink-0">
+                  {selectedTeams.map((abbr, i) => (
+                    <img
+                      key={`sel-${selected.value}-${abbr}-${i}`}
+                      src={getLogoUrl(abbr)}
+                      className="w-5 h-5 object-contain bg-slate-900 rounded-full p-0.5 border border-slate-700"
+                      alt={abbr}
+                      loading="lazy"
+                      decoding="async"
+                      onError={(e) => (e.currentTarget.style.display = "none")}
+                      style={{ zIndex: 10 - i }}
+                    />
+                  ))}
+                </span>
+              ) : (
+                <span className="w-5 h-5 rounded-full bg-white/5 border border-white/10 shrink-0" />
+              )}
+
+              <span className="truncate">{selected.label}</span>
+            </>
+          ) : (
+            <span className="text-slate-400 truncate">{placeholder}</span>
+          )}
         </span>
+
         <i className={`fas ${open ? "fa-chevron-up" : "fa-chevron-down"} text-slate-500`} />
       </button>
 
@@ -249,7 +285,9 @@ const PickLine: React.FC<{
   const teams = parseTeamsFromText(text);
   return (
     <div className="flex items-center gap-3 bg-slate-900/60 p-3 rounded-xl border border-slate-700/50 group hover:border-blue-500/30 transition-colors">
-      <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${badgeColor} text-white shrink-0 shadow-sm`}>
+      <div
+        className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${badgeColor} text-white shrink-0 shadow-sm`}
+      >
         {index + 1}
       </div>
 
@@ -389,7 +427,6 @@ const PickCard: React.FC<{
 const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
   const [picks, setPicks] = useState<Suggestions>(defaultSuggestions());
 
-  // carregar do localStorage
   useEffect(() => {
     try {
       if (typeof window === "undefined") return;
@@ -430,7 +467,6 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
     return Array.from(set).sort();
   }, [predictionsOfDay]);
 
-  // options com ícones
   const teamOptions: Option[] = useMemo(
     () => allowedTeams.map((abbr) => ({ value: abbr, label: abbr, teams: [abbr] })),
     [allowedTeams]
@@ -445,9 +481,14 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
     [gamesOfDay]
   );
 
-  // mutual exclusion: tripleOver15P1 vs doubleOver15P1
-  const tripleOverSet = useMemo(() => new Set((picks.tripleOver15P1 || []).map(normalizeGameText)), [picks.tripleOver15P1]);
-  const doubleOverSet = useMemo(() => new Set((picks.doubleOver15P1 || []).map(normalizeGameText)), [picks.doubleOver15P1]);
+  const tripleOverSet = useMemo(
+    () => new Set((picks.tripleOver15P1 || []).map(normalizeGameText)),
+    [picks.tripleOver15P1]
+  );
+  const doubleOverSet = useMemo(
+    () => new Set((picks.doubleOver15P1 || []).map(normalizeGameText)),
+    [picks.doubleOver15P1]
+  );
 
   const tripleOverOptions = useMemo(
     () => gameOptionsAll.filter((o) => !doubleOverSet.has(normalizeGameText(o.value))),
@@ -469,9 +510,7 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
   }, [gameOptionsAll, picks.over55Suggestions]);
 
   const drawOptions = useMemo(() => {
-    const chosen = new Set(
-      (picks.drawSuggestions || []).map((d: any) => normalizeGameText(d?.game ?? String(d)))
-    );
+    const chosen = new Set((picks.drawSuggestions || []).map((d: any) => normalizeGameText(d?.game ?? String(d))));
     return gameOptionsAll.filter((o) => !chosen.has(normalizeGameText(o.value)));
   }, [gameOptionsAll, picks.drawSuggestions]);
 
@@ -495,7 +534,6 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
       if (cur.map(normalizeGameText).includes(g)) return prev;
       if (cur.length >= 3) return prev;
 
-      // remove do double para garantir exclusividade
       const nextDouble = (prev.doubleOver15P1 || []).filter((x) => normalizeGameText(x) !== g);
 
       return { ...prev, tripleOver15P1: [...cur, g], doubleOver15P1: nextDouble };
@@ -511,7 +549,6 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
       if (cur.map(normalizeGameText).includes(g)) return prev;
       if (cur.length >= 2) return prev;
 
-      // remove do triple para garantir exclusividade
       const nextTriple = (prev.tripleOver15P1 || []).filter((x) => normalizeGameText(x) !== g);
 
       return { ...prev, doubleOver15P1: [...cur, g], tripleOver15P1: nextTriple };
@@ -554,16 +591,12 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
   };
 
   const savePicks = async () => {
-    // backup local
     try {
       if (typeof window !== "undefined") {
         window.localStorage.setItem(storageKey(selectedDate), JSON.stringify(picks));
       }
-    } catch {
-      // ignore
-    }
+    } catch {}
 
-    // backend
     try {
       const res = await fetch("/api/history", {
         method: "POST",
@@ -591,7 +624,6 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
 
   return (
     <div className="space-y-8 pb-24">
-      {/* Header igual às Dicas */}
       <div className="bg-gradient-to-r from-blue-900/40 to-slate-900/40 border border-blue-500/20 rounded-2xl p-6 sm:p-8 flex flex-col sm:flex-row items-center gap-6">
         <div className="bg-blue-600/20 p-4 rounded-2xl border border-blue-500/30">
           <i className="fas fa-user-check text-4xl text-blue-400" />
@@ -619,7 +651,6 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
         </button>
       </div>
 
-      {/* Cards igual às Dicas */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <PickCard
           title="Triplete de Vitórias"
@@ -632,9 +663,7 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
           selectedItems={picks.tripleWin}
           placeholder="Seleciona equipa..."
           onAdd={addTeamToTripleWin}
-          onRemove={(idx) =>
-            setPicks((p) => ({ ...p, tripleWin: (p.tripleWin || []).filter((_, i) => i !== idx) }))
-          }
+          onRemove={(idx) => setPicks((p) => ({ ...p, tripleWin: (p.tripleWin || []).filter((_, i) => i !== idx) }))}
         />
 
         <PickCard
@@ -753,9 +782,7 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
                 </div>
               ))
             ) : (
-              <div className="col-span-2 text-center py-8 text-slate-500">
-                Sem seleções ainda — adiciona acima.
-              </div>
+              <div className="col-span-2 text-center py-8 text-slate-500">Sem seleções ainda — adiciona acima.</div>
             )}
           </div>
         </div>
