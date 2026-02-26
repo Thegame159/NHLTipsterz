@@ -102,7 +102,7 @@ export default async function handler(
     }
 
     // =========================
-    // GET (SCAN compatível)
+    // GET
     // =========================
     if (req.method === "GET") {
       const limitRaw = String(req.query.limit || "30");
@@ -112,13 +112,9 @@ export default async function handler(
       let cursor = "0";
 
       do {
-        const result = await redis.scan(
-          cursor,
-          "MATCH",
-          `${KEY_PREFIX}*`,
-          "COUNT",
-          100
-        );
+        const result = await redis.scan(cursor, `${KEY_PREFIX}*`, 100);
+
+        if (!result) break;
 
         cursor = result[0];
         keys.push(...result[1]);
