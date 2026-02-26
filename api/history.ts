@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { redis } from "./_redis.js";
+import { redis } from "./_redis.ts";
 
 export const config = { runtime: "nodejs" };
 
