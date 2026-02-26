@@ -1,8 +1,16 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { redis } from "./_redis";
-import { normalizeSuggestionsDeep } from "./_suggestions";
 
 export const config = { runtime: "nodejs" };
+
+type Suggestions = any;
+type HistorySide = "auto" | "mine";
+
+type StoreItem = {
+  date: string;
+  auto: null | { savedAt: number; suggestions: Suggestions };
+  mine: null | { savedAt: number; suggestions: Suggestions };
+};
 
 const KEY_PREFIX = "history:";
 
@@ -14,53 +22,123 @@ const keyForDate = (date: string) => `${KEY_PREFIX}${date}`;
 
 function safeJsonParse(input: any) {
   try {
-    return typeof input === "string" ? JSON.parse(input) : null;
+    const s = typeof input === "string" ? input : input?.toString?.() ?? "";
+    if (!s) return null;
+    return JSON.parse(s);
   } catch {
     return null;
   }
 }
 
+/**
+ * Normaliza labels de sugestões que às vezes vêm como:
+ * - "2025020917 (EDM)" -> "EDM"
+ * - "2025020912 (TBL vs TOR)" -> "TBL vs TOR"
+ * e mantém strings normais intactas.
+ */
+function cleanSuggestionLabel(value: any): string {
+  let s = String(value ?? "").trim();
+  if (!s) return s;
+
+  // Caso mais comum: "digits (....)"
+  const m = s.match(/^\s*\d+\s*\(([^)]+)\)\s*$/);
+  if (m?.[1]) return m[1].trim();
+
+  // Remove prefixo numérico solto: "2025020917 EDM" -> "EDM"
+  s = s.replace(/^\s*\d+\s+/, "").trim();
+
+  // Se ainda estiver "(EDM)", tira parênteses
+  const p = s.match(/^\(([^)]+)\)$/);
+  if (p?.[1]) return p[1].trim();
+
+  return s;
+}
+
+function normalizeSuggestionsDeep(input: any) {
+  if (!input || typeof input !== "object") return input;
+
+  const out: any = Array.isArray(input) ? [...input] : { ...input };
+
+  // arrays de strings
+  const normalizeStringArray = (arr: any) =>
+    Array.isArray(arr) ? arr.map(cleanSuggestionLabel).filter((x) => String(x).trim().length > 0) : [];
+
+  // Estrutura esperada:
+  // {
+  //   tripleWin: string[],
+  //   tripleOver15P1: string[],
+  //   doubleOver15P1: string[],
+  //   drawSuggestions: { game, explanation }[],
+  //   quadrupleOver45: string[],
+  //   over55Suggestions: string[]
+  // }
+  if ("tripleWin" in out) out.tripleWin = normalizeStringArray(out.tripleWin);
+  if ("tripleOver15P1" in out) out.tripleOver15P1 = normalizeStringArray(out.tripleOver15P1);
+  if ("doubleOver15P1" in out) out.doubleOver15P1 = normalizeStringArray(out.doubleOver15P1);
+  if ("quadrupleOver45" in out) out.quadrupleOver45 = normalizeStringArray(out.quadrupleOver45);
+  if ("over55Suggestions" in out) out.over55Suggestions = normalizeStringArray(out.over55Suggestions);
+
+  if ("drawSuggestions" in out) {
+    out.drawSuggestions = Array.isArray(out.drawSuggestions)
+      ? out.drawSuggestions.map((d: any) => ({
+          game: cleanSuggestionLabel(d?.game),
+          explanation: String(d?.explanation ?? ""),
+        }))
+      : [];
+  }
+
+  return out;
+}
+
+function normalizeSideObject(obj: any) {
+  if (!obj || typeof obj !== "object") return obj;
+  const savedAt = Number(obj.savedAt);
+  const suggestions = normalizeSuggestionsDeep(obj.suggestions);
+  return {
+    savedAt: Number.isFinite(savedAt) ? savedAt : Date.now(),
+    suggestions,
+  };
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     if (req.method === "POST") {
-      const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
-      const date = body?.date;
+      const body = typeof req.body === "string" ? safeJsonParse(req.body) : req.body || {};
+      if (!body || typeof body !== "object") return res.status(400).json({ message: "Invalid JSON body" });
 
-      if (!date || !isDate(date)) {
-        return res.status(400).json({ message: "Invalid date" });
-      }
-
-      const existingRaw = await redis.get(keyForDate(date));
-      const existing = safeJsonParse(existingRaw) || { date, auto: null, mine: null };
+      const date = String((body as any)?.date || "").trim();
+      if (!date || !isDate(date)) return res.status(400).json({ message: "Invalid date" });
 
       // compat 1: { date, side:"auto"|"mine", suggestions }
-      if (body.side && body.suggestions) {
-        existing[body.side] = {
-          savedAt: Date.now(),
-          suggestions: normalizeSuggestionsDeep(body.suggestions),
-        };
+      const side: HistorySide | undefined =
+        (body as any)?.side === "auto" || (body as any)?.side === "mine" ? (body as any).side : undefined;
+      const suggestionsRaw = (body as any)?.suggestions ?? undefined;
+
+      // compat 2: { date, auto:{savedAt,suggestions} } / { date, mine:{...} }
+      const autoObj = (body as any)?.auto ?? undefined;
+      const mineObj = (body as any)?.mine ?? undefined;
+
+      // compat 3 (antigo): { date, picks } => assume mine
+      const picks = (body as any)?.picks ?? undefined;
+
+      let existing: StoreItem = { date, auto: null, mine: null };
+      try {
+        const existingRaw = await redis.get(keyForDate(date));
+        const existingParsed = safeJsonParse(existingRaw);
+        if (existingParsed && typeof existingParsed === "object") existing = existingParsed as StoreItem;
+      } catch {
+        // ok
       }
 
-      // compat 2: { date, auto:{...} } / { date, mine:{...} }
-      if (body.auto) {
-        existing.auto = {
-          savedAt: Number.isFinite(Number(body.auto.savedAt)) ? Number(body.auto.savedAt) : Date.now(),
-          suggestions: normalizeSuggestionsDeep(body.auto.suggestions),
-        };
-      }
-      if (body.mine) {
-        existing.mine = {
-          savedAt: Number.isFinite(Number(body.mine.savedAt)) ? Number(body.mine.savedAt) : Date.now(),
-          suggestions: normalizeSuggestionsDeep(body.mine.suggestions),
-        };
+      if (autoObj) existing.auto = normalizeSideObject(autoObj);
+      if (mineObj) existing.mine = normalizeSideObject(mineObj);
+
+      if (side && suggestionsRaw) {
+        existing[side] = { savedAt: Date.now(), suggestions: normalizeSuggestionsDeep(suggestionsRaw) };
       }
 
-      // compat 3 antigo: { date, picks } assume mine
-      if (body.picks && !body.mine && !body.side) {
-        existing.mine = {
-          savedAt: Date.now(),
-          suggestions: normalizeSuggestionsDeep(body.picks),
-        };
+      if (picks && !side && !mineObj) {
+        existing.mine = { savedAt: Date.now(), suggestions: normalizeSuggestionsDeep(picks) };
       }
 
       await redis.set(keyForDate(date), JSON.stringify(existing));
@@ -68,15 +146,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (req.method === "GET") {
-      // opcional: implementar listagem via SCAN mais tarde
+      // (Opcional) listagem pode ser reintroduzida depois via SCAN REST
       return res.status(200).json({ ok: true, items: [] });
     }
 
+    res.setHeader("Allow", "GET, POST");
     return res.status(405).json({ message: "Method not allowed" });
   } catch (e: any) {
-    return res.status(500).json({
-      message: "History fatal",
-      details: String(e?.message || e),
-    });
+    return res.status(500).json({ message: "History fatal", details: String(e?.message || e) });
   }
 }
