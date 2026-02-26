@@ -102,7 +102,7 @@ export default async function handler(
     }
 
     // =========================
-    // GET (Upstash-safe SCAN)
+    // GET (Upstash REST compatible)
     // =========================
     if (req.method === "GET") {
       const limitRaw = String(req.query.limit || "30");
@@ -112,10 +112,13 @@ export default async function handler(
       let cursor = "0";
 
       do {
-        const result = await redis.scan(cursor, {
-          match: `${KEY_PREFIX}*`,
-          count: 100,
-        });
+        const result = await redis.scan(
+          cursor,
+          "MATCH",
+          `${KEY_PREFIX}*`,
+          "COUNT",
+          100
+        );
 
         cursor = result[0];
         keys.push(...result[1]);
