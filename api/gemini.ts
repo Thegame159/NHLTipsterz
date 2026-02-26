@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { GoogleGenAI } from "@google/genai";
 import { createClient } from "redis";
 import crypto from "crypto";
+import { normalizeSuggestionsDeep } from "../services/normalizeSuggestionLabel";
 
 export const config = { runtime: "nodejs" };
 
@@ -675,7 +676,11 @@ ${JSON.stringify(gamesForAI, null, 2)}
 `.trim();
 
       const { modelUsed, parsed } = await generatePredictionsWithFallback(ai, prompt);
-      geminiObj = { ...parsed, modelUsed };
+
+      // ✅ Normaliza aqui (antes de cachear)
+      const normalizedParsed = normalizeSuggestionsDeep(parsed);
+
+      geminiObj = { ...normalizedParsed, modelUsed };
 
       if (redis) {
         try {
@@ -684,10 +689,16 @@ ${JSON.stringify(gamesForAI, null, 2)}
           console.error("Gemini cache save failed:", e);
         }
       }
+    } else {
+      // ✅ Se veio do cache, garante normalização também
+      geminiObj = normalizeSuggestionsDeep(geminiObj);
     }
 
     // 5) Merge final
-    const finalData: any = mergeInjuriesIntoPredictions(geminiObj, injuriesPack.injuriesByTeam);
+    let finalData: any = mergeInjuriesIntoPredictions(geminiObj, injuriesPack.injuriesByTeam);
+
+    // ✅ Normaliza também a resposta final (camada extra de segurança)
+    finalData = normalizeSuggestionsDeep(finalData);
 
     const debug = String((req.query as any)?.debug ?? "") === "1";
 
