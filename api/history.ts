@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { redis } from "./_redis.js"; 
+import { redis } from "./_redis.js";
 
 export const config = { runtime: "nodejs" };
 
@@ -41,7 +41,10 @@ function normalizeSideObject(obj: any) {
   };
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function handler(
+  req: VercelRequest,
+  res: VercelResponse
+) {
   try {
     // =========================
     // POST
@@ -62,7 +65,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       const side: HistorySide | undefined =
-        (body as any)?.side === "auto" || (body as any)?.side === "mine"
+        (body as any)?.side === "auto" ||
+        (body as any)?.side === "mine"
           ? (body as any).side
           : undefined;
 
@@ -83,34 +87,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         };
       }
 
-      if ((body as any)?.auto) existing.auto = normalizeSideObject((body as any).auto);
-      if ((body as any)?.mine) existing.mine = normalizeSideObject((body as any).mine);
+      if ((body as any)?.auto)
+        existing.auto = normalizeSideObject((body as any).auto);
+
+      if ((body as any)?.mine)
+        existing.mine = normalizeSideObject((body as any).mine);
 
       await redis.set(keyForDate(date), JSON.stringify(existing));
 
-      return res.status(200).json({ ok: true, item: existing });
+      return res.status(200).json({
+        ok: true,
+        item: existing,
+      });
     }
 
     // =========================
-    // GET (Upstash-safe usando SCAN)
+    // GET (Upstash-safe SCAN)
     // =========================
     if (req.method === "GET") {
       const limitRaw = String(req.query.limit || "30");
       const limit = Math.min(parseInt(limitRaw, 10) || 30, 200);
 
       const keys: string[] = [];
-      let cursor = 0;
+      let cursor = "0";
 
-      // SCAN loop
       do {
         const result = await redis.scan(cursor, {
           match: `${KEY_PREFIX}*`,
           count: 100,
         });
 
-        cursor = Number(result[0]);
+        cursor = result[0];
         keys.push(...result[1]);
-      } while (cursor !== 0);
+      } while (cursor !== "0");
 
       const dates = keys
         .map((k) => k.replace(KEY_PREFIX, ""))
