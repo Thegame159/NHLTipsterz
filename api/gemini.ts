@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { GoogleGenAI } from "@google/genai";
 import { createClient } from "redis";
 import crypto from "crypto";
-import { normalizeSuggestionsDeep } from "../services/normalizeSuggestionLabel";
+import { normalizeSuggestionsDeep } from "./_suggestions";
 
 export const config = { runtime: "nodejs" };
 
@@ -314,9 +314,8 @@ ${chunk}
 async function extractInjuriesWithGemini(apiKey: string, html: string): Promise<InjuriesExtractResult> {
   const ai = new GoogleGenAI({ apiKey });
 
-  // Em vez de cortar a página, fazemos chunking (evita perder equipas no final do HTML)
-  const MAX_CHARS_PER_CHUNK = 90_000; // mais seguro para contexto e tokens
-  const OVERLAP = 2_000; // overlap pequeno para não cortar blocos a meio
+  const MAX_CHARS_PER_CHUNK = 90_000;
+  const OVERLAP = 2_000;
 
   const chunks: string[] = [];
   if (!html) return { teams: [] };
@@ -324,22 +323,19 @@ async function extractInjuriesWithGemini(apiKey: string, html: string): Promise<
   let i = 0;
   while (i < html.length) {
     const end = Math.min(i + MAX_CHARS_PER_CHUNK, html.length);
-    const chunk = html.slice(i, end);
-    chunks.push(chunk);
+    chunks.push(html.slice(i, end));
     if (end >= html.length) break;
     i = end - OVERLAP;
     if (i < 0) i = 0;
   }
 
-  // Limite de chunks para evitar custos abusivos se HTML vier gigante
   const MAX_CHUNKS = 6;
   const clippedChunks = chunks.slice(0, MAX_CHUNKS);
 
   const partials: InjuriesExtractResult[] = [];
   for (const c of clippedChunks) {
     try {
-      const part = await extractInjuriesChunkWithGemini(ai, c);
-      partials.push(part);
+      partials.push(await extractInjuriesChunkWithGemini(ai, c));
     } catch (e) {
       console.error("Chunk extraction failed:", e);
     }
@@ -355,7 +351,6 @@ async function getInjuriesByAbbr(
 ) {
   const redis = await getRedis();
 
-  // cache por DIA (UTC) + versão
   const todayKey = new Date().toISOString().slice(0, 10);
   const cacheKey = `espn_br_injuries_extracted_v2:${todayKey}`;
 
@@ -383,11 +378,7 @@ async function getInjuriesByAbbr(
 
   if (redis) {
     try {
-      await redis.set(
-        cacheKey,
-        JSON.stringify({ savedAt: Date.now(), htmlHash, data: extracted }),
-        { PX: opts.injuriesTtlMs }
-      );
+      await redis.set(cacheKey, JSON.stringify({ savedAt: Date.now(), htmlHash, data: extracted }), { PX: opts.injuriesTtlMs });
     } catch (e) {
       console.error("Injuries cache save failed:", e);
     }
@@ -516,7 +507,6 @@ function setCors(req: VercelRequest, res: VercelResponse) {
     "https://nhl-tipsterz.vercel.app",
   ]);
 
-  // Se não houver Origin (ex: curl, server-to-server), permite.
   if (!origin) {
     res.setHeader("Access-Control-Allow-Origin", "https://nhl-tipsterz.vercel.app");
   } else if (!allowlist.has(origin)) {
@@ -554,7 +544,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const redis = await getRedis();
 
-    // Rate limit (se houver Redis)
     if (redis) {
       const ip = getClientIp(req);
       const rl = await rateLimit(redis, ip);
@@ -576,16 +565,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const selectedDate = v.value;
     const diffDays = (v as any).diffDays as number;
 
-    // TTL dinâmico (mais curto para datas “próximas”)
     const geminiTtlMs = Math.abs(diffDays) <= 1 ? 1000 * 60 * 60 * 2 : GEMINI_TTL_MS;
-
-    // Lesões: mais curto perto de hoje
     const injuriesTtlMs = Math.abs(diffDays) <= 1 ? INJURIES_TTL_MS_NEAR_TODAY : INJURIES_TTL_MS_DEFAULT;
 
-    // Permite forçar refresh: /api/gemini?refresh=1
     const refresh = String((req.query as any)?.refresh ?? "") === "1";
 
-    // 1) schedule real
     const scheduleGames = await fetchNhlScheduleGames(selectedDate);
     if (!scheduleGames.length) {
       return res.status(200).json({
@@ -596,7 +580,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // 2) teams no dia
     const teamAbbrs = new Set<string>();
     for (const g of scheduleGames) {
       const h = normAbbr(g.homeTeam?.abbrev || "");
@@ -605,10 +588,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (a) teamAbbrs.add(a);
     }
 
-    // 3) Injuries (ESPN HTML -> Gemini extract)
     const injuriesPack = await getInjuriesByAbbr(apiKey, teamAbbrs, { injuriesTtlMs, refresh });
 
-    // 4) Gemini predictions (cache)
     const geminiCacheKey = `gemini_only:${selectedDate}`;
     let geminiObj: any = null;
     let geminiHit = false;
@@ -677,9 +658,8 @@ ${JSON.stringify(gamesForAI, null, 2)}
 
       const { modelUsed, parsed } = await generatePredictionsWithFallback(ai, prompt);
 
-      // ✅ Normaliza aqui (antes de cachear)
+      // ✅ Normaliza antes de cachear
       const normalizedParsed = normalizeSuggestionsDeep(parsed);
-
       geminiObj = { ...normalizedParsed, modelUsed };
 
       if (redis) {
@@ -694,14 +674,12 @@ ${JSON.stringify(gamesForAI, null, 2)}
       geminiObj = normalizeSuggestionsDeep(geminiObj);
     }
 
-    // 5) Merge final
     let finalData: any = mergeInjuriesIntoPredictions(geminiObj, injuriesPack.injuriesByTeam);
 
-    // ✅ Normaliza também a resposta final (camada extra de segurança)
+    // ✅ Normaliza a resposta final (camada extra)
     finalData = normalizeSuggestionsDeep(finalData);
 
     const debug = String((req.query as any)?.debug ?? "") === "1";
-
     if (debug) {
       finalData.meta = {
         selectedDate,
