@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getRedis } from "./_redis";
+import { normalizeSuggestionsDeep } from "../services/normalizeSuggestionLabel";
 
 export const config = { runtime: "nodejs" };
 
@@ -40,6 +41,25 @@ function asInt(x: any, def: number) {
   return Number.isFinite(n) ? n : def;
 }
 
+function normalizeHistoryPayloadSuggestions(suggestions: any) {
+  // Aceita tanto "Suggestions" puro como wrapper { suggestions: ... }
+  try {
+    return normalizeSuggestionsDeep(suggestions);
+  } catch {
+    return suggestions;
+  }
+}
+
+function normalizeSideObject(obj: any) {
+  if (!obj || typeof obj !== "object") return obj;
+  const savedAt = Number(obj.savedAt);
+  const suggestions = normalizeHistoryPayloadSuggestions(obj.suggestions);
+  return {
+    savedAt: Number.isFinite(savedAt) ? savedAt : Date.now(),
+    suggestions,
+  };
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const redis = await getRedis();
@@ -74,7 +94,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       // compat 1 (App.tsx): { date, side:"auto"|"mine", suggestions }
       const side: HistorySide | undefined = body?.side === "auto" || body?.side === "mine" ? body.side : undefined;
-      const suggestions = body?.suggestions ?? undefined;
+      const suggestionsRaw = body?.suggestions ?? undefined;
 
       // compat 2: { date, auto:{savedAt,suggestions} } / { date, mine:{...} }
       const autoObj = body?.auto ?? undefined;
@@ -89,16 +109,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const existing: StoreItem = existingParsed ?? { date, auto: null, mine: null };
 
-      // merge
-      if (autoObj) existing.auto = autoObj;
-      if (mineObj) existing.mine = mineObj;
+      // merge (com normalização)
+      if (autoObj) existing.auto = normalizeSideObject(autoObj);
+      if (mineObj) existing.mine = normalizeSideObject(mineObj);
 
-      if (side && suggestions) {
+      if (side && suggestionsRaw) {
+        const suggestions = normalizeHistoryPayloadSuggestions(suggestionsRaw);
         existing[side] = { savedAt: Date.now(), suggestions };
       }
 
       if (picks && !side && !mineObj) {
-        existing.mine = { savedAt: Date.now(), suggestions: picks };
+        const suggestions = normalizeHistoryPayloadSuggestions(picks);
+        existing.mine = { savedAt: Date.now(), suggestions };
       }
 
       await redis.set(keyForDate(date), JSON.stringify(existing));
