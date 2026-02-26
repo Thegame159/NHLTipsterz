@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getRedis } from "./_redis";
+import { normalizeSuggestionsDeep } from "../services/normalizeSuggestionLabel";
 
 export const config = { runtime: "nodejs" };
 
@@ -20,6 +21,15 @@ function safeJsonParse(raw: any) {
   }
 }
 
+function normalizeStore(store: any) {
+  // store pode ser "Suggestions" puro ou wrapper; normalizeSuggestionsDeep lida com ambos
+  try {
+    return normalizeSuggestionsDeep(store);
+  } catch {
+    return store;
+  }
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const redis = await getRedis();
@@ -30,7 +40,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (req.method === "GET") {
       const raw = await redis.get(keyManual(date));
-      return res.status(200).json({ date, store: safeJsonParse(raw) });
+      const parsed = safeJsonParse(raw);
+      const normalized = parsed ? normalizeStore(parsed) : null;
+      return res.status(200).json({ date, store: normalized });
     }
 
     if (req.method === "POST") {
@@ -41,8 +53,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(400).json({ message: "Invalid store" });
       }
 
-      await redis.set(keyManual(date), JSON.stringify(store));
-      return res.status(200).json({ ok: true });
+      const normalizedStore = normalizeStore(store);
+
+      await redis.set(keyManual(date), JSON.stringify(normalizedStore));
+      return res.status(200).json({ ok: true, store: normalizedStore });
     }
 
     if (req.method === "DELETE") {
