@@ -62,91 +62,7 @@ const getLogoUrl = (abbr: string) => {
   return `https://a.espncdn.com/i/teamlogos/nhl/500/${code}.png`;
 };
 
-/** --- mapping de nomes -> abreviações --- */
-const TEAM_NAME_TO_ABBR: Record<string, string> = {
-  // Atlantic
-  Boston: "BOS",
-  "Boston Bruins": "BOS",
-  Buffalo: "BUF",
-  "Buffalo Sabres": "BUF",
-  Detroit: "DET",
-  "Detroit Red Wings": "DET",
-  Florida: "FLA",
-  "Florida Panthers": "FLA",
-  Montréal: "MTL",
-  Montreal: "MTL",
-  "Montréal Canadiens": "MTL",
-  "Montreal Canadiens": "MTL",
-  Ottawa: "OTT",
-  "Ottawa Senators": "OTT",
-  "Tampa Bay": "TBL",
-  "Tampa Bay Lightning": "TBL",
-  Toronto: "TOR",
-  "Toronto Maple Leafs": "TOR",
-
-  // Metro
-  Carolina: "CAR",
-  "Carolina Hurricanes": "CAR",
-  Columbus: "CBJ",
-  "Columbus Blue Jackets": "CBJ",
-  "New Jersey": "NJD",
-  "New Jersey Devils": "NJD",
-  "New York Islanders": "NYI",
-  "NY Islanders": "NYI",
-  "New York Rangers": "NYR",
-  "NY Rangers": "NYR",
-  Philadelphia: "PHI",
-  "Philadelphia Flyers": "PHI",
-  Pittsburgh: "PIT",
-  "Pittsburgh Penguins": "PIT",
-  Washington: "WSH",
-  "Washington Capitals": "WSH",
-
-  // Central
-  Chicago: "CHI",
-  "Chicago Blackhawks": "CHI",
-  Colorado: "COL",
-  "Colorado Avalanche": "COL",
-  Dallas: "DAL",
-  "Dallas Stars": "DAL",
-  Minnesota: "MIN",
-  "Minnesota Wild": "MIN",
-  Nashville: "NSH",
-  "Nashville Predators": "NSH",
-  "St. Louis": "STL",
-  "St Louis": "STL",
-  "St. Louis Blues": "STL",
-  "St Louis Blues": "STL",
-  Winnipeg: "WPG",
-  "Winnipeg Jets": "WPG",
-
-  // Pacific
-  Anaheim: "ANA",
-  "Anaheim Ducks": "ANA",
-  Calgary: "CGY",
-  "Calgary Flames": "CGY",
-  Edmonton: "EDM",
-  "Edmonton Oilers": "EDM",
-  "Los Angeles": "LAK",
-  "Los Angeles Kings": "LAK",
-  LA: "LAK",
-  "San Jose": "SJS",
-  "San Jose Sharks": "SJS",
-  Seattle: "SEA",
-  "Seattle Kraken": "SEA",
-  Vancouver: "VAN",
-  "Vancouver Canucks": "VAN",
-  Vegas: "VGK",
-  "Vegas Golden Knights": "VGK",
-
-  // Utah / Arizona (caso uses)
-  Utah: "UTA",
-  "Utah Hockey Club": "UTA",
-  Arizona: "ARI",
-  "Arizona Coyotes": "ARI",
-};
-
-// Normalizador (remove acentos e normaliza espaços)
+// Normalizador (remove acentos e normaliza espaços) — para comparação
 const normName = (s: string) =>
   (s || "")
     .toLowerCase()
@@ -155,49 +71,13 @@ const normName = (s: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
-// Pré-normaliza chaves para matching “contains”
-const TEAM_KEYS_NORMALIZED: Array<{ key: string; keyNorm: string; abbr: string }> = Object.entries(TEAM_NAME_TO_ABBR)
-  .map(([key, abbr]) => ({ key, keyNorm: normName(key), abbr }))
-  .sort((a, b) => b.keyNorm.length - a.keyNorm.length);
-
-const findSingleTeamAbbrFromText = (text: string): string | null => {
-  const t = normName(text.replace(/\(\d+%\)/g, ""));
-  if (!t) return null;
-  for (const { keyNorm, abbr } of TEAM_KEYS_NORMALIZED) {
-    if (keyNorm && t.includes(keyNorm)) return abbr;
-  }
-  return null;
-};
-
 const parseTeamsFromText = (text: string): string[] => {
   const raw = (text || "").trim();
-
-  // 1) abreviações
   const abbrMatches = raw.match(/\b[A-Z]{2,4}\b/g) || [];
   const cleanedAbbr = abbrMatches.map((s) => s.toUpperCase()).filter((s) => s !== "OT" && s !== "VS" && s !== "V");
   if (cleanedAbbr.length >= 2) return cleanedAbbr.slice(0, 2);
   if (cleanedAbbr.length === 1) return cleanedAbbr;
-
-  // 2) nomes "A vs B" / "A v B" / "A @ B"
-  const normalized = raw.replace(/\s+/g, " ").replace(/\(\d+%\)/g, "").trim();
-  const split =
-    normalized.includes(" vs ") ? normalized.split(" vs ")
-    : normalized.includes(" v ") ? normalized.split(" v ")
-    : normalized.includes(" @ ") ? normalized.split(" @ ")
-    : null;
-
-  if (split && split.length >= 2) {
-    const a = findSingleTeamAbbrFromText(split[0].trim());
-    const b = findSingleTeamAbbrFromText(split[1].trim());
-    const res: string[] = [];
-    if (a) res.push(a);
-    if (b) res.push(b);
-    if (res.length) return res;
-  }
-
-  // 3) só 1 equipa
-  const single = findSingleTeamAbbrFromText(normalized);
-  return single ? [single] : [];
+  return [];
 };
 
 const isEmptyPicks = (p: Suggestions) =>
@@ -216,6 +96,7 @@ const SuggestionItem: React.FC<{
   onRemove?: () => void;
 }> = ({ text, badgeColor, index, onRemove }) => {
   const teamMatches = parseTeamsFromText(text);
+
   const percentageMatch = text.match(/\d+%/);
   const percentage = percentageMatch ? percentageMatch[0] : null;
   const cleanText = text.replace(/\(\d+%\)/, "").trim();
@@ -337,6 +218,7 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
 
   const predictionsOfDay = useMemo(() => predictions || [], [predictions]);
 
+  // ✅ só equipas do dia (unique)
   const teamsOfDay = useMemo(() => {
     const set = new Set<string>();
     for (const g of predictionsOfDay as any[]) {
@@ -348,6 +230,7 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
     return Array.from(set).sort();
   }, [predictionsOfDay]);
 
+  // ✅ só jogos do dia (unique)
   const gamesOfDay = useMemo(() => {
     const set = new Set<string>();
     for (const g of predictionsOfDay as any[]) {
@@ -359,7 +242,11 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
     return Array.from(set).sort();
   }, [predictionsOfDay]);
 
-  // helpers for duplicates/limits
+  // ✅ validação extra: não deixa adicionar coisas que não sejam do dia
+  const isValidTeam = (abbr: string) => teamsOfDay.includes(String(abbr || "").trim().toUpperCase());
+  const isValidGame = (game: string) => gamesOfDay.some((g) => normName(g) === normName(game));
+
+  // helpers duplicates/limits
   const hasInArrayNorm = (arr: string[], value: string) => {
     const v = normName(value);
     return arr.some((x) => normName(String(x)) === v);
@@ -367,19 +254,22 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
 
   const addTeam = () => {
     const t = String(teamToAdd || "").trim().toUpperCase();
-    if (!t) return;
+    if (!t || !isValidTeam(t)) return;
+
     setPicks((prev) => {
       const cur = (prev.tripleWin || []).map(String);
       if (cur.length >= 3) return prev;
       if (cur.includes(t)) return prev;
       return { ...prev, tripleWin: [...cur, t] };
     });
+
     setTeamToAdd("");
   };
 
   const addGameTo = (field: keyof Suggestions, rawValue: string, limit?: number) => {
     const value = String(rawValue || "").trim();
-    if (!value) return;
+    if (!value || !isValidGame(value)) return;
+
     setPicks((prev) => {
       const cur = (prev[field] as any[] | undefined) ?? [];
       const asStrings =
@@ -391,10 +281,8 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
       if (hasInArrayNorm(asStrings, value)) return prev;
 
       if (field === "drawSuggestions") {
-        // StatsView espera { game, explanation }
         return { ...prev, drawSuggestions: [...cur, { game: value, explanation: "" }] as any };
       }
-
       return { ...prev, [field]: [...asStrings, value] as any };
     });
   };
@@ -444,7 +332,6 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
 
   return (
     <div className="space-y-8 pb-24">
-      {/* HEADER igual ao SuggestionsView */}
       <div className="bg-gradient-to-r from-blue-900/40 to-slate-900/40 border border-blue-500/20 rounded-2xl p-6 sm:p-8 flex flex-col sm:flex-row items-center gap-6">
         <div className="bg-blue-600/20 p-4 rounded-2xl border border-blue-500/30">
           <i className="fas fa-user-edit text-4xl text-blue-400"></i>
@@ -453,9 +340,7 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
           <h2 className="text-2xl font-black text-white italic">
             MINHAS PICKS <span className="text-blue-500">PERSONALIZADAS</span>
           </h2>
-          <p className="text-slate-400 text-sm max-w-lg">
-            Mesmo layout das DICAS — mas aqui és tu que escolhes os jogos.
-          </p>
+          <p className="text-slate-400 text-sm max-w-lg">Mesma UI das DICAS — mas aqui és tu que escolhes os jogos do dia.</p>
         </div>
 
         <button
@@ -472,15 +357,15 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
         </button>
       </div>
 
-      {/* GRID igual ao SuggestionsView */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {/* ✅ TRIPLETE WIN com LOGOS */}
         <SuggestionCard
           title="Triplete de Vitórias"
           items={picks.tripleWin || []}
           icon="fa-award"
           gradient="bg-gradient-to-br from-amber-500 to-orange-600"
           badgeColor="bg-amber-500"
-          description="Escolhe 3 equipas para vencer (incl. OT)."
+          description="Escolhe 3 equipas do dia para vencer (incl. OT)."
           addUi={
             <div className="flex gap-2">
               <select
@@ -489,12 +374,13 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
                 className="flex-1 bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2.5 text-[11px] font-black text-slate-200 outline-none"
               >
                 <option value="">Seleciona equipa…</option>
-                {teamsOfDay.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
+                {teamsOfDay.map((abbr) => (
+                  <option key={abbr} value={abbr}>
+                    {abbr}
                   </option>
                 ))}
               </select>
+
               <button
                 onClick={addTeam}
                 disabled={!teamToAdd || (picks.tripleWin || []).length >= 3}
@@ -508,10 +394,10 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
               </button>
             </div>
           }
-          renderItem={(item, idx) => (
+          renderItem={(abbr, idx) => (
             <SuggestionItem
               key={`tw-${idx}`}
-              text={item}
+              text={String(abbr).toUpperCase()} // ✅ parseTeamsFromText apanha a abbr e mostra logo
               badgeColor="bg-amber-500"
               index={idx}
               onRemove={() => removeAt("tripleWin", idx)}
@@ -525,7 +411,7 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
           icon="fa-fire-alt"
           gradient="bg-gradient-to-br from-red-500 to-rose-700"
           badgeColor="bg-red-500"
-          description="Escolhe 3 jogos para pelo menos 2 golos no 1º período."
+          description="Escolhe 3 jogos do dia para pelo menos 2 golos no 1º período."
           addUi={
             <div className="flex gap-2">
               <select
@@ -573,7 +459,7 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
           icon="fa-bolt"
           gradient="bg-gradient-to-br from-blue-500 to-indigo-700"
           badgeColor="bg-blue-500"
-          description="Escolhe 2 jogos secundários para golos rápidos."
+          description="Escolhe 2 jogos do dia (secundários) para golos rápidos."
           addUi={
             <div className="flex gap-2">
               <select
@@ -621,7 +507,7 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
           icon="fa-hockey-puck"
           gradient="bg-gradient-to-br from-emerald-500 to-teal-700"
           badgeColor="bg-emerald-500"
-          description="Escolhe 4 jogos com tendência ofensiva para 5+ golos."
+          description="Escolhe 4 jogos do dia com tendência ofensiva (5+ golos)."
           addUi={
             <div className="flex gap-2">
               <select
@@ -663,7 +549,7 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
           )}
         />
 
-        {/* DRAW CARD igual ao SuggestionsView */}
+        {/* DRAW — continua igual às DICAS, mas só jogos do dia */}
         <div className="md:col-span-2 bg-slate-800/40 border border-slate-700 rounded-2xl p-6 relative overflow-hidden group">
           <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500"></div>
 
@@ -770,7 +656,7 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
           </div>
         </div>
 
-        {/* Over 5.5 Plus igual ao SuggestionsView */}
+        {/* Over 5.5 — só jogos do dia */}
         <div className="bg-slate-800/40 border border-slate-700 rounded-2xl p-6 flex flex-col">
           <div className="flex items-center justify-between gap-3 mb-4">
             <h3 className="text-lg font-bold flex items-center text-pink-400">
