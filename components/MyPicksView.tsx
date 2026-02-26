@@ -3,8 +3,10 @@ import { GamePrediction, Suggestions } from "../types";
 
 interface Props {
   predictions: GamePrediction[];
-  selectedDate: string; // loadedDate
+  selectedDate: string;
 }
+
+type DrawItem = { game: string; explanation?: string };
 
 const defaultSuggestions = (): Suggestions => ({
   tripleWin: [],
@@ -17,6 +19,7 @@ const defaultSuggestions = (): Suggestions => ({
 
 const storageKey = (date: string) => `my_picks_${date}`;
 
+// ---------------- Logos ----------------
 const getLogoUrl = (abbr: string) => {
   const map: Record<string, string> = {
     TBL: "tb",
@@ -57,49 +60,48 @@ const getLogoUrl = (abbr: string) => {
     VAN: "van",
     TOR: "tor",
   };
-  const normalizedAbbr = abbr?.trim().toUpperCase();
-  const code = map[normalizedAbbr] || normalizedAbbr?.toLowerCase();
+  const normalized = (abbr || "").trim().toUpperCase();
+  const code = map[normalized] || normalized.toLowerCase();
   return `https://a.espncdn.com/i/teamlogos/nhl/500/${code}.png`;
 };
 
-// Normalizador (remove acentos e normaliza espaços) — para comparação
-const normName = (s: string) =>
+// ---------------- Parsing helpers ----------------
+const normalizeGameText = (s: string) =>
   (s || "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
-    .replace(/\s+/g, " ")
-    .trim();
+    .trim()
+    .toUpperCase()
+    .replace(/\(\s*\d+(\.\d+)?%\s*\)/g, "")
+    .replace(/\s+VS\s+/g, " VS ")
+    .replace(/\s+@\s+/g, " VS ")
+    .replace(/\s+V\s+/g, " VS ")
+    .replace(/\s+/g, " ");
 
 const parseTeamsFromText = (text: string): string[] => {
-  const raw = (text || "").trim();
+  const raw = (text || "").trim().toUpperCase();
   const abbrMatches = raw.match(/\b[A-Z]{2,4}\b/g) || [];
-  const cleanedAbbr = abbrMatches.map((s) => s.toUpperCase()).filter((s) => s !== "OT" && s !== "VS" && s !== "V");
-  if (cleanedAbbr.length >= 2) return cleanedAbbr.slice(0, 2);
-  if (cleanedAbbr.length === 1) return cleanedAbbr;
+  const cleaned = abbrMatches.filter((s) => s !== "OT" && s !== "VS" && s !== "V");
+  if (cleaned.length >= 2) return cleaned.slice(0, 2);
+  if (cleaned.length === 1) return cleaned;
   return [];
 };
 
 const isEmptyPicks = (p: Suggestions) =>
-  (p.tripleWin || []).length === 0 &&
-  (p.tripleOver15P1 || []).length === 0 &&
-  (p.doubleOver15P1 || []).length === 0 &&
-  (p.quadrupleOver45 || []).length === 0 &&
-  (p.over55Suggestions || []).length === 0 &&
-  (p.drawSuggestions || []).length === 0;
+  (p.tripleWin?.length ?? 0) === 0 &&
+  (p.tripleOver15P1?.length ?? 0) === 0 &&
+  (p.doubleOver15P1?.length ?? 0) === 0 &&
+  (p.quadrupleOver45?.length ?? 0) === 0 &&
+  (p.over55Suggestions?.length ?? 0) === 0 &&
+  (p.drawSuggestions?.length ?? 0) === 0;
 
-// --- item igual ao SuggestionsView, mas com remover opcional ---
-const SuggestionItem: React.FC<{
+// ---------------- UI pieces (igual ao estilo das DICAS) ----------------
+const SuggestionItemRow: React.FC<{
   text: string;
   badgeColor: string;
   index: number;
   onRemove?: () => void;
 }> = ({ text, badgeColor, index, onRemove }) => {
   const teamMatches = parseTeamsFromText(text);
-
-  const percentageMatch = text.match(/\d+%/);
-  const percentage = percentageMatch ? percentageMatch[0] : null;
-  const cleanText = text.replace(/\(\d+%\)/, "").trim();
+  const cleanText = text.replace(/\(\d+%\)/g, "").trim();
 
   return (
     <div className="flex items-center gap-3 bg-slate-900/60 p-3 rounded-xl border border-slate-700/50 group hover:border-blue-500/30 transition-colors">
@@ -124,14 +126,11 @@ const SuggestionItem: React.FC<{
             ))}
           </div>
         )}
-        <span className="text-sm font-semibold text-slate-200 group-hover:text-white truncate">{cleanText}</span>
-      </div>
 
-      {percentage && (
-        <div className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-[10px] font-black text-emerald-400">
-          {percentage}
-        </div>
-      )}
+        <span className="text-sm font-semibold text-slate-200 group-hover:text-white truncate">
+          {cleanText}
+        </span>
+      </div>
 
       {onRemove && (
         <button
@@ -140,7 +139,7 @@ const SuggestionItem: React.FC<{
             e.stopPropagation();
             onRemove();
           }}
-          className="ml-2 px-2.5 py-1 rounded-lg bg-rose-500/10 border border-rose-500/20 text-[10px] font-black text-rose-200 hover:bg-rose-500/15 shrink-0"
+          className="shrink-0 px-2 py-1 rounded-lg border border-rose-500/20 bg-rose-500/10 text-rose-200 text-[10px] font-black uppercase tracking-widest hover:bg-rose-500/15"
           title="Remover"
         >
           <i className="fas fa-times" />
@@ -150,57 +149,49 @@ const SuggestionItem: React.FC<{
   );
 };
 
-const SuggestionCard: React.FC<{
+const PickCard: React.FC<{
   title: string;
-  items: string[];
   icon: string;
   gradient: string;
   badgeColor: string;
   description: string;
-  addUi?: React.ReactNode;
-  renderItem?: (item: string, idx: number) => React.ReactNode;
-}> = ({ title, items, icon, gradient, badgeColor, description, addUi, renderItem }) => (
+  limit: number;
+  children: React.ReactNode;
+}> = ({ title, icon, gradient, badgeColor, description, limit, children }) => (
   <div className="relative overflow-hidden bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 shadow-xl transition-all hover:scale-[1.01] hover:shadow-blue-500/10">
-    <div className={`absolute top-0 right-0 w-32 h-32 -mr-8 -mt-8 opacity-10 rounded-full blur-3xl ${gradient}`}></div>
+    <div className={`absolute top-0 right-0 w-32 h-32 -mr-8 -mt-8 opacity-10 rounded-full blur-3xl ${gradient}`} />
 
     <div className="relative z-10">
       <div className="flex items-center justify-between mb-4">
         <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${gradient} shadow-lg shadow-black/20`}>
-          <i className={`fas ${icon} text-white text-xl`}></i>
+          <i className={`fas ${icon} text-white text-xl`} />
         </div>
         <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">As Minhas Picks</span>
       </div>
 
       <h3 className="text-xl font-bold text-white mb-1">{title}</h3>
-      <p className="text-xs text-slate-400 mb-6 font-medium leading-tight">{description}</p>
+      <p className="text-xs text-slate-400 mb-6 font-medium leading-tight">
+        {description} <span className="text-slate-500">(máx. {limit})</span>
+      </p>
 
-      {addUi && <div className="mb-4">{addUi}</div>}
-
-      <div className="space-y-3">
-        {items.length > 0 ? (
-          items.map((item, idx) =>
-            renderItem ? renderItem(item, idx) : <SuggestionItem key={`${title}-${idx}`} text={item} badgeColor={badgeColor} index={idx} />
-          )
-        ) : (
-          <p className="text-slate-500 italic text-sm py-4">Sem seleções ainda — adiciona acima.</p>
-        )}
-      </div>
+      {children}
     </div>
   </div>
 );
 
+// ---------------- Main ----------------
 const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
   const [picks, setPicks] = useState<Suggestions>(defaultSuggestions());
 
-  // dropdown values
-  const [teamToAdd, setTeamToAdd] = useState("");
-  const [gameToAdd_TripleO15, setGameToAdd_TripleO15] = useState("");
-  const [gameToAdd_DoubleO15, setGameToAdd_DoubleO15] = useState("");
-  const [gameToAdd_O45, setGameToAdd_O45] = useState("");
-  const [gameToAdd_Draw, setGameToAdd_Draw] = useState("");
-  const [gameToAdd_O55, setGameToAdd_O55] = useState("");
+  // selectors
+  const [teamPick, setTeamPick] = useState<string>("");
+  const [gamePickOver15Triple, setGamePickOver15Triple] = useState<string>("");
+  const [gamePickOver15Double, setGamePickOver15Double] = useState<string>("");
+  const [gamePickOver45Quad, setGamePickOver45Quad] = useState<string>("");
+  const [gamePickOver55, setGamePickOver55] = useState<string>("");
+  const [gamePickDrawTR, setGamePickDrawTR] = useState<string>("");
 
-  // load backup (browser) por data
+  // load from localStorage per date (client only)
   useEffect(() => {
     try {
       if (typeof window === "undefined") return;
@@ -218,8 +209,8 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
 
   const predictionsOfDay = useMemo(() => predictions || [], [predictions]);
 
-  // ✅ só equipas do dia (unique)
-  const teamsOfDay = useMemo(() => {
+  // Allowed teams and games come ONLY from this day predictions
+  const allowedTeams = useMemo(() => {
     const set = new Set<string>();
     for (const g of predictionsOfDay as any[]) {
       const a = String((g as any).awayTeamAbbr || "").trim().toUpperCase();
@@ -230,73 +221,79 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
     return Array.from(set).sort();
   }, [predictionsOfDay]);
 
-  // ✅ só jogos do dia (unique)
   const gamesOfDay = useMemo(() => {
     const set = new Set<string>();
     for (const g of predictionsOfDay as any[]) {
       const away = String((g as any).awayTeamAbbr || "").trim().toUpperCase();
       const home = String((g as any).homeTeamAbbr || "").trim().toUpperCase();
       if (!away || !home) continue;
-      set.add(`${away} vs ${home}`);
+      const txt = normalizeGameText(`${away} VS ${home}`);
+      if (txt.includes(" VS ")) set.add(txt);
     }
     return Array.from(set).sort();
   }, [predictionsOfDay]);
 
-  // ✅ validação extra: não deixa adicionar coisas que não sejam do dia
-  const isValidTeam = (abbr: string) => teamsOfDay.includes(String(abbr || "").trim().toUpperCase());
-  const isValidGame = (game: string) => gamesOfDay.some((g) => normName(g) === normName(game));
-
-  // helpers duplicates/limits
-  const hasInArrayNorm = (arr: string[], value: string) => {
-    const v = normName(value);
-    return arr.some((x) => normName(String(x)) === v);
-  };
-
-  const addTeam = () => {
-    const t = String(teamToAdd || "").trim().toUpperCase();
-    if (!t || !isValidTeam(t)) return;
+  // ---------- add helpers with limits ----------
+  const addTeamToTripleWin = () => {
+    const t = (teamPick || "").trim().toUpperCase();
+    if (!t) return;
+    if (!allowedTeams.includes(t)) return;
 
     setPicks((prev) => {
       const cur = (prev.tripleWin || []).map(String);
-      if (cur.length >= 3) return prev;
       if (cur.includes(t)) return prev;
+      if (cur.length >= 3) return prev;
       return { ...prev, tripleWin: [...cur, t] };
     });
-
-    setTeamToAdd("");
+    setTeamPick("");
   };
 
-  const addGameTo = (field: keyof Suggestions, rawValue: string, limit?: number) => {
-    const value = String(rawValue || "").trim();
-    if (!value || !isValidGame(value)) return;
+  const addGameToList = (field: keyof Suggestions, value: string, max: number) => {
+    const g = normalizeGameText(value);
+    if (!g.includes(" VS ")) return;
+    if (!gamesOfDay.map(normalizeGameText).includes(g)) return;
 
     setPicks((prev) => {
-      const cur = (prev[field] as any[] | undefined) ?? [];
-      const asStrings =
-        field === "drawSuggestions"
-          ? cur.map((x: any) => String(x?.game ?? ""))
-          : cur.map((x: any) => String(x));
+      const cur = ((prev as any)[field] || []) as any[];
 
-      if (limit && asStrings.length >= limit) return prev;
-      if (hasInArrayNorm(asStrings, value)) return prev;
-
+      // drawSuggestions is array of objects
       if (field === "drawSuggestions") {
-        return { ...prev, drawSuggestions: [...cur, { game: value, explanation: "" }] as any };
+        const curObj = cur as DrawItem[];
+        const exists = curObj.some((x) => normalizeGameText(x?.game ?? "") === g);
+        if (exists) return prev;
+        if (curObj.length >= max) return prev;
+        return { ...prev, drawSuggestions: [...curObj, { game: g }] as any };
       }
-      return { ...prev, [field]: [...asStrings, value] as any };
+
+      // string arrays
+      const curStr = cur.map((x) => String(x));
+      const exists = curStr.map(normalizeGameText).includes(g);
+      if (exists) return prev;
+      if (curStr.length >= max) return prev;
+      return { ...prev, [field]: [...curStr, g] } as any;
     });
   };
 
-  const removeAt = (field: keyof Suggestions, idx: number) => {
+  // ---------- remove helpers ----------
+  const removeFromStringList = (field: keyof Suggestions, idx: number) => {
     setPicks((prev) => {
-      const cur = (prev[field] as any[] | undefined) ?? [];
+      const cur = (((prev as any)[field] || []) as any[]).map((x) => String(x));
       const next = cur.filter((_, i) => i !== idx);
-      return { ...prev, [field]: next as any };
+      return { ...prev, [field]: next } as any;
     });
   };
 
+  const removeFromDrawList = (idx: number) => {
+    setPicks((prev) => {
+      const cur = ((prev.drawSuggestions || []) as any[]).map((x) => x);
+      const next = cur.filter((_, i) => i !== idx);
+      return { ...prev, drawSuggestions: next as any };
+    });
+  };
+
+  // ---------- save ----------
   const savePicks = async () => {
-    // backup local
+    // localStorage backup
     try {
       if (typeof window !== "undefined") {
         window.localStorage.setItem(storageKey(selectedDate), JSON.stringify(picks));
@@ -305,14 +302,17 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
       // ignore
     }
 
-    // save server
+    // backend save (format expected by StatsView history loader)
     try {
       const res = await fetch("/api/history", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           date: selectedDate,
-          mine: { savedAt: Date.now(), suggestions: picks },
+          mine: {
+            savedAt: Date.now(),
+            suggestions: picks,
+          },
         }),
       });
 
@@ -330,244 +330,294 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
     }
   };
 
+  // ---------- UI ----------
   return (
     <div className="space-y-8 pb-24">
       <div className="bg-gradient-to-r from-blue-900/40 to-slate-900/40 border border-blue-500/20 rounded-2xl p-6 sm:p-8 flex flex-col sm:flex-row items-center gap-6">
         <div className="bg-blue-600/20 p-4 rounded-2xl border border-blue-500/30">
-          <i className="fas fa-user-edit text-4xl text-blue-400"></i>
+          <i className="fas fa-user-check text-4xl text-blue-400" />
         </div>
         <div className="flex-1">
           <h2 className="text-2xl font-black text-white italic">
-            MINHAS PICKS <span className="text-blue-500">PERSONALIZADAS</span>
+            PICKS <span className="text-blue-500">PERSONALIZADAS</span>
           </h2>
-          <p className="text-slate-400 text-sm max-w-lg">Mesma UI das DICAS — mas aqui és tu que escolhes os jogos do dia.</p>
+          <p className="text-slate-400 text-sm max-w-2xl">
+            Igual às “Dicas” — mas aqui és tu que escolhes os jogos do dia. Só podes selecionar equipas/jogos que existem nesta data.
+          </p>
         </div>
 
         <button
           onClick={savePicks}
           disabled={isEmptyPicks(picks)}
-          className={`px-4 py-3 rounded-xl border text-[10px] font-black uppercase tracking-widest transition ${
+          className={`px-4 py-2 rounded-lg border text-[10px] font-black uppercase tracking-widest transition ${
             isEmptyPicks(picks)
               ? "bg-white/5 border-white/10 text-slate-500 cursor-not-allowed"
               : "bg-amber-500/20 border-amber-500/30 text-amber-200 hover:bg-amber-500/25"
           }`}
-          title="Guarda no servidor (history) + backup no browser"
+          title={isEmptyPicks(picks) ? "Sem picks para guardar" : "Guardar as tuas picks"}
         >
           Guardar Picks
         </button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {/* ✅ TRIPLETE WIN com LOGOS */}
-        <SuggestionCard
+        {/* Triplete Win (equipas) */}
+        <PickCard
           title="Triplete de Vitórias"
-          items={picks.tripleWin || []}
           icon="fa-award"
           gradient="bg-gradient-to-br from-amber-500 to-orange-600"
           badgeColor="bg-amber-500"
           description="Escolhe 3 equipas do dia para vencer (incl. OT)."
-          addUi={
-            <div className="flex gap-2">
-              <select
-                value={teamToAdd}
-                onChange={(e) => setTeamToAdd(e.target.value)}
-                className="flex-1 bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2.5 text-[11px] font-black text-slate-200 outline-none"
-              >
-                <option value="">Seleciona equipa…</option>
-                {teamsOfDay.map((abbr) => (
-                  <option key={abbr} value={abbr}>
-                    {abbr}
-                  </option>
-                ))}
-              </select>
+          limit={3}
+        >
+          <div className="flex gap-2 mb-5">
+            <select
+              value={teamPick}
+              onChange={(e) => setTeamPick(e.target.value)}
+              className="flex-1 bg-slate-900/60 border border-slate-700/60 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none"
+            >
+              <option value="">Seleciona equipa…</option>
+              {allowedTeams.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
 
-              <button
-                onClick={addTeam}
-                disabled={!teamToAdd || (picks.tripleWin || []).length >= 3}
-                className={`px-3 py-2.5 rounded-xl border text-[10px] font-black uppercase tracking-widest ${
-                  !teamToAdd || (picks.tripleWin || []).length >= 3
-                    ? "bg-white/5 border-white/10 text-slate-500 cursor-not-allowed"
-                    : "bg-orange-600/20 border-orange-600/30 text-orange-200 hover:bg-orange-600/25"
-                }`}
-              >
-                Adicionar
-              </button>
-            </div>
-          }
-          renderItem={(abbr, idx) => (
-            <SuggestionItem
-              key={`tw-${idx}`}
-              text={String(abbr).toUpperCase()} // ✅ parseTeamsFromText apanha a abbr e mostra logo
-              badgeColor="bg-amber-500"
-              index={idx}
-              onRemove={() => removeAt("tripleWin", idx)}
-            />
-          )}
-        />
+            <button
+              onClick={addTeamToTripleWin}
+              disabled={!teamPick || (picks.tripleWin || []).length >= 3}
+              className={`px-3 py-2 rounded-xl border text-[10px] font-black uppercase tracking-widest ${
+                !teamPick || (picks.tripleWin || []).length >= 3
+                  ? "bg-white/5 border-white/10 text-slate-500 cursor-not-allowed"
+                  : "bg-white/5 border-white/10 text-slate-200 hover:bg-white/10"
+              }`}
+            >
+              Adicionar
+            </button>
+          </div>
 
-        <SuggestionCard
+          <div className="space-y-3">
+            {(picks.tripleWin || []).length ? (
+              (picks.tripleWin || []).map((t, idx) => (
+                <div key={`${t}-${idx}`} className="flex items-center gap-3 bg-slate-900/60 p-3 rounded-xl border border-slate-700/50">
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold bg-amber-500 text-white shrink-0`}>
+                    {idx + 1}
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <img
+                      src={getLogoUrl(String(t))}
+                      className="w-6 h-6 object-contain drop-shadow-md bg-slate-800 rounded-full p-0.5 border border-slate-700"
+                      alt={String(t)}
+                      loading="lazy"
+                      decoding="async"
+                      onError={(e) => (e.currentTarget.style.display = "none")}
+                    />
+                    <span className="text-sm font-semibold text-slate-200 truncate">{String(t)}</span>
+                  </div>
+
+                  <button
+                    onClick={() => removeFromStringList("tripleWin", idx)}
+                    className="shrink-0 px-2 py-1 rounded-lg border border-rose-500/20 bg-rose-500/10 text-rose-200 text-[10px] font-black uppercase tracking-widest hover:bg-rose-500/15"
+                    title="Remover"
+                  >
+                    <i className="fas fa-times" />
+                  </button>
+                </div>
+              ))
+            ) : (
+              <p className="text-slate-500 italic text-sm py-2">Sem seleções ainda — adiciona acima.</p>
+            )}
+          </div>
+        </PickCard>
+
+        {/* Triplete Over 1.5 P1 */}
+        <PickCard
           title="Triplete Over 1.5 P1"
-          items={picks.tripleOver15P1 || []}
           icon="fa-fire-alt"
           gradient="bg-gradient-to-br from-red-500 to-rose-700"
           badgeColor="bg-red-500"
           description="Escolhe 3 jogos do dia para pelo menos 2 golos no 1º período."
-          addUi={
-            <div className="flex gap-2">
-              <select
-                value={gameToAdd_TripleO15}
-                onChange={(e) => setGameToAdd_TripleO15(e.target.value)}
-                className="flex-1 bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2.5 text-[11px] font-black text-slate-200 outline-none"
-              >
-                <option value="">Seleciona jogo…</option>
-                {gamesOfDay.map((g) => (
-                  <option key={g} value={g}>
-                    {g}
-                  </option>
-                ))}
-              </select>
-              <button
-                onClick={() => {
-                  addGameTo("tripleOver15P1", gameToAdd_TripleO15, 3);
-                  setGameToAdd_TripleO15("");
-                }}
-                disabled={!gameToAdd_TripleO15 || (picks.tripleOver15P1 || []).length >= 3}
-                className={`px-3 py-2.5 rounded-xl border text-[10px] font-black uppercase tracking-widest ${
-                  !gameToAdd_TripleO15 || (picks.tripleOver15P1 || []).length >= 3
-                    ? "bg-white/5 border-white/10 text-slate-500 cursor-not-allowed"
-                    : "bg-orange-600/20 border-orange-600/30 text-orange-200 hover:bg-orange-600/25"
-                }`}
-              >
-                Adicionar
-              </button>
-            </div>
-          }
-          renderItem={(item, idx) => (
-            <SuggestionItem
-              key={`to15-${idx}`}
-              text={item}
-              badgeColor="bg-red-500"
-              index={idx}
-              onRemove={() => removeAt("tripleOver15P1", idx)}
-            />
-          )}
-        />
+          limit={3}
+        >
+          <div className="flex gap-2 mb-5">
+            <select
+              value={gamePickOver15Triple}
+              onChange={(e) => setGamePickOver15Triple(e.target.value)}
+              className="flex-1 bg-slate-900/60 border border-slate-700/60 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none"
+            >
+              <option value="">Seleciona jogo…</option>
+              {gamesOfDay.map((g) => (
+                <option key={`t15-${g}`} value={g}>
+                  {g}
+                </option>
+              ))}
+            </select>
 
-        <SuggestionCard
+            <button
+              onClick={() => {
+                addGameToList("tripleOver15P1", gamePickOver15Triple, 3);
+                setGamePickOver15Triple("");
+              }}
+              disabled={!gamePickOver15Triple || (picks.tripleOver15P1 || []).length >= 3}
+              className={`px-3 py-2 rounded-xl border text-[10px] font-black uppercase tracking-widest ${
+                !gamePickOver15Triple || (picks.tripleOver15P1 || []).length >= 3
+                  ? "bg-white/5 border-white/10 text-slate-500 cursor-not-allowed"
+                  : "bg-white/5 border-white/10 text-slate-200 hover:bg-white/10"
+              }`}
+            >
+              Adicionar
+            </button>
+          </div>
+
+          <div className="space-y-3">
+            {(picks.tripleOver15P1 || []).length ? (
+              (picks.tripleOver15P1 || []).map((item, idx) => (
+                <SuggestionItemRow
+                  key={`tr15-${idx}`}
+                  text={String(item)}
+                  badgeColor="bg-red-500"
+                  index={idx}
+                  onRemove={() => removeFromStringList("tripleOver15P1", idx)}
+                />
+              ))
+            ) : (
+              <p className="text-slate-500 italic text-sm py-2">Sem seleções ainda — adiciona acima.</p>
+            )}
+          </div>
+        </PickCard>
+
+        {/* Dupla Over 1.5 P1 */}
+        <PickCard
           title="Dupla Over 1.5 P1"
-          items={picks.doubleOver15P1 || []}
           icon="fa-bolt"
           gradient="bg-gradient-to-br from-blue-500 to-indigo-700"
           badgeColor="bg-blue-500"
-          description="Escolhe 2 jogos do dia (secundários) para golos rápidos."
-          addUi={
-            <div className="flex gap-2">
-              <select
-                value={gameToAdd_DoubleO15}
-                onChange={(e) => setGameToAdd_DoubleO15(e.target.value)}
-                className="flex-1 bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2.5 text-[11px] font-black text-slate-200 outline-none"
-              >
-                <option value="">Seleciona jogo…</option>
-                {gamesOfDay.map((g) => (
-                  <option key={g} value={g}>
-                    {g}
-                  </option>
-                ))}
-              </select>
-              <button
-                onClick={() => {
-                  addGameTo("doubleOver15P1", gameToAdd_DoubleO15, 2);
-                  setGameToAdd_DoubleO15("");
-                }}
-                disabled={!gameToAdd_DoubleO15 || (picks.doubleOver15P1 || []).length >= 2}
-                className={`px-3 py-2.5 rounded-xl border text-[10px] font-black uppercase tracking-widest ${
-                  !gameToAdd_DoubleO15 || (picks.doubleOver15P1 || []).length >= 2
-                    ? "bg-white/5 border-white/10 text-slate-500 cursor-not-allowed"
-                    : "bg-orange-600/20 border-orange-600/30 text-orange-200 hover:bg-orange-600/25"
-                }`}
-              >
-                Adicionar
-              </button>
-            </div>
-          }
-          renderItem={(item, idx) => (
-            <SuggestionItem
-              key={`do15-${idx}`}
-              text={item}
-              badgeColor="bg-blue-500"
-              index={idx}
-              onRemove={() => removeAt("doubleOver15P1", idx)}
-            />
-          )}
-        />
+          description="Escolhe 2 jogos do dia para golos rápidos."
+          limit={2}
+        >
+          <div className="flex gap-2 mb-5">
+            <select
+              value={gamePickOver15Double}
+              onChange={(e) => setGamePickOver15Double(e.target.value)}
+              className="flex-1 bg-slate-900/60 border border-slate-700/60 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none"
+            >
+              <option value="">Seleciona jogo…</option>
+              {gamesOfDay.map((g) => (
+                <option key={`d15-${g}`} value={g}>
+                  {g}
+                </option>
+              ))}
+            </select>
 
-        <SuggestionCard
+            <button
+              onClick={() => {
+                addGameToList("doubleOver15P1", gamePickOver15Double, 2);
+                setGamePickOver15Double("");
+              }}
+              disabled={!gamePickOver15Double || (picks.doubleOver15P1 || []).length >= 2}
+              className={`px-3 py-2 rounded-xl border text-[10px] font-black uppercase tracking-widest ${
+                !gamePickOver15Double || (picks.doubleOver15P1 || []).length >= 2
+                  ? "bg-white/5 border-white/10 text-slate-500 cursor-not-allowed"
+                  : "bg-white/5 border-white/10 text-slate-200 hover:bg-white/10"
+              }`}
+            >
+              Adicionar
+            </button>
+          </div>
+
+          <div className="space-y-3">
+            {(picks.doubleOver15P1 || []).length ? (
+              (picks.doubleOver15P1 || []).map((item, idx) => (
+                <SuggestionItemRow
+                  key={`du15-${idx}`}
+                  text={String(item)}
+                  badgeColor="bg-blue-500"
+                  index={idx}
+                  onRemove={() => removeFromStringList("doubleOver15P1", idx)}
+                />
+              ))
+            ) : (
+              <p className="text-slate-500 italic text-sm py-2">Sem seleções ainda — adiciona acima.</p>
+            )}
+          </div>
+        </PickCard>
+
+        {/* Quadriplete O4.5 */}
+        <PickCard
           title="Quadriplete O4.5"
-          items={picks.quadrupleOver45 || []}
           icon="fa-hockey-puck"
           gradient="bg-gradient-to-br from-emerald-500 to-teal-700"
           badgeColor="bg-emerald-500"
           description="Escolhe 4 jogos do dia com tendência ofensiva (5+ golos)."
-          addUi={
-            <div className="flex gap-2">
-              <select
-                value={gameToAdd_O45}
-                onChange={(e) => setGameToAdd_O45(e.target.value)}
-                className="flex-1 bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2.5 text-[11px] font-black text-slate-200 outline-none"
-              >
-                <option value="">Seleciona jogo…</option>
-                {gamesOfDay.map((g) => (
-                  <option key={g} value={g}>
-                    {g}
-                  </option>
-                ))}
-              </select>
-              <button
-                onClick={() => {
-                  addGameTo("quadrupleOver45", gameToAdd_O45, 4);
-                  setGameToAdd_O45("");
-                }}
-                disabled={!gameToAdd_O45 || (picks.quadrupleOver45 || []).length >= 4}
-                className={`px-3 py-2.5 rounded-xl border text-[10px] font-black uppercase tracking-widest ${
-                  !gameToAdd_O45 || (picks.quadrupleOver45 || []).length >= 4
-                    ? "bg-white/5 border-white/10 text-slate-500 cursor-not-allowed"
-                    : "bg-orange-600/20 border-orange-600/30 text-orange-200 hover:bg-orange-600/25"
-                }`}
-              >
-                Adicionar
-              </button>
-            </div>
-          }
-          renderItem={(item, idx) => (
-            <SuggestionItem
-              key={`o45-${idx}`}
-              text={item}
-              badgeColor="bg-emerald-500"
-              index={idx}
-              onRemove={() => removeAt("quadrupleOver45", idx)}
-            />
-          )}
-        />
+          limit={4}
+        >
+          <div className="flex gap-2 mb-5">
+            <select
+              value={gamePickOver45Quad}
+              onChange={(e) => setGamePickOver45Quad(e.target.value)}
+              className="flex-1 bg-slate-900/60 border border-slate-700/60 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none"
+            >
+              <option value="">Seleciona jogo…</option>
+              {gamesOfDay.map((g) => (
+                <option key={`o45-${g}`} value={g}>
+                  {g}
+                </option>
+              ))}
+            </select>
 
-        {/* DRAW — continua igual às DICAS, mas só jogos do dia */}
+            <button
+              onClick={() => {
+                addGameToList("quadrupleOver45", gamePickOver45Quad, 4);
+                setGamePickOver45Quad("");
+              }}
+              disabled={!gamePickOver45Quad || (picks.quadrupleOver45 || []).length >= 4}
+              className={`px-3 py-2 rounded-xl border text-[10px] font-black uppercase tracking-widest ${
+                !gamePickOver45Quad || (picks.quadrupleOver45 || []).length >= 4
+                  ? "bg-white/5 border-white/10 text-slate-500 cursor-not-allowed"
+                  : "bg-white/5 border-white/10 text-slate-200 hover:bg-white/10"
+              }`}
+            >
+              Adicionar
+            </button>
+          </div>
+
+          <div className="space-y-3">
+            {(picks.quadrupleOver45 || []).length ? (
+              (picks.quadrupleOver45 || []).map((item, idx) => (
+                <SuggestionItemRow
+                  key={`qo45-${idx}`}
+                  text={`Over 4.5: ${String(item)}`}
+                  badgeColor="bg-emerald-500"
+                  index={idx}
+                  onRemove={() => removeFromStringList("quadrupleOver45", idx)}
+                />
+              ))
+            ) : (
+              <p className="text-slate-500 italic text-sm py-2">Sem seleções ainda — adiciona acima.</p>
+            )}
+          </div>
+        </PickCard>
+
+        {/* Draw TR (Master) */}
         <div className="md:col-span-2 bg-slate-800/40 border border-slate-700 rounded-2xl p-6 relative overflow-hidden group">
-          <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500"></div>
-
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+          <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500" />
+          <div className="flex items-center justify-between gap-3 mb-6">
             <h3 className="text-xl font-bold flex items-center text-indigo-400">
-              <i className="fas fa-handshake mr-3 text-2xl"></i>
-              Master Insight: Sugestões de Empate (TR)
+              <i className="fas fa-handshake mr-3 text-2xl" />
+              Master Insight: Empate (TR)
             </h3>
 
-            <div className="flex gap-2 w-full sm:w-auto">
+            <div className="flex gap-2">
               <select
-                value={gameToAdd_Draw}
-                onChange={(e) => setGameToAdd_Draw(e.target.value)}
-                className="flex-1 sm:flex-none bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2.5 text-[11px] font-black text-slate-200 outline-none min-w-[220px]"
+                value={gamePickDrawTR}
+                onChange={(e) => setGamePickDrawTR(e.target.value)}
+                className="bg-slate-900/60 border border-slate-700/60 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none min-w-[220px]"
               >
                 <option value="">Seleciona jogo…</option>
                 {gamesOfDay.map((g) => (
-                  <option key={g} value={g}>
+                  <option key={`dtr-${g}`} value={g}>
                     {g}
                   </option>
                 ))}
@@ -575,14 +625,14 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
 
               <button
                 onClick={() => {
-                  addGameTo("drawSuggestions", gameToAdd_Draw);
-                  setGameToAdd_Draw("");
+                  addGameToList("drawSuggestions", gamePickDrawTR, 4);
+                  setGamePickDrawTR("");
                 }}
-                disabled={!gameToAdd_Draw}
-                className={`px-3 py-2.5 rounded-xl border text-[10px] font-black uppercase tracking-widest ${
-                  !gameToAdd_Draw
+                disabled={!gamePickDrawTR || (picks.drawSuggestions || []).length >= 4}
+                className={`px-3 py-2 rounded-xl border text-[10px] font-black uppercase tracking-widest ${
+                  !gamePickDrawTR || (picks.drawSuggestions || []).length >= 4
                     ? "bg-white/5 border-white/10 text-slate-500 cursor-not-allowed"
-                    : "bg-indigo-500/20 border-indigo-500/30 text-indigo-200 hover:bg-indigo-500/25"
+                    : "bg-indigo-500/15 border-indigo-500/30 text-indigo-200 hover:bg-indigo-500/20"
                 }`}
               >
                 Adicionar
@@ -591,38 +641,29 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {(picks.drawSuggestions || []).length > 0 ? (
+            {(picks.drawSuggestions || []).length ? (
               (picks.drawSuggestions as any[]).map((s, idx) => {
-                const teamMatches = parseTeamsFromText(s.game);
-                const percentageMatch = String(s.game || "").match(/\d+%/);
-                const percentage = percentageMatch ? percentageMatch[0] : null;
-                const cleanGameText = String(s.game || "").replace(/\(\d+%\)/, "").trim();
+                const game = String((s as any)?.game ?? s);
+                const teamMatches = parseTeamsFromText(game);
+                const cleanGameText = game.replace(/\(\d+%\)/g, "").trim();
 
                 return (
-                  <div
-                    key={idx}
-                    className="bg-slate-900/80 p-5 rounded-2xl border border-slate-700/50 hover:bg-slate-900 transition-all relative"
-                  >
-                    <button
-                      onClick={() => removeAt("drawSuggestions", idx)}
-                      className="absolute top-3 right-3 w-8 h-8 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-200 hover:bg-rose-500/15 flex items-center justify-center"
-                      title="Remover"
-                    >
-                      <i className="fas fa-times text-[12px]" />
-                    </button>
-
+                  <div key={`draw-${idx}`} className="bg-slate-900/80 p-5 rounded-2xl border border-slate-700/50 hover:bg-slate-900 transition-all">
                     <div className="flex items-center justify-between mb-3">
                       <span className="bg-indigo-500/20 text-indigo-300 text-[10px] font-black px-2 py-0.5 rounded border border-indigo-500/30 uppercase tracking-widest">
                         Draw Candidate
                       </span>
-                      {percentage && (
-                        <span className="text-xs font-black text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                          {percentage}
-                        </span>
-                      )}
+
+                      <button
+                        onClick={() => removeFromDrawList(idx)}
+                        className="px-2 py-1 rounded-lg border border-rose-500/20 bg-rose-500/10 text-rose-200 text-[10px] font-black uppercase tracking-widest hover:bg-rose-500/15"
+                        title="Remover"
+                      >
+                        <i className="fas fa-times" />
+                      </button>
                     </div>
 
-                    <div className="flex items-center gap-3 mb-3">
+                    <div className="flex items-center gap-3">
                       {teamMatches.length > 0 && (
                         <div className="flex -space-x-2">
                           {teamMatches.map((abbr, i) => (
@@ -641,38 +682,40 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
                       <p className="font-bold text-lg text-slate-100">{cleanGameText}</p>
                     </div>
 
-                    <div className="flex gap-3">
-                      <i className="fas fa-quote-left text-indigo-500/30 text-2xl mt-1"></i>
-                      <p className="text-sm text-slate-400 leading-relaxed italic line-clamp-4">
-                        {String(s.explanation || "Sem nota (opcional).")}
+                    <div className="flex gap-3 mt-3">
+                      <i className="fas fa-quote-left text-indigo-500/30 text-2xl mt-1" />
+                      <p className="text-sm text-slate-500 leading-relaxed italic">
+                        (opcional) Podes depois adicionar uma explicação se quiseres.
                       </p>
                     </div>
                   </div>
                 );
               })
             ) : (
-              <div className="col-span-2 text-center py-6 text-slate-500">Nenhum cenário de empate escolhido.</div>
+              <div className="col-span-2 text-center py-6 text-slate-500">Sem seleções ainda — adiciona acima.</div>
             )}
           </div>
         </div>
 
-        {/* Over 5.5 — só jogos do dia */}
-        <div className="bg-slate-800/40 border border-slate-700 rounded-2xl p-6 flex flex-col">
-          <div className="flex items-center justify-between gap-3 mb-4">
-            <h3 className="text-lg font-bold flex items-center text-pink-400">
-              <i className="fas fa-plus-circle mr-3"></i>
+        {/* Over 5.5 */}
+        <div className="bg-slate-800/40 border border-slate-700 rounded-2xl p-6 flex flex-col relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 -mr-8 -mt-8 opacity-10 rounded-full blur-3xl bg-gradient-to-br from-pink-500 to-fuchsia-700" />
+
+          <div className="relative z-10">
+            <h3 className="text-lg font-bold flex items-center mb-4 text-pink-400">
+              <i className="fas fa-plus-circle mr-3" />
               Over 5.5 Plus
             </h3>
 
-            <div className="flex gap-2">
+            <div className="flex gap-2 mb-4">
               <select
-                value={gameToAdd_O55}
-                onChange={(e) => setGameToAdd_O55(e.target.value)}
-                className="bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none"
+                value={gamePickOver55}
+                onChange={(e) => setGamePickOver55(e.target.value)}
+                className="flex-1 bg-slate-900/60 border border-slate-700/60 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none"
               >
                 <option value="">Seleciona jogo…</option>
                 {gamesOfDay.map((g) => (
-                  <option key={g} value={g}>
+                  <option key={`o55-${g}`} value={g}>
                     {g}
                   </option>
                 ))}
@@ -680,12 +723,12 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
 
               <button
                 onClick={() => {
-                  addGameTo("over55Suggestions", gameToAdd_O55);
-                  setGameToAdd_O55("");
+                  addGameToList("over55Suggestions", gamePickOver55, 6);
+                  setGamePickOver55("");
                 }}
-                disabled={!gameToAdd_O55}
+                disabled={!gamePickOver55 || (picks.over55Suggestions || []).length >= 6}
                 className={`px-3 py-2 rounded-xl border text-[10px] font-black uppercase tracking-widest ${
-                  !gameToAdd_O55
+                  !gamePickOver55 || (picks.over55Suggestions || []).length >= 6
                     ? "bg-white/5 border-white/10 text-slate-500 cursor-not-allowed"
                     : "bg-pink-500/15 border-pink-500/25 text-pink-200 hover:bg-pink-500/20"
                 }`}
@@ -693,55 +736,57 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
                 Adicionar
               </button>
             </div>
-          </div>
 
-          <div className="flex flex-wrap gap-2 mt-auto">
-            {(picks.over55Suggestions || []).map((item, idx) => {
-              const teamMatches = parseTeamsFromText(item);
-              const percentageMatch = item.match(/\d+%/);
-              const percentage = percentageMatch ? percentageMatch[0] : "";
-              const cleanItemText = item.replace(/\(\d+%\)/, "").trim();
+            <div className="flex flex-wrap gap-2 mt-auto">
+              {(picks.over55Suggestions || []).map((item, idx) => {
+                const teamMatches = parseTeamsFromText(String(item));
+                const cleanItemText = String(item).replace(/\(\d+%\)/g, "").trim();
 
-              return (
-                <div
-                  key={idx}
-                  className="bg-pink-500/5 hover:bg-pink-500/10 text-pink-300 px-3 py-2 rounded-xl text-[11px] font-bold border border-pink-500/20 transition-all flex items-center gap-2"
-                >
-                  <div className="flex -space-x-1.5">
-                    {teamMatches.map((abbr, i) => (
-                      <img
-                        key={`${abbr}-${i}`}
-                        src={getLogoUrl(abbr)}
-                        className="w-4 h-4 object-contain bg-slate-900 rounded-full p-0.5 border border-slate-700"
-                        alt={abbr}
-                        loading="lazy"
-                        decoding="async"
-                        onError={(e) => (e.currentTarget.style.display = "none")}
-                      />
-                    ))}
-                  </div>
-                  <span>{cleanItemText}</span>
-                  {percentage && <span className="text-[9px] opacity-70 ml-1">{percentage}</span>}
-
-                  <button
-                    onClick={() => removeAt("over55Suggestions", idx)}
-                    className="ml-1 w-6 h-6 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-200 hover:bg-rose-500/15 flex items-center justify-center"
-                    title="Remover"
+                return (
+                  <div
+                    key={`o55tag-${idx}`}
+                    className="bg-pink-500/5 hover:bg-pink-500/10 text-pink-200 px-3 py-2 rounded-xl text-[11px] font-bold border border-pink-500/20 transition-all flex items-center gap-2"
                   >
-                    <i className="fas fa-times text-[10px]" />
-                  </button>
-                </div>
-              );
-            })}
+                    <div className="flex -space-x-1.5">
+                      {teamMatches.map((abbr, i) => (
+                        <img
+                          key={`${abbr}-${i}`}
+                          src={getLogoUrl(abbr)}
+                          className="w-4 h-4 object-contain bg-slate-900 rounded-full p-0.5 border border-slate-700"
+                          alt={abbr}
+                          loading="lazy"
+                          decoding="async"
+                          onError={(e) => (e.currentTarget.style.display = "none")}
+                        />
+                      ))}
+                    </div>
 
-            {(picks.over55Suggestions || []).length === 0 && (
-              <span className="text-slate-600 text-sm italic">Nenhuma sugestão adicional.</span>
-            )}
+                    <span className="truncate">{cleanItemText}</span>
+
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        removeFromStringList("over55Suggestions", idx);
+                      }}
+                      className="ml-1 text-[10px] font-black opacity-80 hover:opacity-100"
+                      title="Remover"
+                    >
+                      <i className="fas fa-times" />
+                    </button>
+                  </div>
+                );
+              })}
+
+              {(picks.over55Suggestions || []).length === 0 && (
+                <span className="text-slate-600 text-sm italic">Nenhuma sugestão adicional.</span>
+              )}
+            </div>
+
+            <p className="text-[10px] text-slate-500 mt-4 leading-tight uppercase tracking-wider font-bold">
+              Jogos com elevado potencial de chuva de golos.
+            </p>
           </div>
-
-          <p className="text-[10px] text-slate-500 mt-4 leading-tight uppercase tracking-wider font-bold">
-            Jogos com elevado potencial de chuva de golos.
-          </p>
         </div>
       </div>
     </div>
