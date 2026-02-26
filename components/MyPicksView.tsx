@@ -265,7 +265,7 @@ const PickCard: React.FC<{
   limit: number;
   children: React.ReactNode;
 }> = ({ title, icon, gradient, description, limit, children }) => (
-  <div className="relative overflow-hidden bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 shadow-xl transition-all hover:scale-[1.01] hover:shadow-blue-500/10">
+  <div className="relative overflow-visible bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 shadow-xl transition-all hover:scale-[1.01] hover:shadow-blue-500/10">
     <div className={`absolute top-0 right-0 w-32 h-32 -mr-8 -mt-8 opacity-10 rounded-full blur-3xl ${gradient}`} />
 
     <div className="relative z-10">
