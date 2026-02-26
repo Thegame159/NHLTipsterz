@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getRedis } from "./_redis";
-import { normalizeSuggestionsDeep } from "../services/normalizeSuggestionLabel";
+import { normalizeSuggestionsDeep } from "./_suggestions";
 
 export const config = { runtime: "nodejs" };
 
@@ -10,7 +10,6 @@ function isDate(d: string) {
 
 const keyManual = (date: string) => `nhl:manual:${date}`;
 
-// ---------- JSON ----------
 function safeJsonParse(raw: any) {
   if (!raw) return null;
   try {
@@ -22,7 +21,6 @@ function safeJsonParse(raw: any) {
   }
 }
 
-// ---------- Fetch helpers ----------
 async function fetchWithTimeout(url: string, init: RequestInit | undefined, timeoutMs: number) {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), timeoutMs);
@@ -33,7 +31,6 @@ async function fetchWithTimeout(url: string, init: RequestInit | undefined, time
   }
 }
 
-// ---------- NHL schedule ----------
 type ScheduleGame = {
   id: number;
   homeTeam?: { abbrev?: string };
@@ -60,16 +57,6 @@ function normAbbr(abbr: string) {
   return (abbr || "").toUpperCase().trim();
 }
 
-// ---------- Store normalization ----------
-function normalizeStore(store: any) {
-  try {
-    return normalizeSuggestionsDeep(store);
-  } catch {
-    return store;
-  }
-}
-
-// ---------- Validation ----------
 type Suggestions = {
   tripleWin: string[];
   tripleOver15P1: string[];
@@ -78,17 +65,6 @@ type Suggestions = {
   quadrupleOver45: string[];
   over55Suggestions: string[];
 };
-
-function defaultSuggestions(): Suggestions {
-  return {
-    tripleWin: [],
-    tripleOver15P1: [],
-    doubleOver15P1: [],
-    drawSuggestions: [],
-    quadrupleOver45: [],
-    over55Suggestions: [],
-  };
-}
 
 function sanitizeSuggestions(input: any): Suggestions {
   const s = input && typeof input === "object" ? input : {};
@@ -122,8 +98,6 @@ function uniq(arr: string[]) {
 
 function parseGameLabel(raw: string): { a: string; b: string } | null {
   const s = String(raw || "").toUpperCase().trim();
-
-  // aceita "AAA vs BBB" ou "AAA @ BBB"
   const m = s.match(/^([A-Z]{2,3})\s*(VS|@)\s*([A-Z]{2,3})$/i);
   if (!m) return null;
 
@@ -135,7 +109,6 @@ function parseGameLabel(raw: string): { a: string; b: string } | null {
 }
 
 function gameKeyFromTeams(a: string, b: string) {
-  // chave não-direcional (evita problemas de ordem "A vs B" / "B vs A")
   const x = normAbbr(a);
   const y = normAbbr(b);
   return x < y ? `${x}|${y}` : `${y}|${x}`;
@@ -144,7 +117,6 @@ function gameKeyFromTeams(a: string, b: string) {
 function validateMineSuggestions(sug: Suggestions, scheduleGames: ScheduleGame[]) {
   const errors: string[] = [];
 
-  // Construir sets de equipas e jogos do dia
   const teamsOnDate = new Set<string>();
   const gamesOnDate = new Set<string>();
 
@@ -156,7 +128,6 @@ function validateMineSuggestions(sug: Suggestions, scheduleGames: ScheduleGame[]
     if (h && a) gamesOnDate.add(gameKeyFromTeams(h, a));
   }
 
-  // Helpers
   const assertMax = (label: string, arr: any[], max: number) => {
     if (arr.length > max) errors.push(`${label}: máximo ${max}.`);
   };
@@ -169,7 +140,7 @@ function validateMineSuggestions(sug: Suggestions, scheduleGames: ScheduleGame[]
         continue;
       }
       if (!teamsOnDate.has(abbr)) {
-        errors.push(`${label}: equipa "${abbr}" não existe nos jogos de ${scheduleGames.length ? "hoje" : "esta data"}.`);
+        errors.push(`${label}: equipa "${abbr}" não existe nos jogos da data.`);
       }
     }
   };
@@ -192,22 +163,18 @@ function validateMineSuggestions(sug: Suggestions, scheduleGames: ScheduleGame[]
     }
   };
 
-  // --- tripleWin ---
   const tripleWin = uniq(sug.tripleWin);
   assertMax("Triplete Vitórias", tripleWin, 3);
   assertAllTeamsAreValid("Triplete Vitórias", tripleWin);
 
-  // --- tripleOver15P1 ---
   const tripleOver = uniq(sug.tripleOver15P1);
   assertMax("Triplete Over 1.5 P1", tripleOver, 3);
   assertAllGamesAreValid("Triplete Over 1.5 P1", tripleOver);
 
-  // --- doubleOver15P1 ---
   const doubleOver = uniq(sug.doubleOver15P1);
   assertMax("Dupla Over 1.5 P1", doubleOver, 2);
   assertAllGamesAreValid("Dupla Over 1.5 P1", doubleOver);
 
-  // Não repetir jogos entre tripleteOver e doubleOver
   const tripleOverKeys = new Set<string>();
   for (const g of tripleOver) {
     const p = parseGameLabel(g);
@@ -223,17 +190,13 @@ function validateMineSuggestions(sug: Suggestions, scheduleGames: ScheduleGame[]
     }
   }
 
-  // --- quadrupleOver45 ---
   const quad45 = uniq(sug.quadrupleOver45);
   assertMax("Quadriplete O4.5", quad45, 4);
   assertAllGamesAreValid("Quadriplete O4.5", quad45);
 
-  // --- over55Suggestions ---
   const over55 = uniq(sug.over55Suggestions);
-  // Sem limite definido no teu contexto — apenas valida existência
   assertAllGamesAreValid("Over 5.5", over55);
 
-  // --- drawSuggestions ---
   const draw = Array.isArray(sug.drawSuggestions) ? sug.drawSuggestions : [];
   for (const d of draw) {
     const game = String(d?.game ?? "").trim();
@@ -259,7 +222,6 @@ function validateMineSuggestions(sug: Suggestions, scheduleGames: ScheduleGame[]
   return { ok: errors.length === 0, errors, teamsOnDate: Array.from(teamsOnDate), gamesCount: gamesOnDate.size };
 }
 
-// ---------- Handler ----------
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const redis = await getRedis();
@@ -271,7 +233,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === "GET") {
       const raw = await redis.get(keyManual(date));
       const parsed = safeJsonParse(raw);
-      const normalized = parsed ? normalizeStore(parsed) : null;
+      const normalized = parsed ? normalizeSuggestionsDeep(parsed) : null;
       return res.status(200).json({ date, store: normalized });
     }
 
@@ -283,13 +245,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(400).json({ message: "Invalid store" });
       }
 
-      // 1) Normaliza (remove IDs tipo "2025020917 (EDM)" etc.)
-      const normalizedStore = normalizeStore(storeRaw);
-
-      // 2) Sanitiza para garantir formato esperado (arrays)
+      const normalizedStore = normalizeSuggestionsDeep(storeRaw);
       const suggestions = sanitizeSuggestions(normalizedStore);
 
-      // 3) Valida contra schedule real da NHL para essa data
       const scheduleGames = await fetchNhlScheduleGames(date);
       if (!scheduleGames.length) {
         return res.status(400).json({
@@ -307,7 +265,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
       }
 
-      // 4) Guarda no Redis já limpo e validado
       await redis.set(keyManual(date), JSON.stringify(suggestions));
 
       return res.status(200).json({
