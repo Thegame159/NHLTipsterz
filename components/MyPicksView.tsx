@@ -17,24 +17,6 @@ const defaultSuggestions = (): Suggestions => ({
 
 const storageKey = (date: string) => `my_picks_${date}`;
 
-const normalizeGameText = (s: string) =>
-  (s || "")
-    .trim()
-    .toUpperCase()
-    .replace(/\(\s*\d+(\.\d+)?%\s*\)/g, "")
-    .replace(/\s+VS\s+/g, " VS ")
-    .replace(/\s+@\s+/g, " VS ")
-    .replace(/\s+V\s+/g, " VS ")
-    .replace(/\s+/g, " ");
-
-const splitMatchup = (text: string): [string, string] | null => {
-  const cleaned = normalizeGameText(text);
-  if (!cleaned.includes(" VS ")) return null;
-  const parts = cleaned.split(" VS ").map((x) => x.trim());
-  if (parts.length < 2) return null;
-  return [parts[0], parts[1]];
-};
-
 const getLogoUrl = (abbr: string) => {
   const map: Record<string, string> = {
     TBL: "tb",
@@ -75,9 +57,147 @@ const getLogoUrl = (abbr: string) => {
     VAN: "van",
     TOR: "tor",
   };
-  const normalized = (abbr || "").trim().toUpperCase();
-  const code = map[normalized] || normalized.toLowerCase();
+  const normalizedAbbr = abbr?.trim().toUpperCase();
+  const code = map[normalizedAbbr] || normalizedAbbr?.toLowerCase();
   return `https://a.espncdn.com/i/teamlogos/nhl/500/${code}.png`;
+};
+
+/** --- mapping de nomes -> abreviações --- */
+const TEAM_NAME_TO_ABBR: Record<string, string> = {
+  // Atlantic
+  Boston: "BOS",
+  "Boston Bruins": "BOS",
+  Buffalo: "BUF",
+  "Buffalo Sabres": "BUF",
+  Detroit: "DET",
+  "Detroit Red Wings": "DET",
+  Florida: "FLA",
+  "Florida Panthers": "FLA",
+  Montréal: "MTL",
+  Montreal: "MTL",
+  "Montréal Canadiens": "MTL",
+  "Montreal Canadiens": "MTL",
+  Ottawa: "OTT",
+  "Ottawa Senators": "OTT",
+  "Tampa Bay": "TBL",
+  "Tampa Bay Lightning": "TBL",
+  Toronto: "TOR",
+  "Toronto Maple Leafs": "TOR",
+
+  // Metro
+  Carolina: "CAR",
+  "Carolina Hurricanes": "CAR",
+  Columbus: "CBJ",
+  "Columbus Blue Jackets": "CBJ",
+  "New Jersey": "NJD",
+  "New Jersey Devils": "NJD",
+  "New York Islanders": "NYI",
+  "NY Islanders": "NYI",
+  "New York Rangers": "NYR",
+  "NY Rangers": "NYR",
+  Philadelphia: "PHI",
+  "Philadelphia Flyers": "PHI",
+  Pittsburgh: "PIT",
+  "Pittsburgh Penguins": "PIT",
+  Washington: "WSH",
+  "Washington Capitals": "WSH",
+
+  // Central
+  Chicago: "CHI",
+  "Chicago Blackhawks": "CHI",
+  Colorado: "COL",
+  "Colorado Avalanche": "COL",
+  Dallas: "DAL",
+  "Dallas Stars": "DAL",
+  Minnesota: "MIN",
+  "Minnesota Wild": "MIN",
+  Nashville: "NSH",
+  "Nashville Predators": "NSH",
+  "St. Louis": "STL",
+  "St Louis": "STL",
+  "St. Louis Blues": "STL",
+  "St Louis Blues": "STL",
+  Winnipeg: "WPG",
+  "Winnipeg Jets": "WPG",
+
+  // Pacific
+  Anaheim: "ANA",
+  "Anaheim Ducks": "ANA",
+  Calgary: "CGY",
+  "Calgary Flames": "CGY",
+  Edmonton: "EDM",
+  "Edmonton Oilers": "EDM",
+  "Los Angeles": "LAK",
+  "Los Angeles Kings": "LAK",
+  LA: "LAK",
+  "San Jose": "SJS",
+  "San Jose Sharks": "SJS",
+  Seattle: "SEA",
+  "Seattle Kraken": "SEA",
+  Vancouver: "VAN",
+  "Vancouver Canucks": "VAN",
+  Vegas: "VGK",
+  "Vegas Golden Knights": "VGK",
+
+  // Utah / Arizona (caso uses)
+  Utah: "UTA",
+  "Utah Hockey Club": "UTA",
+  Arizona: "ARI",
+  "Arizona Coyotes": "ARI",
+};
+
+// Normalizador (remove acentos e normaliza espaços)
+const normName = (s: string) =>
+  (s || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+// Pré-normaliza chaves para matching “contains”
+const TEAM_KEYS_NORMALIZED: Array<{ key: string; keyNorm: string; abbr: string }> = Object.entries(TEAM_NAME_TO_ABBR)
+  .map(([key, abbr]) => ({ key, keyNorm: normName(key), abbr }))
+  .sort((a, b) => b.keyNorm.length - a.keyNorm.length);
+
+const findSingleTeamAbbrFromText = (text: string): string | null => {
+  const t = normName(text.replace(/\(\d+%\)/g, ""));
+  if (!t) return null;
+  for (const { keyNorm, abbr } of TEAM_KEYS_NORMALIZED) {
+    if (keyNorm && t.includes(keyNorm)) return abbr;
+  }
+  return null;
+};
+
+const parseTeamsFromText = (text: string): string[] => {
+  const raw = (text || "").trim();
+
+  // 1) abreviações
+  const abbrMatches = raw.match(/\b[A-Z]{2,4}\b/g) || [];
+  const cleanedAbbr = abbrMatches.map((s) => s.toUpperCase()).filter((s) => s !== "OT" && s !== "VS" && s !== "V");
+  if (cleanedAbbr.length >= 2) return cleanedAbbr.slice(0, 2);
+  if (cleanedAbbr.length === 1) return cleanedAbbr;
+
+  // 2) nomes "A vs B" / "A v B" / "A @ B"
+  const normalized = raw.replace(/\s+/g, " ").replace(/\(\d+%\)/g, "").trim();
+  const split =
+    normalized.includes(" vs ") ? normalized.split(" vs ")
+    : normalized.includes(" v ") ? normalized.split(" v ")
+    : normalized.includes(" @ ") ? normalized.split(" @ ")
+    : null;
+
+  if (split && split.length >= 2) {
+    const a = findSingleTeamAbbrFromText(split[0].trim());
+    const b = findSingleTeamAbbrFromText(split[1].trim());
+    const res: string[] = [];
+    if (a) res.push(a);
+    if (b) res.push(b);
+    if (res.length) return res;
+  }
+
+  // 3) só 1 equipa
+  const single = findSingleTeamAbbrFromText(normalized);
+  return single ? [single] : [];
 };
 
 const isEmptyPicks = (p: Suggestions) =>
@@ -88,123 +208,118 @@ const isEmptyPicks = (p: Suggestions) =>
   (p.over55Suggestions || []).length === 0 &&
   (p.drawSuggestions || []).length === 0;
 
-const CardShell: React.FC<{
-  iconBg: string;
-  icon: React.ReactNode;
-  badge?: string;
-  title: string;
-  subtitle: string;
-  children: React.ReactNode;
-}> = ({ iconBg, icon, badge = "PICK DO ESPECIALISTA", title, subtitle, children }) => (
-  <div className="bg-[#020617]/70 border border-white/10 rounded-2xl p-6 shadow-[0_20px_70px_rgba(0,0,0,0.35)] backdrop-blur-xl">
-    <div className="flex items-start gap-4">
-      <div className={`w-12 h-12 rounded-2xl ${iconBg} border border-white/10 flex items-center justify-center`}>
-        {icon}
-      </div>
-
-      <div className="flex-1">
-        <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">{badge}</div>
-        <h3 className="text-white text-lg font-black mt-2">{title}</h3>
-        <p className="text-slate-400 text-xs mt-2 leading-relaxed">{subtitle}</p>
-      </div>
-    </div>
-
-    <div className="mt-5 space-y-3">{children}</div>
-  </div>
-);
-
-const PickRow: React.FC<{
-  index: number;
+// --- item igual ao SuggestionsView, mas com remover opcional ---
+const SuggestionItem: React.FC<{
   text: string;
-  logos?: string[];
+  badgeColor: string;
+  index: number;
   onRemove?: () => void;
-}> = ({ index, text, logos = [], onRemove }) => (
-  <div className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
-    <div className="flex items-center gap-3 min-w-0">
-      <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center text-[10px] font-black text-white">
-        {index}
+}> = ({ text, badgeColor, index, onRemove }) => {
+  const teamMatches = parseTeamsFromText(text);
+  const percentageMatch = text.match(/\d+%/);
+  const percentage = percentageMatch ? percentageMatch[0] : null;
+  const cleanText = text.replace(/\(\d+%\)/, "").trim();
+
+  return (
+    <div className="flex items-center gap-3 bg-slate-900/60 p-3 rounded-xl border border-slate-700/50 group hover:border-blue-500/30 transition-colors">
+      <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${badgeColor} text-white shrink-0 shadow-sm`}>
+        {index + 1}
       </div>
 
-      {logos.length > 0 && (
-        <div className="flex -space-x-2 shrink-0">
-          {logos.slice(0, 2).map((abbr, i) => (
-            <img
-              key={`${abbr}-${i}`}
-              src={getLogoUrl(abbr)}
-              className="w-6 h-6 object-contain drop-shadow-md bg-slate-800 rounded-full p-0.5 border border-slate-700"
-              alt={abbr}
-              loading="lazy"
-              decoding="async"
-              onError={(e) => (e.currentTarget.style.display = "none")}
-              style={{ zIndex: 10 - i }}
-            />
-          ))}
+      <div className="flex items-center gap-2 overflow-hidden flex-1">
+        {teamMatches.length > 0 && (
+          <div className="flex -space-x-2 mr-1">
+            {teamMatches.map((abbr, i) => (
+              <img
+                key={`${abbr}-${i}`}
+                src={getLogoUrl(abbr)}
+                className="w-6 h-6 object-contain drop-shadow-md relative bg-slate-800 rounded-full p-0.5 border border-slate-700"
+                alt={abbr}
+                loading="lazy"
+                decoding="async"
+                onError={(e) => (e.currentTarget.style.display = "none")}
+                style={{ zIndex: 10 - i }}
+              />
+            ))}
+          </div>
+        )}
+        <span className="text-sm font-semibold text-slate-200 group-hover:text-white truncate">{cleanText}</span>
+      </div>
+
+      {percentage && (
+        <div className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-[10px] font-black text-emerald-400">
+          {percentage}
         </div>
       )}
 
-      <div className="text-white text-[12px] font-black truncate">{text}</div>
+      {onRemove && (
+        <button
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onRemove();
+          }}
+          className="ml-2 px-2.5 py-1 rounded-lg bg-rose-500/10 border border-rose-500/20 text-[10px] font-black text-rose-200 hover:bg-rose-500/15 shrink-0"
+          title="Remover"
+        >
+          <i className="fas fa-times" />
+        </button>
+      )}
     </div>
+  );
+};
 
-    {onRemove && (
-      <button
-        onClick={onRemove}
-        className="shrink-0 text-[10px] font-black uppercase tracking-widest px-3 py-2 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-200 hover:bg-rose-500/15"
-        title="Remover"
-      >
-        Remover
-      </button>
-    )}
-  </div>
-);
+const SuggestionCard: React.FC<{
+  title: string;
+  items: string[];
+  icon: string;
+  gradient: string;
+  badgeColor: string;
+  description: string;
+  addUi?: React.ReactNode;
+  renderItem?: (item: string, idx: number) => React.ReactNode;
+}> = ({ title, items, icon, gradient, badgeColor, description, addUi, renderItem }) => (
+  <div className="relative overflow-hidden bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 shadow-xl transition-all hover:scale-[1.01] hover:shadow-blue-500/10">
+    <div className={`absolute top-0 right-0 w-32 h-32 -mr-8 -mt-8 opacity-10 rounded-full blur-3xl ${gradient}`}></div>
 
-const SelectAdd: React.FC<{
-  value: string;
-  onChange: (v: string) => void;
-  options: { value: string; label: string }[];
-  placeholder: string;
-  onAdd: () => void;
-  disabledAdd?: boolean;
-}> = ({ value, onChange, options, placeholder, onAdd, disabledAdd }) => (
-  <div className="flex flex-col sm:flex-row gap-2">
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-3 text-[11px] font-black text-slate-200 outline-none"
-    >
-      <option value="">{placeholder}</option>
-      {options.map((o) => (
-        <option key={o.value} value={o.value}>
-          {o.label}
-        </option>
-      ))}
-    </select>
+    <div className="relative z-10">
+      <div className="flex items-center justify-between mb-4">
+        <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${gradient} shadow-lg shadow-black/20`}>
+          <i className={`fas ${icon} text-white text-xl`}></i>
+        </div>
+        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">As Minhas Picks</span>
+      </div>
 
-    <button
-      onClick={onAdd}
-      disabled={disabledAdd}
-      className={`px-4 py-3 rounded-xl border text-[10px] font-black uppercase tracking-widest ${
-        disabledAdd
-          ? "bg-white/5 border-white/10 text-slate-500 cursor-not-allowed"
-          : "bg-orange-600/20 border-orange-600/30 text-orange-200 hover:bg-orange-600/25"
-      }`}
-    >
-      Adicionar
-    </button>
+      <h3 className="text-xl font-bold text-white mb-1">{title}</h3>
+      <p className="text-xs text-slate-400 mb-6 font-medium leading-tight">{description}</p>
+
+      {addUi && <div className="mb-4">{addUi}</div>}
+
+      <div className="space-y-3">
+        {items.length > 0 ? (
+          items.map((item, idx) =>
+            renderItem ? renderItem(item, idx) : <SuggestionItem key={`${title}-${idx}`} text={item} badgeColor={badgeColor} index={idx} />
+          )
+        ) : (
+          <p className="text-slate-500 italic text-sm py-4">Sem seleções ainda — adiciona acima.</p>
+        )}
+      </div>
+    </div>
   </div>
 );
 
 const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
   const [picks, setPicks] = useState<Suggestions>(defaultSuggestions());
 
-  // inputs
-  const [pickTripleWin, setPickTripleWin] = useState("");
-  const [pickTripleOver15, setPickTripleOver15] = useState("");
-  const [pickDoubleOver15, setPickDoubleOver15] = useState("");
-  const [pickOver45, setPickOver45] = useState("");
-  const [pickOver55, setPickOver55] = useState("");
-  const [pickDrawTR, setPickDrawTR] = useState("");
+  // dropdown values
+  const [teamToAdd, setTeamToAdd] = useState("");
+  const [gameToAdd_TripleO15, setGameToAdd_TripleO15] = useState("");
+  const [gameToAdd_DoubleO15, setGameToAdd_DoubleO15] = useState("");
+  const [gameToAdd_O45, setGameToAdd_O45] = useState("");
+  const [gameToAdd_Draw, setGameToAdd_Draw] = useState("");
+  const [gameToAdd_O55, setGameToAdd_O55] = useState("");
 
-  // load local backup on date change
+  // load backup (browser) por data
   useEffect(() => {
     try {
       if (typeof window === "undefined") return;
@@ -239,85 +354,58 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
       const away = String((g as any).awayTeamAbbr || "").trim().toUpperCase();
       const home = String((g as any).homeTeamAbbr || "").trim().toUpperCase();
       if (!away || !home) continue;
-      const txt = normalizeGameText(`${away} VS ${home}`);
-      if (txt.includes(" VS ")) set.add(txt);
+      set.add(`${away} vs ${home}`);
     }
     return Array.from(set).sort();
   }, [predictionsOfDay]);
 
-  // helpers: prevent duplicates
-  const hasTeam = (arr: string[], team: string) => arr.map((x) => String(x).toUpperCase()).includes(team.toUpperCase());
-  const hasGame = (arr: string[], game: string) => arr.map(normalizeGameText).includes(normalizeGameText(game));
+  // helpers for duplicates/limits
+  const hasInArrayNorm = (arr: string[], value: string) => {
+    const v = normName(value);
+    return arr.some((x) => normName(String(x)) === v);
+  };
 
-  // add/remove actions
-  const addTripleWin = (team: string) => {
-    const t = String(team || "").trim().toUpperCase();
+  const addTeam = () => {
+    const t = String(teamToAdd || "").trim().toUpperCase();
     if (!t) return;
     setPicks((prev) => {
       const cur = (prev.tripleWin || []).map(String);
       if (cur.length >= 3) return prev;
-      if (hasTeam(cur, t)) return prev;
+      if (cur.includes(t)) return prev;
       return { ...prev, tripleWin: [...cur, t] };
     });
+    setTeamToAdd("");
   };
 
-  const addTripleOver15 = (game: string) => {
-    const g = normalizeGameText(game);
-    if (!g.includes(" VS ")) return;
+  const addGameTo = (field: keyof Suggestions, rawValue: string, limit?: number) => {
+    const value = String(rawValue || "").trim();
+    if (!value) return;
     setPicks((prev) => {
-      const cur = (prev.tripleOver15P1 || []).map(String);
-      if (cur.length >= 3) return prev;
-      if (hasGame(cur, g)) return prev;
-      return { ...prev, tripleOver15P1: [...cur, g] };
+      const cur = (prev[field] as any[] | undefined) ?? [];
+      const asStrings =
+        field === "drawSuggestions"
+          ? cur.map((x: any) => String(x?.game ?? ""))
+          : cur.map((x: any) => String(x));
+
+      if (limit && asStrings.length >= limit) return prev;
+      if (hasInArrayNorm(asStrings, value)) return prev;
+
+      if (field === "drawSuggestions") {
+        // StatsView espera { game, explanation }
+        return { ...prev, drawSuggestions: [...cur, { game: value, explanation: "" }] as any };
+      }
+
+      return { ...prev, [field]: [...asStrings, value] as any };
     });
   };
 
-  const addDoubleOver15 = (game: string) => {
-    const g = normalizeGameText(game);
-    if (!g.includes(" VS ")) return;
+  const removeAt = (field: keyof Suggestions, idx: number) => {
     setPicks((prev) => {
-      const cur = (prev.doubleOver15P1 || []).map(String);
-      if (cur.length >= 2) return prev;
-      if (hasGame(cur, g)) return prev;
-      return { ...prev, doubleOver15P1: [...cur, g] };
+      const cur = (prev[field] as any[] | undefined) ?? [];
+      const next = cur.filter((_, i) => i !== idx);
+      return { ...prev, [field]: next as any };
     });
   };
-
-  const addOver45 = (game: string) => {
-    const g = normalizeGameText(game);
-    if (!g.includes(" VS ")) return;
-    setPicks((prev) => {
-      const cur = (prev.quadrupleOver45 || []).map(String);
-      if (cur.length >= 4) return prev;
-      if (hasGame(cur, g)) return prev;
-      return { ...prev, quadrupleOver45: [...cur, g] };
-    });
-  };
-
-  const addOver55 = (game: string) => {
-    const g = normalizeGameText(game);
-    if (!g.includes(" VS ")) return;
-    setPicks((prev) => {
-      const cur = (prev.over55Suggestions || []).map(String);
-      if (hasGame(cur, g)) return prev;
-      return { ...prev, over55Suggestions: [...cur, g] };
-    });
-  };
-
-  const addDrawTR = (game: string) => {
-    const g = normalizeGameText(game);
-    if (!g.includes(" VS ")) return;
-
-    setPicks((prev) => {
-      const cur = (prev.drawSuggestions || []) as any[];
-      const exists = cur.some((x) => normalizeGameText(x?.game ?? String(x)) === g);
-      if (exists) return prev;
-      // StatsView espera { game: string, explanation?: string }
-      return { ...prev, drawSuggestions: [...cur, { game: g, explanation: "" }] as any };
-    });
-  };
-
-  const removeFromArray = (arr: any[], idx: number) => arr.filter((_, i) => i !== idx);
 
   const savePicks = async () => {
     // backup local
@@ -329,7 +417,7 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
       // ignore
     }
 
-    // save server (formato que o Stats espera)
+    // save server
     try {
       const res = await fetch("/api/history", {
         method: "POST",
@@ -354,48 +442,26 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
     }
   };
 
-  // options
-  const teamOptions = useMemo(
-    () => teamsOfDay.map((t) => ({ value: t, label: t })),
-    [teamsOfDay]
-  );
-
-  const gameOptions = useMemo(
-    () => gamesOfDay.map((g) => ({ value: g, label: g.replace(" VS ", " vs ") })),
-    [gamesOfDay]
-  );
-
-  // logos for rows
-  const logosFromGame = (g: string) => {
-    const sp = splitMatchup(g);
-    if (!sp) return [];
-    const [a, b] = sp;
-    const aa = String(a || "").trim().toUpperCase();
-    const bb = String(b || "").trim().toUpperCase();
-    return [aa, bb].filter(Boolean);
-  };
-
   return (
     <div className="space-y-8 pb-24">
-      {/* Banner como nas DICAS */}
-      <div className="bg-gradient-to-r from-indigo-900/40 to-slate-900/40 border border-indigo-500/20 rounded-2xl p-6 sm:p-8 flex items-center gap-5">
-        <div className="bg-indigo-600/20 p-4 rounded-2xl border border-indigo-500/30">
-          <i className="fas fa-bolt text-3xl text-indigo-300" />
+      {/* HEADER igual ao SuggestionsView */}
+      <div className="bg-gradient-to-r from-blue-900/40 to-slate-900/40 border border-blue-500/20 rounded-2xl p-6 sm:p-8 flex flex-col sm:flex-row items-center gap-6">
+        <div className="bg-blue-600/20 p-4 rounded-2xl border border-blue-500/30">
+          <i className="fas fa-user-edit text-4xl text-blue-400"></i>
         </div>
         <div className="flex-1">
-          <h2 className="text-2xl font-black italic text-white">
-            <span className="text-indigo-300">COMBO</span> TIPSTERZ{" "}
-            <span className="text-indigo-300">PREMIUM</span>
+          <h2 className="text-2xl font-black text-white italic">
+            MINHAS PICKS <span className="text-blue-500">PERSONALIZADAS</span>
           </h2>
-          <p className="text-slate-400 text-sm max-w-2xl">
-            Aqui escolhes manualmente os jogos/equipas, mas com o mesmo layout das DICAS.
+          <p className="text-slate-400 text-sm max-w-lg">
+            Mesmo layout das DICAS — mas aqui és tu que escolhes os jogos.
           </p>
         </div>
 
         <button
           onClick={savePicks}
           disabled={isEmptyPicks(picks)}
-          className={`px-4 py-3 rounded-xl border text-[10px] font-black uppercase tracking-widest ${
+          className={`px-4 py-3 rounded-xl border text-[10px] font-black uppercase tracking-widest transition ${
             isEmptyPicks(picks)
               ? "bg-white/5 border-white/10 text-slate-500 cursor-not-allowed"
               : "bg-amber-500/20 border-amber-500/30 text-amber-200 hover:bg-amber-500/25"
@@ -406,256 +472,392 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
         </button>
       </div>
 
-      {/* Grid igual às DICAS */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Triplete Vitórias */}
-        <CardShell
-          iconBg="bg-orange-600/20"
-          icon={<i className="fas fa-medal text-xl text-orange-300" />}
+      {/* GRID igual ao SuggestionsView */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <SuggestionCard
           title="Triplete de Vitórias"
-          subtitle="Escolhe 3 equipas para vitória (incl. OT)."
-        >
-          <SelectAdd
-            value={pickTripleWin}
-            onChange={setPickTripleWin}
-            options={teamOptions}
-            placeholder="Escolhe uma equipa (ex: NJD)"
-            onAdd={() => {
-              addTripleWin(pickTripleWin);
-              setPickTripleWin("");
-            }}
-            disabledAdd={!pickTripleWin || (picks.tripleWin || []).length >= 3}
-          />
-
-          {(picks.tripleWin || []).map((t, idx) => (
-            <PickRow
-              key={`tw-${t}-${idx}`}
-              index={idx + 1}
-              text={String(t)}
-              logos={[String(t)]}
-              onRemove={() =>
-                setPicks((prev) => ({
-                  ...prev,
-                  tripleWin: removeFromArray(prev.tripleWin || [], idx),
-                }))
-              }
+          items={picks.tripleWin || []}
+          icon="fa-award"
+          gradient="bg-gradient-to-br from-amber-500 to-orange-600"
+          badgeColor="bg-amber-500"
+          description="Escolhe 3 equipas para vencer (incl. OT)."
+          addUi={
+            <div className="flex gap-2">
+              <select
+                value={teamToAdd}
+                onChange={(e) => setTeamToAdd(e.target.value)}
+                className="flex-1 bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2.5 text-[11px] font-black text-slate-200 outline-none"
+              >
+                <option value="">Seleciona equipa…</option>
+                {teamsOfDay.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={addTeam}
+                disabled={!teamToAdd || (picks.tripleWin || []).length >= 3}
+                className={`px-3 py-2.5 rounded-xl border text-[10px] font-black uppercase tracking-widest ${
+                  !teamToAdd || (picks.tripleWin || []).length >= 3
+                    ? "bg-white/5 border-white/10 text-slate-500 cursor-not-allowed"
+                    : "bg-orange-600/20 border-orange-600/30 text-orange-200 hover:bg-orange-600/25"
+                }`}
+              >
+                Adicionar
+              </button>
+            </div>
+          }
+          renderItem={(item, idx) => (
+            <SuggestionItem
+              key={`tw-${idx}`}
+              text={item}
+              badgeColor="bg-amber-500"
+              index={idx}
+              onRemove={() => removeAt("tripleWin", idx)}
             />
-          ))}
+          )}
+        />
 
-          <div className="text-[10px] font-black text-slate-500">
-            {(picks.tripleWin || []).length}/3 selecionadas
-          </div>
-        </CardShell>
-
-        {/* Triplete Over 1.5 P1 */}
-        <CardShell
-          iconBg="bg-rose-600/20"
-          icon={<i className="fas fa-fire text-xl text-rose-300" />}
+        <SuggestionCard
           title="Triplete Over 1.5 P1"
-          subtitle="Escolhe 3 jogos com tendência para 2+ golos no 1º período."
-        >
-          <SelectAdd
-            value={pickTripleOver15}
-            onChange={setPickTripleOver15}
-            options={gameOptions}
-            placeholder="Escolhe um jogo (ex: ANA vs EDM)"
-            onAdd={() => {
-              addTripleOver15(pickTripleOver15);
-              setPickTripleOver15("");
-            }}
-            disabledAdd={!pickTripleOver15 || (picks.tripleOver15P1 || []).length >= 3}
-          />
-
-          {(picks.tripleOver15P1 || []).map((g, idx) => (
-            <PickRow
-              key={`to15-${g}-${idx}`}
-              index={idx + 1}
-              text={String(g).replace(" VS ", " vs ")}
-              logos={logosFromGame(String(g))}
-              onRemove={() =>
-                setPicks((prev) => ({
-                  ...prev,
-                  tripleOver15P1: removeFromArray(prev.tripleOver15P1 || [], idx),
-                }))
-              }
+          items={picks.tripleOver15P1 || []}
+          icon="fa-fire-alt"
+          gradient="bg-gradient-to-br from-red-500 to-rose-700"
+          badgeColor="bg-red-500"
+          description="Escolhe 3 jogos para pelo menos 2 golos no 1º período."
+          addUi={
+            <div className="flex gap-2">
+              <select
+                value={gameToAdd_TripleO15}
+                onChange={(e) => setGameToAdd_TripleO15(e.target.value)}
+                className="flex-1 bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2.5 text-[11px] font-black text-slate-200 outline-none"
+              >
+                <option value="">Seleciona jogo…</option>
+                {gamesOfDay.map((g) => (
+                  <option key={g} value={g}>
+                    {g}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={() => {
+                  addGameTo("tripleOver15P1", gameToAdd_TripleO15, 3);
+                  setGameToAdd_TripleO15("");
+                }}
+                disabled={!gameToAdd_TripleO15 || (picks.tripleOver15P1 || []).length >= 3}
+                className={`px-3 py-2.5 rounded-xl border text-[10px] font-black uppercase tracking-widest ${
+                  !gameToAdd_TripleO15 || (picks.tripleOver15P1 || []).length >= 3
+                    ? "bg-white/5 border-white/10 text-slate-500 cursor-not-allowed"
+                    : "bg-orange-600/20 border-orange-600/30 text-orange-200 hover:bg-orange-600/25"
+                }`}
+              >
+                Adicionar
+              </button>
+            </div>
+          }
+          renderItem={(item, idx) => (
+            <SuggestionItem
+              key={`to15-${idx}`}
+              text={item}
+              badgeColor="bg-red-500"
+              index={idx}
+              onRemove={() => removeAt("tripleOver15P1", idx)}
             />
-          ))}
+          )}
+        />
 
-          <div className="text-[10px] font-black text-slate-500">
-            {(picks.tripleOver15P1 || []).length}/3 selecionados
-          </div>
-        </CardShell>
-
-        {/* Dupla Over 1.5 P1 */}
-        <CardShell
-          iconBg="bg-indigo-600/20"
-          icon={<i className="fas fa-bolt text-xl text-indigo-300" />}
+        <SuggestionCard
           title="Dupla Over 1.5 P1"
-          subtitle="Escolhe 2 jogos secundários para 2+ golos no 1º período."
-        >
-          <SelectAdd
-            value={pickDoubleOver15}
-            onChange={setPickDoubleOver15}
-            options={gameOptions}
-            placeholder="Escolhe um jogo (ex: NJD vs BUF)"
-            onAdd={() => {
-              addDoubleOver15(pickDoubleOver15);
-              setPickDoubleOver15("");
-            }}
-            disabledAdd={!pickDoubleOver15 || (picks.doubleOver15P1 || []).length >= 2}
-          />
-
-          {(picks.doubleOver15P1 || []).map((g, idx) => (
-            <PickRow
-              key={`do15-${g}-${idx}`}
-              index={idx + 1}
-              text={String(g).replace(" VS ", " vs ")}
-              logos={logosFromGame(String(g))}
-              onRemove={() =>
-                setPicks((prev) => ({
-                  ...prev,
-                  doubleOver15P1: removeFromArray(prev.doubleOver15P1 || [], idx),
-                }))
-              }
+          items={picks.doubleOver15P1 || []}
+          icon="fa-bolt"
+          gradient="bg-gradient-to-br from-blue-500 to-indigo-700"
+          badgeColor="bg-blue-500"
+          description="Escolhe 2 jogos secundários para golos rápidos."
+          addUi={
+            <div className="flex gap-2">
+              <select
+                value={gameToAdd_DoubleO15}
+                onChange={(e) => setGameToAdd_DoubleO15(e.target.value)}
+                className="flex-1 bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2.5 text-[11px] font-black text-slate-200 outline-none"
+              >
+                <option value="">Seleciona jogo…</option>
+                {gamesOfDay.map((g) => (
+                  <option key={g} value={g}>
+                    {g}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={() => {
+                  addGameTo("doubleOver15P1", gameToAdd_DoubleO15, 2);
+                  setGameToAdd_DoubleO15("");
+                }}
+                disabled={!gameToAdd_DoubleO15 || (picks.doubleOver15P1 || []).length >= 2}
+                className={`px-3 py-2.5 rounded-xl border text-[10px] font-black uppercase tracking-widest ${
+                  !gameToAdd_DoubleO15 || (picks.doubleOver15P1 || []).length >= 2
+                    ? "bg-white/5 border-white/10 text-slate-500 cursor-not-allowed"
+                    : "bg-orange-600/20 border-orange-600/30 text-orange-200 hover:bg-orange-600/25"
+                }`}
+              >
+                Adicionar
+              </button>
+            </div>
+          }
+          renderItem={(item, idx) => (
+            <SuggestionItem
+              key={`do15-${idx}`}
+              text={item}
+              badgeColor="bg-blue-500"
+              index={idx}
+              onRemove={() => removeAt("doubleOver15P1", idx)}
             />
-          ))}
+          )}
+        />
 
-          <div className="text-[10px] font-black text-slate-500">
-            {(picks.doubleOver15P1 || []).length}/2 selecionados
-          </div>
-        </CardShell>
-      </div>
-
-      {/* Segunda linha (como nas DICAS) */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Quadriplete O4.5 */}
-        <CardShell
-          iconBg="bg-emerald-600/20"
-          icon={<i className="fas fa-layer-group text-xl text-emerald-300" />}
+        <SuggestionCard
           title="Quadriplete O4.5"
-          subtitle="Escolhe 4 jogos com tendência ofensiva para 5+ golos."
-        >
-          <SelectAdd
-            value={pickOver45}
-            onChange={setPickOver45}
-            options={gameOptions}
-            placeholder="Escolhe um jogo"
-            onAdd={() => {
-              addOver45(pickOver45);
-              setPickOver45("");
-            }}
-            disabledAdd={!pickOver45 || (picks.quadrupleOver45 || []).length >= 4}
-          />
-
-          {(picks.quadrupleOver45 || []).map((g, idx) => (
-            <PickRow
-              key={`o45-${g}-${idx}`}
-              index={idx + 1}
-              text={String(g).replace(" VS ", " vs ")}
-              logos={logosFromGame(String(g))}
-              onRemove={() =>
-                setPicks((prev) => ({
-                  ...prev,
-                  quadrupleOver45: removeFromArray(prev.quadrupleOver45 || [], idx),
-                }))
-              }
+          items={picks.quadrupleOver45 || []}
+          icon="fa-hockey-puck"
+          gradient="bg-gradient-to-br from-emerald-500 to-teal-700"
+          badgeColor="bg-emerald-500"
+          description="Escolhe 4 jogos com tendência ofensiva para 5+ golos."
+          addUi={
+            <div className="flex gap-2">
+              <select
+                value={gameToAdd_O45}
+                onChange={(e) => setGameToAdd_O45(e.target.value)}
+                className="flex-1 bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2.5 text-[11px] font-black text-slate-200 outline-none"
+              >
+                <option value="">Seleciona jogo…</option>
+                {gamesOfDay.map((g) => (
+                  <option key={g} value={g}>
+                    {g}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={() => {
+                  addGameTo("quadrupleOver45", gameToAdd_O45, 4);
+                  setGameToAdd_O45("");
+                }}
+                disabled={!gameToAdd_O45 || (picks.quadrupleOver45 || []).length >= 4}
+                className={`px-3 py-2.5 rounded-xl border text-[10px] font-black uppercase tracking-widest ${
+                  !gameToAdd_O45 || (picks.quadrupleOver45 || []).length >= 4
+                    ? "bg-white/5 border-white/10 text-slate-500 cursor-not-allowed"
+                    : "bg-orange-600/20 border-orange-600/30 text-orange-200 hover:bg-orange-600/25"
+                }`}
+              >
+                Adicionar
+              </button>
+            </div>
+          }
+          renderItem={(item, idx) => (
+            <SuggestionItem
+              key={`o45-${idx}`}
+              text={item}
+              badgeColor="bg-emerald-500"
+              index={idx}
+              onRemove={() => removeAt("quadrupleOver45", idx)}
             />
-          ))}
+          )}
+        />
 
-          <div className="text-[10px] font-black text-slate-500">
-            {(picks.quadrupleOver45 || []).length}/4 selecionados
+        {/* DRAW CARD igual ao SuggestionsView */}
+        <div className="md:col-span-2 bg-slate-800/40 border border-slate-700 rounded-2xl p-6 relative overflow-hidden group">
+          <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500"></div>
+
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+            <h3 className="text-xl font-bold flex items-center text-indigo-400">
+              <i className="fas fa-handshake mr-3 text-2xl"></i>
+              Master Insight: Sugestões de Empate (TR)
+            </h3>
+
+            <div className="flex gap-2 w-full sm:w-auto">
+              <select
+                value={gameToAdd_Draw}
+                onChange={(e) => setGameToAdd_Draw(e.target.value)}
+                className="flex-1 sm:flex-none bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2.5 text-[11px] font-black text-slate-200 outline-none min-w-[220px]"
+              >
+                <option value="">Seleciona jogo…</option>
+                {gamesOfDay.map((g) => (
+                  <option key={g} value={g}>
+                    {g}
+                  </option>
+                ))}
+              </select>
+
+              <button
+                onClick={() => {
+                  addGameTo("drawSuggestions", gameToAdd_Draw);
+                  setGameToAdd_Draw("");
+                }}
+                disabled={!gameToAdd_Draw}
+                className={`px-3 py-2.5 rounded-xl border text-[10px] font-black uppercase tracking-widest ${
+                  !gameToAdd_Draw
+                    ? "bg-white/5 border-white/10 text-slate-500 cursor-not-allowed"
+                    : "bg-indigo-500/20 border-indigo-500/30 text-indigo-200 hover:bg-indigo-500/25"
+                }`}
+              >
+                Adicionar
+              </button>
+            </div>
           </div>
-        </CardShell>
 
-        {/* Over 5.5 */}
-        <CardShell
-          iconBg="bg-sky-600/20"
-          icon={<i className="fas fa-chart-line text-xl text-sky-300" />}
-          title="Over 5.5"
-          subtitle="Escolhe jogos com tendência para 6+ golos."
-        >
-          <SelectAdd
-            value={pickOver55}
-            onChange={setPickOver55}
-            options={gameOptions}
-            placeholder="Escolhe um jogo"
-            onAdd={() => {
-              addOver55(pickOver55);
-              setPickOver55("");
-            }}
-            disabledAdd={!pickOver55}
-          />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {(picks.drawSuggestions || []).length > 0 ? (
+              (picks.drawSuggestions as any[]).map((s, idx) => {
+                const teamMatches = parseTeamsFromText(s.game);
+                const percentageMatch = String(s.game || "").match(/\d+%/);
+                const percentage = percentageMatch ? percentageMatch[0] : null;
+                const cleanGameText = String(s.game || "").replace(/\(\d+%\)/, "").trim();
 
-          {(picks.over55Suggestions || []).map((g, idx) => (
-            <PickRow
-              key={`o55-${g}-${idx}`}
-              index={idx + 1}
-              text={String(g).replace(" VS ", " vs ")}
-              logos={logosFromGame(String(g))}
-              onRemove={() =>
-                setPicks((prev) => ({
-                  ...prev,
-                  over55Suggestions: removeFromArray(prev.over55Suggestions || [], idx),
-                }))
-              }
-            />
-          ))}
+                return (
+                  <div
+                    key={idx}
+                    className="bg-slate-900/80 p-5 rounded-2xl border border-slate-700/50 hover:bg-slate-900 transition-all relative"
+                  >
+                    <button
+                      onClick={() => removeAt("drawSuggestions", idx)}
+                      className="absolute top-3 right-3 w-8 h-8 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-200 hover:bg-rose-500/15 flex items-center justify-center"
+                      title="Remover"
+                    >
+                      <i className="fas fa-times text-[12px]" />
+                    </button>
 
-          <div className="text-[10px] font-black text-slate-500">
-            {(picks.over55Suggestions || []).length} selecionados
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="bg-indigo-500/20 text-indigo-300 text-[10px] font-black px-2 py-0.5 rounded border border-indigo-500/30 uppercase tracking-widest">
+                        Draw Candidate
+                      </span>
+                      {percentage && (
+                        <span className="text-xs font-black text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                          {percentage}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-3 mb-3">
+                      {teamMatches.length > 0 && (
+                        <div className="flex -space-x-2">
+                          {teamMatches.map((abbr, i) => (
+                            <img
+                              key={`${abbr}-${i}`}
+                              src={getLogoUrl(abbr)}
+                              className="w-8 h-8 object-contain drop-shadow-md bg-slate-800 rounded-full p-1 border border-slate-700"
+                              alt={abbr}
+                              loading="lazy"
+                              decoding="async"
+                              onError={(e) => (e.currentTarget.style.display = "none")}
+                            />
+                          ))}
+                        </div>
+                      )}
+                      <p className="font-bold text-lg text-slate-100">{cleanGameText}</p>
+                    </div>
+
+                    <div className="flex gap-3">
+                      <i className="fas fa-quote-left text-indigo-500/30 text-2xl mt-1"></i>
+                      <p className="text-sm text-slate-400 leading-relaxed italic line-clamp-4">
+                        {String(s.explanation || "Sem nota (opcional).")}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="col-span-2 text-center py-6 text-slate-500">Nenhum cenário de empate escolhido.</div>
+            )}
           </div>
-        </CardShell>
-
-        {/* Empate TR */}
-        <CardShell
-          iconBg="bg-purple-600/20"
-          icon={<i className="fas fa-handshake text-xl text-purple-300" />}
-          badge="MASTER INSIGHT"
-          title="Sugestões de Empate (TR)"
-          subtitle="Escolhe jogos para empate no tempo regulamentar."
-        >
-          <SelectAdd
-            value={pickDrawTR}
-            onChange={setPickDrawTR}
-            options={gameOptions}
-            placeholder="Escolhe um jogo"
-            onAdd={() => {
-              addDrawTR(pickDrawTR);
-              setPickDrawTR("");
-            }}
-            disabledAdd={!pickDrawTR}
-          />
-
-          {((picks.drawSuggestions || []) as any[]).map((d, idx) => {
-            const g = String(d?.game ?? "");
-            return (
-              <PickRow
-                key={`dr-${g}-${idx}`}
-                index={idx + 1}
-                text={g.replace(" VS ", " vs ")}
-                logos={logosFromGame(g)}
-                onRemove={() =>
-                  setPicks((prev) => ({
-                    ...prev,
-                    drawSuggestions: removeFromArray((prev.drawSuggestions || []) as any[], idx) as any,
-                  }))
-                }
-              />
-            );
-          })}
-
-          <div className="text-[10px] font-black text-slate-500">
-            {(picks.drawSuggestions || []).length} selecionados
-          </div>
-        </CardShell>
-      </div>
-
-      {/* Estado vazio */}
-      {isEmptyPicks(picks) && (
-        <div className="py-10 text-center text-slate-600 text-[10px] font-black uppercase tracking-widest">
-          Ainda não escolheste picks. Usa os dropdowns e clica em “Adicionar”.
         </div>
-      )}
+
+        {/* Over 5.5 Plus igual ao SuggestionsView */}
+        <div className="bg-slate-800/40 border border-slate-700 rounded-2xl p-6 flex flex-col">
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <h3 className="text-lg font-bold flex items-center text-pink-400">
+              <i className="fas fa-plus-circle mr-3"></i>
+              Over 5.5 Plus
+            </h3>
+
+            <div className="flex gap-2">
+              <select
+                value={gameToAdd_O55}
+                onChange={(e) => setGameToAdd_O55(e.target.value)}
+                className="bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none"
+              >
+                <option value="">Seleciona jogo…</option>
+                {gamesOfDay.map((g) => (
+                  <option key={g} value={g}>
+                    {g}
+                  </option>
+                ))}
+              </select>
+
+              <button
+                onClick={() => {
+                  addGameTo("over55Suggestions", gameToAdd_O55);
+                  setGameToAdd_O55("");
+                }}
+                disabled={!gameToAdd_O55}
+                className={`px-3 py-2 rounded-xl border text-[10px] font-black uppercase tracking-widest ${
+                  !gameToAdd_O55
+                    ? "bg-white/5 border-white/10 text-slate-500 cursor-not-allowed"
+                    : "bg-pink-500/15 border-pink-500/25 text-pink-200 hover:bg-pink-500/20"
+                }`}
+              >
+                Adicionar
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2 mt-auto">
+            {(picks.over55Suggestions || []).map((item, idx) => {
+              const teamMatches = parseTeamsFromText(item);
+              const percentageMatch = item.match(/\d+%/);
+              const percentage = percentageMatch ? percentageMatch[0] : "";
+              const cleanItemText = item.replace(/\(\d+%\)/, "").trim();
+
+              return (
+                <div
+                  key={idx}
+                  className="bg-pink-500/5 hover:bg-pink-500/10 text-pink-300 px-3 py-2 rounded-xl text-[11px] font-bold border border-pink-500/20 transition-all flex items-center gap-2"
+                >
+                  <div className="flex -space-x-1.5">
+                    {teamMatches.map((abbr, i) => (
+                      <img
+                        key={`${abbr}-${i}`}
+                        src={getLogoUrl(abbr)}
+                        className="w-4 h-4 object-contain bg-slate-900 rounded-full p-0.5 border border-slate-700"
+                        alt={abbr}
+                        loading="lazy"
+                        decoding="async"
+                        onError={(e) => (e.currentTarget.style.display = "none")}
+                      />
+                    ))}
+                  </div>
+                  <span>{cleanItemText}</span>
+                  {percentage && <span className="text-[9px] opacity-70 ml-1">{percentage}</span>}
+
+                  <button
+                    onClick={() => removeAt("over55Suggestions", idx)}
+                    className="ml-1 w-6 h-6 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-200 hover:bg-rose-500/15 flex items-center justify-center"
+                    title="Remover"
+                  >
+                    <i className="fas fa-times text-[10px]" />
+                  </button>
+                </div>
+              );
+            })}
+
+            {(picks.over55Suggestions || []).length === 0 && (
+              <span className="text-slate-600 text-sm italic">Nenhuma sugestão adicional.</span>
+            )}
+          </div>
+
+          <p className="text-[10px] text-slate-500 mt-4 leading-tight uppercase tracking-wider font-bold">
+            Jogos com elevado potencial de chuva de golos.
+          </p>
+        </div>
+      </div>
     </div>
   );
 };
