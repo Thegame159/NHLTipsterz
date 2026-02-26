@@ -37,12 +37,9 @@ async function getRedis() {
 // ---------------- HELPERS ----------------
 function safeJsonParse(input: any) {
   try {
-    const s =
-      typeof input === "string"
-        ? input
-        : input?.toString?.
-        ? input.toString()
-        : "";
+    let s = "";
+    if (typeof input === "string") s = input;
+    else if (input && typeof (input as any).toString === "function") s = (input as any).toString();
 
     if (!s) return null;
     return JSON.parse(s);
