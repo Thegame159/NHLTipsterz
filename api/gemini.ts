@@ -35,9 +35,17 @@ async function getRedis() {
 }
 
 // ---------------- HELPERS ----------------
-function safeJsonParse(text: string) {
+function safeJsonParse(input: any) {
   try {
-    return JSON.parse(text);
+    const s =
+      typeof input === "string"
+        ? input
+        : input?.toString?.
+        ? input.toString()
+        : "";
+
+    if (!s) return null;
+    return JSON.parse(s);
   } catch {
     return null;
   }
