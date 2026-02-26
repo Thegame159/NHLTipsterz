@@ -7,14 +7,16 @@ export const config = { runtime: "nodejs" };
 
 // Cache do Gemini (predictions) e das lesões
 const GEMINI_TTL_MS = 1000 * 60 * 60 * 12; // 12h
+
+// Lesões mudam muito: cache mais curto
 const INJURIES_TTL_MS_DEFAULT = 1000 * 60 * 30; // 30 min
-const INJURIES_TTL_MS_NEAR_TODAY = 1000 * 60 * 15; // 15 min
+const INJURIES_TTL_MS_NEAR_TODAY = 1000 * 60 * 15; // 15 min (hoje/ontem/amanhã)
 
 // Rate limit
 const RL_WINDOW_SEC = 600; // 10 min
 const RL_LIMIT = 30; // 30 req / 10 min / IP
 
-// Intervalo permitido para selectedDate
+// Intervalo permitido para selectedDate (para evitar abuso)
 const MAX_DAYS_PAST = 30;
 const MAX_DAYS_FUTURE = 20;
 
@@ -56,6 +58,7 @@ function defaultSuggestions() {
 
 function jsonError(res: VercelResponse, status: number, code: string, message: string, details?: any) {
   return res.status(status).json({
+    ok: false,
     code,
     message,
     details,
@@ -74,17 +77,24 @@ function getClientIp(req: VercelRequest) {
 async function rateLimit(ip: string) {
   const key = `rl:${ip}`;
   const count = await redis.incr(key);
+  if (count === null) return { ok: true, count: 0, skipped: true }; // sem Redis => sem RL
   if (count === 1) await redis.expire(key, RL_WINDOW_SEC);
-  return { ok: (count ?? 0) <= RL_LIMIT, count: count ?? 0 };
+  return { ok: count <= RL_LIMIT, count };
 }
 
 function validateSelectedDate(selectedDate: unknown) {
   if (typeof selectedDate !== "string") return { ok: false, error: "selectedDate obrigatório (YYYY-MM-DD)" };
 
   const s = selectedDate.trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return { ok: false, error: "Formato inválido. Usa YYYY-MM-DD." };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    return { ok: false, error: "Formato inválido. Usa YYYY-MM-DD." };
+  }
 
   const [yyyy, mm, dd] = s.split("-").map((x) => Number(x));
+  if (!Number.isFinite(yyyy) || !Number.isFinite(mm) || !Number.isFinite(dd)) {
+    return { ok: false, error: "Data inválida." };
+  }
+
   const dt = new Date(Date.UTC(yyyy, mm - 1, dd));
   if (dt.getUTCFullYear() !== yyyy || dt.getUTCMonth() !== mm - 1 || dt.getUTCDate() !== dd) {
     return { ok: false, error: "Data inválida." };
@@ -114,12 +124,12 @@ function sha256(text: string) {
   return crypto.createHash("sha256").update(text).digest("hex");
 }
 
-// ---------------- NHL SCHEDULE ----------------
+// ---------------- NHL SCHEDULE (real) ----------------
 type ScheduleGame = {
   id: number;
   startTimeUTC?: string;
-  homeTeam?: { abbrev?: string };
-  awayTeam?: { abbrev?: string };
+  homeTeam?: { abbrev?: string; placeName?: { default?: string } };
+  awayTeam?: { abbrev?: string; placeName?: { default?: string } };
 };
 
 async function fetchNhlScheduleGames(date: string): Promise<ScheduleGame[]> {
@@ -130,6 +140,7 @@ async function fetchNhlScheduleGames(date: string): Promise<ScheduleGame[]> {
 
   const games: ScheduleGame[] = [];
   if (!data?.gameWeek?.length) return games;
+
   for (const day of data.gameWeek) {
     if (!Array.isArray(day?.games)) continue;
     for (const g of day.games) if (g?.id) games.push(g);
@@ -137,7 +148,7 @@ async function fetchNhlScheduleGames(date: string): Promise<ScheduleGame[]> {
   return games;
 }
 
-// ---------------- TEAM MAP ----------------
+// ---------------- TEAM NAME MAP (para casar ESPN->ABBR) ----------------
 const TEAM_FULLNAMES: Record<string, string[]> = {
   ANA: ["anaheim ducks", "ducks"],
   BOS: ["boston bruins", "bruins"],
@@ -177,17 +188,20 @@ const TEAM_FULLNAMES: Record<string, string[]> = {
 function guessAbbrFromTeamName(teamName: string): string | null {
   const t = norm(teamName);
   if (!t) return null;
+
   for (const [abbr, names] of Object.entries(TEAM_FULLNAMES)) {
-    for (const n of names) if (t.includes(n)) return abbr;
+    for (const n of names) {
+      if (t.includes(n)) return abbr;
+    }
   }
   return null;
 }
 
-// ---------------- ESPN -> GEMINI injuries ----------------
+// ---------------- ESPN HTML -> GEMINI (extract injuries) ----------------
 type ExtractedTeamInjuries = { team: string; injuries: string[] };
 type InjuriesExtractResult = { teams: ExtractedTeamInjuries[] };
 
-async function fetchEspnBrazilInjuriesHtml() {
+async function fetchEspnBrazilInjuriesHtml(): Promise<{ ok: boolean; status: number; url: string; html: string }> {
   const url = "https://www.espn.com.br/nhl/lesoes";
   const res = await fetchWithTimeout(
     url,
@@ -208,10 +222,12 @@ async function fetchEspnBrazilInjuriesHtml() {
 
 function mergeExtracted(results: InjuriesExtractResult[]): InjuriesExtractResult {
   const map = new Map<string, Set<string>>();
+
   for (const r of results) {
     for (const t of r.teams || []) {
       const team = String(t.team || "").trim();
       if (!team) continue;
+
       const set = map.get(team) ?? new Set<string>();
       for (const inj of t.injuries || []) {
         const s = String(inj || "").trim();
@@ -220,7 +236,13 @@ function mergeExtracted(results: InjuriesExtractResult[]): InjuriesExtractResult
       map.set(team, set);
     }
   }
-  return { teams: Array.from(map.entries()).map(([team, set]) => ({ team, injuries: Array.from(set) })) };
+
+  return {
+    teams: Array.from(map.entries()).map(([team, set]) => ({
+      team,
+      injuries: Array.from(set),
+    })),
+  };
 }
 
 async function extractInjuriesChunkWithGemini(ai: GoogleGenAI, chunk: string): Promise<InjuriesExtractResult> {
@@ -238,6 +260,8 @@ Regras:
   ]
 }
 
+O campo "team" deve ser o nome da equipa como aparece no HTML (ex: "Boston Bruins").
+Cada item em "injuries" deve ser uma linha curta por jogador (ex: "Nome (OUT) - Lesão" ou "Nome - Lesão" se o estado não existir).
 Se não encontrares lesões, devolve: { "teams": [] }
 
 HTML:
@@ -251,7 +275,9 @@ ${chunk}
   });
 
   const parsed = safeJsonParse(resp.text || "");
-  if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as any).teams)) return { teams: [] };
+  if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as any).teams)) {
+    return { teams: [] };
+  }
 
   const teams: ExtractedTeamInjuries[] = (parsed as any).teams
     .filter((x: any) => x && typeof x.team === "string" && Array.isArray(x.injuries))
@@ -281,10 +307,10 @@ async function extractInjuriesWithGemini(apiKey: string, html: string): Promise<
   }
 
   const MAX_CHUNKS = 6;
-  const clipped = chunks.slice(0, MAX_CHUNKS);
+  const clippedChunks = chunks.slice(0, MAX_CHUNKS);
 
   const partials: InjuriesExtractResult[] = [];
-  for (const c of clipped) {
+  for (const c of clippedChunks) {
     try {
       partials.push(await extractInjuriesChunkWithGemini(ai, c));
     } catch (e) {
@@ -317,7 +343,11 @@ function mapExtractedToAbbr(extracted: InjuriesExtractResult, teamsOnDate: Set<s
   return { injuriesByTeam, injuriesCounts, debugMatch: debug, extractedTeams: extracted.teams.length };
 }
 
-async function getInjuriesByAbbr(apiKey: string, teamsOnDate: Set<string>, opts: { injuriesTtlMs: number; refresh: boolean }) {
+async function getInjuriesByAbbr(
+  apiKey: string,
+  teamsOnDate: Set<string>,
+  opts: { injuriesTtlMs: number; refresh: boolean }
+) {
   const todayKey = new Date().toISOString().slice(0, 10);
   const cacheKey = `espn_br_injuries_extracted_v2:${todayKey}`;
 
@@ -327,7 +357,10 @@ async function getInjuriesByAbbr(apiKey: string, teamsOnDate: Set<string>, opts:
     if (cached?.savedAt && Date.now() - cached.savedAt < opts.injuriesTtlMs && cached?.data?.teams) {
       const extracted: InjuriesExtractResult = cached.data;
       const mapped = mapExtractedToAbbr(extracted, teamsOnDate);
-      return { ...mapped, meta: { hit: true, key: cacheKey, savedAt: cached.savedAt, htmlHash: cached.htmlHash ?? null } };
+      return {
+        ...mapped,
+        meta: { hit: true, key: cacheKey, savedAt: cached.savedAt, htmlHash: cached.htmlHash ?? null },
+      };
     }
   }
 
@@ -340,11 +373,16 @@ async function getInjuriesByAbbr(apiKey: string, teamsOnDate: Set<string>, opts:
 
   return {
     ...mapped,
-    meta: { hit: false, key: cacheKey, htmlHash, espn: { ok: htmlRes.ok, status: htmlRes.status, url: htmlRes.url, htmlLen: htmlRes.html.length } },
+    meta: {
+      hit: false,
+      key: cacheKey,
+      htmlHash,
+      espn: { ok: htmlRes.ok, status: htmlRes.status, url: htmlRes.url, htmlLen: htmlRes.html.length },
+    },
   };
 }
 
-// ---------------- GEMINI predictions ----------------
+// ---------------- GEMINI PREDICTIONS ----------------
 async function generatePredictionsWithFallback(ai: GoogleGenAI, prompt: string) {
   const modelsToTry = ["gemini-3-flash-preview", "gemini-3-pro-preview", "gemini-2.0-flash"];
   let lastErr: any = null;
@@ -356,7 +394,6 @@ async function generatePredictionsWithFallback(ai: GoogleGenAI, prompt: string) 
         contents: prompt,
         config: { responseMimeType: "application/json" },
       });
-
       const parsed = safeJsonParse(resp.text || "") ?? {};
       return { modelUsed: model, parsed };
     } catch (e: any) {
@@ -373,11 +410,13 @@ async function generatePredictionsWithFallback(ai: GoogleGenAI, prompt: string) 
 function mergeInjuriesIntoPredictions(geminiObj: any, injuriesByTeam: Record<string, string[]>) {
   const root = geminiObj && typeof geminiObj === "object" ? geminiObj : {};
   const predictions = Array.isArray(root.predictions) ? root.predictions : [];
-  const suggestions = root.suggestions && typeof root.suggestions === "object" ? root.suggestions : defaultSuggestions();
+  const suggestions =
+    root.suggestions && typeof root.suggestions === "object" ? root.suggestions : defaultSuggestions();
 
   const mergedPredictions = predictions.map((p: any) => {
     const homeAbbr = normAbbr(String(p?.homeTeamAbbr ?? ""));
     const awayAbbr = normAbbr(String(p?.awayTeamAbbr ?? ""));
+
     return {
       id: String(p?.id ?? ""),
       homeTeam: String(p?.homeTeam ?? ""),
@@ -402,7 +441,7 @@ function mergeInjuriesIntoPredictions(geminiObj: any, injuriesByTeam: Record<str
     };
   });
 
-  const sug = suggestions;
+  const sug = suggestions as any;
   const normalizedSuggestions = {
     tripleWin: Array.isArray(sug.tripleWin) ? sug.tripleWin.map(String) : [],
     tripleOver15P1: Array.isArray(sug.tripleOver15P1) ? sug.tripleOver15P1.map(String) : [],
@@ -414,23 +453,36 @@ function mergeInjuriesIntoPredictions(geminiObj: any, injuriesByTeam: Record<str
     over55Suggestions: Array.isArray(sug.over55Suggestions) ? sug.over55Suggestions.map(String) : [],
   };
 
-  return { predictions: mergedPredictions, suggestions: normalizedSuggestions, lastUpdated: new Date().toISOString() };
+  return {
+    predictions: mergedPredictions,
+    suggestions: normalizedSuggestions,
+    lastUpdated: new Date().toISOString(),
+  };
 }
 
-// ---------------- CORS ----------------
+// ---------------- CORS HELPERS ----------------
 function setCors(req: VercelRequest, res: VercelResponse) {
   const origin = String(req.headers.origin ?? "");
-  const allowlist = new Set(["capacitor://localhost", "http://localhost:3000", "http://localhost", "https://nhl-tipsterz.vercel.app"]);
 
-  if (!origin) res.setHeader("Access-Control-Allow-Origin", "https://nhl-tipsterz.vercel.app");
-  else if (!allowlist.has(origin)) {
+  const allowlist = new Set([
+    "capacitor://localhost",
+    "http://localhost:3000",
+    "http://localhost",
+    "https://nhl-tipsterz.vercel.app",
+  ]);
+
+  if (!origin) {
+    res.setHeader("Access-Control-Allow-Origin", "https://nhl-tipsterz.vercel.app");
+  } else if (!allowlist.has(origin)) {
     res.setHeader("Access-Control-Allow-Origin", "https://nhl-tipsterz.vercel.app");
     res.setHeader("Vary", "Origin");
     (res as any).__corsBlocked = true;
-  } else res.setHeader("Access-Control-Allow-Origin", origin);
+  } else {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+  }
 
   res.setHeader("Vary", "Origin");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 }
 
@@ -438,18 +490,54 @@ function setCors(req: VercelRequest, res: VercelResponse) {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     setCors(req, res);
-    if ((res as any).__corsBlocked) return jsonError(res, 403, "CORS_BLOCKED", "Origin não permitida.");
+
+    if ((res as any).__corsBlocked) {
+      return jsonError(res, 403, "CORS_BLOCKED", "Origin não permitida.");
+    }
+
     if (req.method === "OPTIONS") return res.status(200).end();
+
+    // ✅ Healthcheck para veres logo env + redis
+    if (req.method === "GET") {
+      const hasApiKey = !!process.env.GEMINI_API_KEY;
+      const hasRedisRestUrl = !!process.env.REDIS_REST_URL;
+      const hasRedisRestToken = !!process.env.REDIS_REST_TOKEN;
+
+      // tenta um ping leve ao redis (set/get)
+      let redisOk: boolean | null = null;
+      try {
+        const k = "health:ping";
+        await redis.setPx(k, "1", 5000);
+        const v = await redis.get(k);
+        redisOk = v === "1";
+      } catch {
+        redisOk = false;
+      }
+
+      return res.status(200).json({
+        ok: true,
+        message: "Gemini endpoint alive",
+        node: process.version,
+        hasApiKey,
+        hasRedisRestUrl,
+        hasRedisRestToken,
+        redisOk,
+      });
+    }
+
     if (req.method !== "POST") return jsonError(res, 405, "METHOD_NOT_ALLOWED", "Use POST.");
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) return jsonError(res, 500, "MISSING_API_KEY", "GEMINI_API_KEY não definida.");
 
-    // Rate limit (Upstash REST)
+    // Rate limit (se Redis funcionar)
     const ip = getClientIp(req);
     const rl = await rateLimit(ip);
     if (!rl.ok) {
-      return jsonError(res, 429, "RATE_LIMIT", "Muitos pedidos. Tenta novamente mais tarde.", { windowSec: RL_WINDOW_SEC, limit: RL_LIMIT });
+      return jsonError(res, 429, "RATE_LIMIT", "Muitos pedidos. Tenta novamente mais tarde.", {
+        windowSec: RL_WINDOW_SEC,
+        limit: RL_LIMIT,
+      });
     }
 
     const body = typeof req.body === "string" ? safeJsonParse(req.body) : req.body ?? {};
@@ -458,7 +546,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const v = validateSelectedDate(selectedDateRaw);
     if (!v.ok) return jsonError(res, 400, "BAD_REQUEST", v.error);
 
-    const selectedDate = (v as any).value as string;
+    const selectedDate = v.value;
     const diffDays = (v as any).diffDays as number;
 
     const geminiTtlMs = Math.abs(diffDays) <= 1 ? 1000 * 60 * 60 * 2 : GEMINI_TTL_MS;
@@ -466,13 +554,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const refresh = String((req.query as any)?.refresh ?? "") === "1";
 
-    // 1) schedule
+    // 1) schedule real
     const scheduleGames = await fetchNhlScheduleGames(selectedDate);
     if (!scheduleGames.length) {
-      return res.status(200).json({ predictions: [], suggestions: defaultSuggestions(), lastUpdated: new Date().toISOString(), meta: { selectedDate, note: "Sem jogos na data." } });
+      return res.status(200).json({
+        predictions: [],
+        suggestions: defaultSuggestions(),
+        lastUpdated: new Date().toISOString(),
+        meta: { selectedDate, note: "Sem jogos na data." },
+      });
     }
 
-    // 2) teams
+    // 2) teams no dia
     const teamAbbrs = new Set<string>();
     for (const g of scheduleGames) {
       const h = normAbbr(g.homeTeam?.abbrev || "");
@@ -481,19 +574,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (a) teamAbbrs.add(a);
     }
 
-    // 3) injuries
+    // 3) Injuries
     const injuriesPack = await getInjuriesByAbbr(apiKey, teamAbbrs, { injuriesTtlMs, refresh });
 
-    // 4) gemini cache
+    // 4) Gemini predictions cache
     const geminiCacheKey = `gemini_only:${selectedDate}`;
     let geminiObj: any = null;
     let geminiHit = false;
 
-    const cachedRaw = await redis.get(geminiCacheKey);
-    const cached = cachedRaw ? safeJsonParse(cachedRaw) : null;
-    if (!refresh && cached?.savedAt && Date.now() - cached.savedAt < geminiTtlMs) {
-      geminiObj = cached.data;
-      geminiHit = true;
+    if (!refresh) {
+      const raw = await redis.get(geminiCacheKey);
+      const cached = raw ? safeJsonParse(raw) : null;
+      if (cached?.savedAt && Date.now() - cached.savedAt < geminiTtlMs) {
+        geminiObj = cached.data;
+        geminiHit = true;
+      }
     }
 
     if (!geminiObj) {
@@ -551,7 +646,7 @@ ${JSON.stringify(gamesForAI, null, 2)}
       await redis.setPx(geminiCacheKey, JSON.stringify({ savedAt: Date.now(), data: geminiObj }), geminiTtlMs);
     }
 
-    // 5) final
+    // 5) Merge final
     const finalData: any = mergeInjuriesIntoPredictions(geminiObj, injuriesPack.injuriesByTeam);
 
     const debug = String((req.query as any)?.debug ?? "") === "1";
@@ -570,6 +665,10 @@ ${JSON.stringify(gamesForAI, null, 2)}
 
     return res.status(200).json(finalData);
   } catch (err: any) {
-    return jsonError(res, 500, "INTERNAL", "Erro interno", String(err?.message ?? err));
+    // devolve SEMPRE JSON com stack/message
+    return jsonError(res, 500, "INTERNAL", "Erro interno no /api/gemini", {
+      message: String(err?.message ?? err),
+      stack: String(err?.stack ?? ""),
+    });
   }
 }
