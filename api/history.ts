@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { redis } from "./_redis";
+import { redis } from "./_redis.js";
 
 export const config = { runtime: "nodejs" };
 
@@ -51,7 +51,9 @@ function normalizeSuggestionsDeep(input: any) {
   const out: any = Array.isArray(input) ? [...input] : { ...input };
 
   const normalizeStringArray = (arr: any) =>
-    Array.isArray(arr) ? arr.map(cleanSuggestionLabel).filter((x) => String(x).trim().length > 0) : [];
+    Array.isArray(arr)
+      ? arr.map(cleanSuggestionLabel).filter((x) => String(x).trim().length > 0)
+      : [];
 
   if ("tripleWin" in out) out.tripleWin = normalizeStringArray(out.tripleWin);
   if ("tripleOver15P1" in out) out.tripleOver15P1 = normalizeStringArray(out.tripleOver15P1);
@@ -73,8 +75,10 @@ function normalizeSuggestionsDeep(input: any) {
 
 function normalizeSideObject(obj: any) {
   if (!obj || typeof obj !== "object") return obj;
+
   const savedAt = Number(obj.savedAt);
   const suggestions = normalizeSuggestionsDeep(obj.suggestions);
+
   return {
     savedAt: Number.isFinite(savedAt) ? savedAt : Date.now(),
     suggestions,
@@ -84,49 +88,78 @@ function normalizeSideObject(obj: any) {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     if (req.method === "POST") {
-      const body = typeof req.body === "string" ? safeJsonParse(req.body) : req.body || {};
-      if (!body || typeof body !== "object") return res.status(400).json({ message: "Invalid JSON body" });
+      const body =
+        typeof req.body === "string"
+          ? safeJsonParse(req.body)
+          : req.body || {};
+
+      if (!body || typeof body !== "object") {
+        return res.status(400).json({ message: "Invalid JSON body" });
+      }
 
       const date = String((body as any)?.date || "").trim();
-      if (!date || !isDate(date)) return res.status(400).json({ message: "Invalid date" });
+      if (!date || !isDate(date)) {
+        return res.status(400).json({ message: "Invalid date" });
+      }
 
       const side: HistorySide | undefined =
-        (body as any)?.side === "auto" || (body as any)?.side === "mine" ? (body as any).side : undefined;
-      const suggestionsRaw = (body as any)?.suggestions ?? undefined;
+        (body as any)?.side === "auto" || (body as any)?.side === "mine"
+          ? (body as any).side
+          : undefined;
 
+      const suggestionsRaw = (body as any)?.suggestions ?? undefined;
       const autoObj = (body as any)?.auto ?? undefined;
       const mineObj = (body as any)?.mine ?? undefined;
       const picks = (body as any)?.picks ?? undefined;
 
       let existing: StoreItem = { date, auto: null, mine: null };
+
       try {
         const existingRaw = await redis.get(keyForDate(date));
         const existingParsed = safeJsonParse(existingRaw);
-        if (existingParsed && typeof existingParsed === "object") existing = existingParsed as StoreItem;
+        if (existingParsed && typeof existingParsed === "object") {
+          existing = existingParsed as StoreItem;
+        }
       } catch {}
 
       if (autoObj) existing.auto = normalizeSideObject(autoObj);
       if (mineObj) existing.mine = normalizeSideObject(mineObj);
 
       if (side && suggestionsRaw) {
-        existing[side] = { savedAt: Date.now(), suggestions: normalizeSuggestionsDeep(suggestionsRaw) };
+        existing[side] = {
+          savedAt: Date.now(),
+          suggestions: normalizeSuggestionsDeep(suggestionsRaw),
+        };
       }
 
       if (picks && !side && !mineObj) {
-        existing.mine = { savedAt: Date.now(), suggestions: normalizeSuggestionsDeep(picks) };
+        existing.mine = {
+          savedAt: Date.now(),
+          suggestions: normalizeSuggestionsDeep(picks),
+        };
       }
 
       await redis.set(keyForDate(date), JSON.stringify(existing));
-      return res.status(200).json({ ok: true, item: existing });
+
+      return res.status(200).json({
+        ok: true,
+        item: existing,
+      });
     }
 
     if (req.method === "GET") {
-      return res.status(200).json({ ok: true, items: [] });
+      return res.status(200).json({
+        ok: true,
+        items: [],
+      });
     }
 
     res.setHeader("Allow", "GET, POST");
     return res.status(405).json({ message: "Method not allowed" });
   } catch (e: any) {
-    return res.status(500).json({ message: "History fatal", details: String(e?.message || e) });
+    return res.status(500).json({
+      message: "History fatal",
+      details: String(e?.message || e),
+    });
   }
 }
