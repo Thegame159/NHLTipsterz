@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { GamePrediction, Suggestions } from "../types";
 
 interface Props {
@@ -93,7 +93,115 @@ const isEmptyPicks = (p: Suggestions) =>
   (p.over55Suggestions?.length ?? 0) === 0 &&
   (p.drawSuggestions?.length ?? 0) === 0;
 
-// ---------------- UI pieces (igual ao estilo das DICAS) ----------------
+// ---------------- Custom dropdown (com ícones) ----------------
+type DropOption = {
+  value: string;
+  label: string;
+  logos?: string[]; // abbrs
+  disabled?: boolean;
+};
+
+const IconDropdown: React.FC<{
+  value: string;
+  onChange: (v: string) => void;
+  options: DropOption[];
+  placeholder: string;
+}> = ({ value, onChange, options, placeholder }) => {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+
+  const selected = options.find((o) => o.value === value) || null;
+
+  useEffect(() => {
+    const onDoc = (e: MouseEvent) => {
+      if (!wrapRef.current) return;
+      if (!wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, []);
+
+  return (
+    <div ref={wrapRef} className="relative flex-1">
+      <button
+        type="button"
+        onClick={() => setOpen((s) => !s)}
+        className="w-full bg-slate-900/60 border border-slate-700/60 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none flex items-center justify-between gap-3"
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          {selected?.logos?.length ? (
+            <div className="flex -space-x-2">
+              {selected.logos.map((abbr, i) => (
+                <img
+                  key={`${abbr}-${i}`}
+                  src={getLogoUrl(abbr)}
+                  className="w-5 h-5 object-contain drop-shadow-md bg-slate-800 rounded-full p-0.5 border border-slate-700"
+                  alt={abbr}
+                  loading="lazy"
+                  decoding="async"
+                  onError={(e) => (e.currentTarget.style.display = "none")}
+                  style={{ zIndex: 10 - i }}
+                />
+              ))}
+            </div>
+          ) : null}
+
+          <span className={`truncate ${selected ? "text-slate-200" : "text-slate-400"}`}>
+            {selected ? selected.label : placeholder}
+          </span>
+        </div>
+
+        <i className={`fas fa-chevron-down text-[10px] text-slate-400 transition ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div className="absolute z-50 mt-2 w-full max-h-72 overflow-auto rounded-2xl border border-slate-700/60 bg-[#070f22]/95 backdrop-blur-xl shadow-2xl">
+          <div className="p-2 space-y-1">
+            {options.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                disabled={!!o.disabled}
+                onClick={() => {
+                  if (o.disabled) return;
+                  onChange(o.value);
+                  setOpen(false);
+                }}
+                className={`w-full text-left px-3 py-2 rounded-xl flex items-center gap-2 border transition ${
+                  o.disabled
+                    ? "opacity-40 cursor-not-allowed border-transparent"
+                    : "border-slate-700/40 hover:border-blue-500/30 hover:bg-white/5"
+                }`}
+                title={o.disabled ? "Indisponível" : o.label}
+              >
+                {o.logos?.length ? (
+                  <div className="flex -space-x-2">
+                    {o.logos.map((abbr, i) => (
+                      <img
+                        key={`${abbr}-${i}`}
+                        src={getLogoUrl(abbr)}
+                        className="w-6 h-6 object-contain drop-shadow-md bg-slate-800 rounded-full p-0.5 border border-slate-700"
+                        alt={abbr}
+                        loading="lazy"
+                        decoding="async"
+                        onError={(e) => (e.currentTarget.style.display = "none")}
+                        style={{ zIndex: 10 - i }}
+                      />
+                    ))}
+                  </div>
+                ) : null}
+
+                <span className="text-[11px] font-black text-slate-200 truncate">{o.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ---------------- UI pieces ----------------
 const SuggestionItemRow: React.FC<{
   text: string;
   badgeColor: string;
@@ -153,11 +261,10 @@ const PickCard: React.FC<{
   title: string;
   icon: string;
   gradient: string;
-  badgeColor: string;
   description: string;
   limit: number;
   children: React.ReactNode;
-}> = ({ title, icon, gradient, badgeColor, description, limit, children }) => (
+}> = ({ title, icon, gradient, description, limit, children }) => (
   <div className="relative overflow-hidden bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 shadow-xl transition-all hover:scale-[1.01] hover:shadow-blue-500/10">
     <div className={`absolute top-0 right-0 w-32 h-32 -mr-8 -mt-8 opacity-10 rounded-full blur-3xl ${gradient}`} />
 
@@ -183,7 +290,6 @@ const PickCard: React.FC<{
 const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
   const [picks, setPicks] = useState<Suggestions>(defaultSuggestions());
 
-  // selectors
   const [teamPick, setTeamPick] = useState<string>("");
   const [gamePickOver15Triple, setGamePickOver15Triple] = useState<string>("");
   const [gamePickOver15Double, setGamePickOver15Double] = useState<string>("");
@@ -191,7 +297,6 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
   const [gamePickOver55, setGamePickOver55] = useState<string>("");
   const [gamePickDrawTR, setGamePickDrawTR] = useState<string>("");
 
-  // load from localStorage per date (client only)
   useEffect(() => {
     try {
       if (typeof window === "undefined") return;
@@ -209,7 +314,6 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
 
   const predictionsOfDay = useMemo(() => predictions || [], [predictions]);
 
-  // Allowed teams and games come ONLY from this day predictions
   const allowedTeams = useMemo(() => {
     const set = new Set<string>();
     for (const g of predictionsOfDay as any[]) {
@@ -233,7 +337,58 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
     return Array.from(set).sort();
   }, [predictionsOfDay]);
 
-  // ---------- add helpers with limits ----------
+  // --------- options com ícones ----------
+  const teamOptions: DropOption[] = useMemo(
+    () =>
+      [
+        // placeholder já é tratado pelo IconDropdown
+        ...allowedTeams.map((t) => ({
+          value: t,
+          label: t,
+          logos: [t],
+        })),
+      ],
+    [allowedTeams]
+  );
+
+  // 🔒 regra: triplete O1.5 e dupla O1.5 não podem partilhar jogos
+  const triple15Chosen = useMemo(
+    () => new Set((picks.tripleOver15P1 || []).map(normalizeGameText)),
+    [picks.tripleOver15P1]
+  );
+  const double15Chosen = useMemo(
+    () => new Set((picks.doubleOver15P1 || []).map(normalizeGameText)),
+    [picks.doubleOver15P1]
+  );
+
+  const gameOptionsAll: DropOption[] = useMemo(
+    () =>
+      gamesOfDay.map((g) => {
+        const abbrs = parseTeamsFromText(g);
+        return { value: g, label: g, logos: abbrs };
+      }),
+    [gamesOfDay]
+  );
+
+  const gameOptionsTriple15: DropOption[] = useMemo(
+    () =>
+      gameOptionsAll.map((o) => ({
+        ...o,
+        disabled: double15Chosen.has(normalizeGameText(o.value)), // não pode usar os da dupla
+      })),
+    [gameOptionsAll, double15Chosen]
+  );
+
+  const gameOptionsDouble15: DropOption[] = useMemo(
+    () =>
+      gameOptionsAll.map((o) => ({
+        ...o,
+        disabled: triple15Chosen.has(normalizeGameText(o.value)), // não pode usar os da triplete
+      })),
+    [gameOptionsAll, triple15Chosen]
+  );
+
+  // --------- add helpers ----------
   const addTeamToTripleWin = () => {
     const t = (teamPick || "").trim().toUpperCase();
     if (!t) return;
@@ -253,10 +408,13 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
     if (!g.includes(" VS ")) return;
     if (!gamesOfDay.map(normalizeGameText).includes(g)) return;
 
+    // 🔒 bloqueio cruzado Triplete O1.5 <-> Dupla O1.5
+    if (field === "tripleOver15P1" && double15Chosen.has(g)) return;
+    if (field === "doubleOver15P1" && triple15Chosen.has(g)) return;
+
     setPicks((prev) => {
       const cur = ((prev as any)[field] || []) as any[];
 
-      // drawSuggestions is array of objects
       if (field === "drawSuggestions") {
         const curObj = cur as DrawItem[];
         const exists = curObj.some((x) => normalizeGameText(x?.game ?? "") === g);
@@ -265,7 +423,6 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
         return { ...prev, drawSuggestions: [...curObj, { game: g }] as any };
       }
 
-      // string arrays
       const curStr = cur.map((x) => String(x));
       const exists = curStr.map(normalizeGameText).includes(g);
       if (exists) return prev;
@@ -274,7 +431,6 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
     });
   };
 
-  // ---------- remove helpers ----------
   const removeFromStringList = (field: keyof Suggestions, idx: number) => {
     setPicks((prev) => {
       const cur = (((prev as any)[field] || []) as any[]).map((x) => String(x));
@@ -291,9 +447,7 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
     });
   };
 
-  // ---------- save ----------
   const savePicks = async () => {
-    // localStorage backup
     try {
       if (typeof window !== "undefined") {
         window.localStorage.setItem(storageKey(selectedDate), JSON.stringify(picks));
@@ -302,7 +456,6 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
       // ignore
     }
 
-    // backend save (format expected by StatsView history loader)
     try {
       const res = await fetch("/api/history", {
         method: "POST",
@@ -330,7 +483,6 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
     }
   };
 
-  // ---------- UI ----------
   return (
     <div className="space-y-8 pb-24">
       <div className="bg-gradient-to-r from-blue-900/40 to-slate-900/40 border border-blue-500/20 rounded-2xl p-6 sm:p-8 flex flex-col sm:flex-row items-center gap-6">
@@ -354,35 +506,27 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
               ? "bg-white/5 border-white/10 text-slate-500 cursor-not-allowed"
               : "bg-amber-500/20 border-amber-500/30 text-amber-200 hover:bg-amber-500/25"
           }`}
-          title={isEmptyPicks(picks) ? "Sem picks para guardar" : "Guardar as tuas picks"}
         >
           Guardar Picks
         </button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {/* Triplete Win (equipas) */}
+        {/* Triplete Win */}
         <PickCard
           title="Triplete de Vitórias"
           icon="fa-award"
           gradient="bg-gradient-to-br from-amber-500 to-orange-600"
-          badgeColor="bg-amber-500"
           description="Escolhe 3 equipas do dia para vencer (incl. OT)."
           limit={3}
         >
           <div className="flex gap-2 mb-5">
-            <select
+            <IconDropdown
               value={teamPick}
-              onChange={(e) => setTeamPick(e.target.value)}
-              className="flex-1 bg-slate-900/60 border border-slate-700/60 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none"
-            >
-              <option value="">Seleciona equipa…</option>
-              {allowedTeams.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
+              onChange={setTeamPick}
+              options={teamOptions}
+              placeholder="Seleciona equipa…"
+            />
 
             <button
               onClick={addTeamToTripleWin}
@@ -400,8 +544,11 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
           <div className="space-y-3">
             {(picks.tripleWin || []).length ? (
               (picks.tripleWin || []).map((t, idx) => (
-                <div key={`${t}-${idx}`} className="flex items-center gap-3 bg-slate-900/60 p-3 rounded-xl border border-slate-700/50">
-                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold bg-amber-500 text-white shrink-0`}>
+                <div
+                  key={`${t}-${idx}`}
+                  className="flex items-center gap-3 bg-slate-900/60 p-3 rounded-xl border border-slate-700/50"
+                >
+                  <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold bg-amber-500 text-white shrink-0">
                     {idx + 1}
                   </div>
 
@@ -437,23 +584,16 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
           title="Triplete Over 1.5 P1"
           icon="fa-fire-alt"
           gradient="bg-gradient-to-br from-red-500 to-rose-700"
-          badgeColor="bg-red-500"
           description="Escolhe 3 jogos do dia para pelo menos 2 golos no 1º período."
           limit={3}
         >
           <div className="flex gap-2 mb-5">
-            <select
+            <IconDropdown
               value={gamePickOver15Triple}
-              onChange={(e) => setGamePickOver15Triple(e.target.value)}
-              className="flex-1 bg-slate-900/60 border border-slate-700/60 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none"
-            >
-              <option value="">Seleciona jogo…</option>
-              {gamesOfDay.map((g) => (
-                <option key={`t15-${g}`} value={g}>
-                  {g}
-                </option>
-              ))}
-            </select>
+              onChange={setGamePickOver15Triple}
+              options={gameOptionsTriple15}
+              placeholder="Seleciona jogo…"
+            />
 
             <button
               onClick={() => {
@@ -493,23 +633,16 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
           title="Dupla Over 1.5 P1"
           icon="fa-bolt"
           gradient="bg-gradient-to-br from-blue-500 to-indigo-700"
-          badgeColor="bg-blue-500"
           description="Escolhe 2 jogos do dia para golos rápidos."
           limit={2}
         >
           <div className="flex gap-2 mb-5">
-            <select
+            <IconDropdown
               value={gamePickOver15Double}
-              onChange={(e) => setGamePickOver15Double(e.target.value)}
-              className="flex-1 bg-slate-900/60 border border-slate-700/60 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none"
-            >
-              <option value="">Seleciona jogo…</option>
-              {gamesOfDay.map((g) => (
-                <option key={`d15-${g}`} value={g}>
-                  {g}
-                </option>
-              ))}
-            </select>
+              onChange={setGamePickOver15Double}
+              options={gameOptionsDouble15}
+              placeholder="Seleciona jogo…"
+            />
 
             <button
               onClick={() => {
@@ -549,23 +682,16 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
           title="Quadriplete O4.5"
           icon="fa-hockey-puck"
           gradient="bg-gradient-to-br from-emerald-500 to-teal-700"
-          badgeColor="bg-emerald-500"
           description="Escolhe 4 jogos do dia com tendência ofensiva (5+ golos)."
           limit={4}
         >
           <div className="flex gap-2 mb-5">
-            <select
+            <IconDropdown
               value={gamePickOver45Quad}
-              onChange={(e) => setGamePickOver45Quad(e.target.value)}
-              className="flex-1 bg-slate-900/60 border border-slate-700/60 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none"
-            >
-              <option value="">Seleciona jogo…</option>
-              {gamesOfDay.map((g) => (
-                <option key={`o45-${g}`} value={g}>
-                  {g}
-                </option>
-              ))}
-            </select>
+              onChange={setGamePickOver45Quad}
+              options={gameOptionsAll}
+              placeholder="Seleciona jogo…"
+            />
 
             <button
               onClick={() => {
@@ -600,7 +726,7 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
           </div>
         </PickCard>
 
-        {/* Draw TR (Master) */}
+        {/* Draw TR */}
         <div className="md:col-span-2 bg-slate-800/40 border border-slate-700 rounded-2xl p-6 relative overflow-hidden group">
           <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500" />
           <div className="flex items-center justify-between gap-3 mb-6">
@@ -609,19 +735,13 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
               Master Insight: Empate (TR)
             </h3>
 
-            <div className="flex gap-2">
-              <select
+            <div className="flex gap-2 w-full max-w-[520px]">
+              <IconDropdown
                 value={gamePickDrawTR}
-                onChange={(e) => setGamePickDrawTR(e.target.value)}
-                className="bg-slate-900/60 border border-slate-700/60 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none min-w-[220px]"
-              >
-                <option value="">Seleciona jogo…</option>
-                {gamesOfDay.map((g) => (
-                  <option key={`dtr-${g}`} value={g}>
-                    {g}
-                  </option>
-                ))}
-              </select>
+                onChange={setGamePickDrawTR}
+                options={gameOptionsAll}
+                placeholder="Seleciona jogo…"
+              />
 
               <button
                 onClick={() => {
@@ -708,18 +828,12 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
             </h3>
 
             <div className="flex gap-2 mb-4">
-              <select
+              <IconDropdown
                 value={gamePickOver55}
-                onChange={(e) => setGamePickOver55(e.target.value)}
-                className="flex-1 bg-slate-900/60 border border-slate-700/60 rounded-xl px-3 py-2 text-[11px] font-black text-slate-200 outline-none"
-              >
-                <option value="">Seleciona jogo…</option>
-                {gamesOfDay.map((g) => (
-                  <option key={`o55-${g}`} value={g}>
-                    {g}
-                  </option>
-                ))}
-              </select>
+                onChange={setGamePickOver55}
+                options={gameOptionsAll}
+                placeholder="Seleciona jogo…"
+              />
 
               <button
                 onClick={() => {
