@@ -1,41 +1,37 @@
 import { createClient } from "redis";
 
 let _redis: ReturnType<typeof createClient> | null = null;
-let _connecting = false;
+let _connecting: Promise<ReturnType<typeof createClient> | null> | null = null;
 
 export async function getRedis() {
   try {
     if (_redis) return _redis;
-    if (_connecting) return null;
+    if (_connecting) return await _connecting;
 
     const url = process.env.REDIS_URL;
-    if (!url) {
-      console.error("REDIS_URL not defined");
-      return null;
-    }
+    if (!url) return null;
 
-    _connecting = true;
+    _connecting = (async () => {
+      const client = createClient({
+        url,
+        socket: {
+          // evita loops de reconnect em serverless
+          reconnectStrategy: false as any,
+        },
+      });
 
-    const client = createClient({
-      url,
-      socket: {
-        reconnectStrategy: false, // evita loops
-      },
-    });
+      client.on("error", (err) => console.error("Redis error:", err));
 
-    client.on("error", (err) => {
-      console.error("Redis error:", err);
-    });
+      await client.connect();
+      _redis = client;
+      return _redis;
+    })();
 
-    await client.connect();
-
-    _redis = client;
-    _connecting = false;
-
-    return _redis;
+    return await _connecting;
   } catch (err) {
-    console.error("Redis connection failed:", err);
-    _connecting = false;
-    return null; // ⬅️ CRUCIAL: nunca deixar crashar
+    console.error("Redis connect failed:", err);
+    _connecting = null;
+    _redis = null;
+    return null;
   }
 }
