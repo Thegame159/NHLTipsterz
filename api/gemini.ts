@@ -34,10 +34,11 @@ function safeJsonParse(input: any) {
 }
 
 function norm(s: string) {
+  // Compatível com runtimes que não suportam \p{Diacritic}
   return (s || "")
     .toLowerCase()
     .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
+    .replace(/[\u0300-\u036f]/g, "")
     .trim();
 }
 
