@@ -43,7 +43,9 @@ function normalizeSideObject(obj: any) {
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
-    // ---------------- POST ----------------
+    // =========================
+    // POST
+    // =========================
     if (req.method === "POST") {
       const body =
         typeof req.body === "string"
@@ -89,17 +91,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ ok: true, item: existing });
     }
 
-    // ---------------- GET (FIXED) ----------------
+    // =========================
+    // GET (Upstash-safe usando SCAN)
+    // =========================
     if (req.method === "GET") {
       const limitRaw = String(req.query.limit || "30");
       const limit = Math.min(parseInt(limitRaw, 10) || 30, 200);
 
-      const keys = await redis.keys(`${KEY_PREFIX}*`);
+      const keys: string[] = [];
+      let cursor = 0;
+
+      // SCAN loop
+      do {
+        const result = await redis.scan(cursor, {
+          match: `${KEY_PREFIX}*`,
+          count: 100,
+        });
+
+        cursor = Number(result[0]);
+        keys.push(...result[1]);
+      } while (cursor !== 0);
 
       const dates = keys
-        .map((k: string) => k.replace(KEY_PREFIX, ""))
+        .map((k) => k.replace(KEY_PREFIX, ""))
         .filter(isDate)
-        .sort((a: string, b: string) => (a < b ? 1 : -1))
+        .sort((a, b) => (a < b ? 1 : -1))
         .slice(0, limit);
 
       const items: StoreItem[] = [];
