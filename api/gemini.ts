@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { GoogleGenAI } from "@google/genai";
 import crypto from "crypto";
-import { redis } from "./_redis";
+import { redis } from "./_redis.js";
 
 export const config = { runtime: "nodejs" };
 
