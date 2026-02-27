@@ -118,29 +118,47 @@ if (req.method === "DELETE") {
       return res.status(200).json({ ok: true, item: existing });
     }
 
-    // =========================
-    // GET
-    // =========================
-    if (req.method === "GET") {
-      const limitRaw = String(req.query.limit || "30");
-      const limit = Math.min(parseInt(limitRaw, 10) || 30, 200);
+ // =========================
+// GET
+// =========================
+if (req.method === "GET") {
+  const limitRaw = String(req.query.limit || "30");
+  const limit = Math.min(parseInt(limitRaw, 10) || 30, 200);
 
-      const allDates = await getIndex();
+  const keys: string[] = [];
+  let cursor = "0";
 
-      const dates = allDates
-        .sort((a, b) => (a < b ? 1 : -1))
-        .slice(0, limit);
+  do {
+    const result = await redis.scan(cursor, {
+      match: `${KEY_PREFIX}*`,
+      count: 100,
+    });
 
-      const items: StoreItem[] = [];
+    cursor = result[0];
+    keys.push(...result[1]);
+  } while (cursor !== "0");
 
-      for (const date of dates) {
-        const raw = await redis.get(keyForDate(date));
-        const parsed = safeJsonParse(raw);
-        if (parsed) items.push(parsed);
-      }
+  const dates = keys
+    .map((k) => k.replace(KEY_PREFIX, ""))
+    .filter(isDate)
+    .sort((a, b) => (a < b ? 1 : -1))
+    .slice(0, limit);
 
-      return res.status(200).json({ ok: true, items });
-    }
+  const items: StoreItem[] = [];
+
+  for (const date of dates) {
+    try {
+      const raw = await redis.get(keyForDate(date));
+      const parsed = safeJsonParse(raw);
+      if (parsed) items.push(parsed);
+    } catch {}
+  }
+
+  return res.status(200).json({
+    ok: true,
+    items,
+  });
+}
 
     res.setHeader("Allow", "GET, POST, DELETE");
     return res.status(405).json({ message: "Method not allowed" });
