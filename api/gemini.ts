@@ -555,8 +555,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const refresh = String((req.query as any)?.refresh ?? "") === "1";
 
-    // 1) schedule real
-    const scheduleGames = await fetchNhlScheduleGames(selectedDate);
+  // 1) schedule real
+const scheduleGames = await fetchNhlScheduleGames(selectedDate);
+
+// 👇 ADICIONA ISTO AQUI
+console.log("SELECTED DATE:", selectedDate);
+console.log(
+  "SCHEDULE GAMES:",
+  scheduleGames.map(g => ({
+    id: g.id,
+    home: g.homeTeam?.abbrev,
+    away: g.awayTeam?.abbrev,
+    start: g.startTimeUTC
+  }))
+);
+
+if (!scheduleGames.length) {
     if (!scheduleGames.length) {
       return res.status(200).json({
         predictions: [],
@@ -579,7 +593,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const injuriesPack = await getInjuriesByAbbr(apiKey, teamAbbrs, { injuriesTtlMs, refresh });
 
     // 4) Gemini predictions cache
-    const geminiCacheKey = `gemini_only:${selectedDate}`;
+    const geminiCacheKey = `gemini_only:v2:${selectedDate}`;
     let geminiObj: any = null;
     let geminiHit = false;
 
