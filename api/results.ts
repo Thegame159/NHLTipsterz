@@ -81,7 +81,8 @@ function deriveResultFromBoxscore(
   box: any
 ): GameResult {
 
-  console.log(JSON.stringify(box?.linescore, null, 2));
+  console.log("BOX DEBUG:");
+console.log(JSON.stringify(box, null, 2));
   // ✅ STATUS CORRIGIDO
   const rawState = String(box?.gameState ?? "").toUpperCase();
 
