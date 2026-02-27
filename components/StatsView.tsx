@@ -716,6 +716,32 @@ useEffect(() => {
       })
     );
   }
+  async function deleteHistoryDate(date: string) {
+  const ok = window.confirm(
+    `Eliminar histórico do dia ${date}? Esta ação é irreversível.`
+  );
+  if (!ok) return;
+
+  try {
+    const r = await fetch(`/api/history?date=${date}`, {
+      method: "DELETE",
+    });
+
+    if (!r.ok) {
+      alert("Erro ao eliminar histórico.");
+      return;
+    }
+
+    setHistoryItems((prev) => prev.filter((x) => x.date !== date));
+    setReports((prev) => prev.filter((x) => x.date !== date));
+
+    if (openDate === date) setOpenDate("");
+    if (editDate === date) setEditDate("");
+
+  } catch {
+    alert("Erro ao eliminar histórico.");
+  }
+}
 
   if (!dates.length) {
     return (
@@ -769,17 +795,30 @@ useEffect(() => {
 
           return (
             <div key={r.date} className="space-y-4">
-              <StatRow
-                date={r.date}
-                autoPct={r.auto.percent}
-                minePct={r.mine.percent}
-                isOpen={isOpen}
-                onToggle={() => {
-                  const nextOpen = isOpen ? "" : r.date;
-                  setOpenDate(nextOpen);
-                  if (!nextOpen) setEditDate("");
-                }}
-              />
+    <div className="relative">
+  <StatRow
+    date={r.date}
+    autoPct={r.auto.percent}
+    minePct={r.mine.percent}
+    isOpen={isOpen}
+    onToggle={() => {
+      const nextOpen = isOpen ? "" : r.date;
+      setOpenDate(nextOpen);
+      if (!nextOpen) setEditDate("");
+    }}
+  />
+
+  <button
+    onClick={(e) => {
+      e.stopPropagation();
+      deleteHistoryDate(r.date);
+    }}
+    className="absolute top-2 right-2 text-[10px] font-black text-rose-400 hover:text-rose-300 bg-rose-500/10 border border-rose-500/20 rounded-full w-6 h-6 flex items-center justify-center"
+    title="Eliminar este dia do histórico"
+  >
+    ✕
+  </button>
+</div>
 
               {isOpen && (
                 <div className="bg-slate-800/30 border border-slate-700/40 rounded-2xl p-5 space-y-8">
