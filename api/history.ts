@@ -13,7 +13,6 @@ type StoreItem = {
 };
 
 const KEY_PREFIX = "history:";
-const INDEX_KEY = "history:index";
 
 function isDate(d: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(d);
@@ -31,18 +30,7 @@ function safeJsonParse(input: any) {
   }
 }
 
-async function addToIndex(date: string) {
-  await redis.sadd(INDEX_KEY, date);
-}
 
-async function removeFromIndex(date: string) {
-  await redis.srem(INDEX_KEY, date);
-}
-
-async function getIndex(): Promise<string[]> {
-  const dates = await redis.smembers(INDEX_KEY);
-  return Array.isArray(dates) ? dates.filter(isDate) : [];
-}
 
 export default async function handler(
   req: VercelRequest,
@@ -113,7 +101,7 @@ if (req.method === "DELETE") {
       }
 
       await redis.set(keyForDate(date), JSON.stringify(existing));
-      await addToIndex(date);
+     
 
       return res.status(200).json({ ok: true, item: existing });
     }
