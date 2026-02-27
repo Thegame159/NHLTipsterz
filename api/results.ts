@@ -89,31 +89,47 @@ function deriveResultFromGameData(
   else if (["FINAL", "OFFICIAL", "OVER"].some(k => rawState.includes(k))) status = "FINAL";
   else if (["INPROGRESS", "IN PROGRESS"].some(k => rawState.includes(k))) status = "LIVE";
 
-  // 🔥 Final score
   const finalAway = safeNum(data?.awayTeam?.score);
   const finalHome = safeNum(data?.homeTeam?.score);
 
-  // 🔥 Períodos (AGORA CORRETO)
-  const periods = Array.isArray(data?.periods) ? data.periods : [];
+  const plays = Array.isArray(data?.plays) ? data.plays : [];
 
-  const p1 = periods.find((p: any) => p?.periodDescriptor?.number === 1) ?? {};
+  let p1Away = 0;
+  let p1Home = 0;
 
-  const p1Away = safeNum(p1?.away?.goals);
-  const p1Home = safeNum(p1?.home?.goals);
+  for (const play of plays) {
+    if (
+      play?.typeDescKey === "goal" &&
+      play?.periodDescriptor?.number === 1
+    ) {
+      const scoringTeamId = play?.details?.eventOwnerTeamId;
 
-  // 🔥 Regulação (somar primeiros 3 períodos)
-  const regPeriods = periods
-    .filter((p: any) => p?.periodDescriptor?.number <= 3);
+      if (scoringTeamId === data?.awayTeam?.id) {
+        p1Away++;
+      } else if (scoringTeamId === data?.homeTeam?.id) {
+        p1Home++;
+      }
+    }
+  }
 
-  const regAway = regPeriods.reduce(
-    (sum: number, p: any) => sum + safeNum(p?.away?.goals),
-    0
-  );
+  // Regulação (contar golos até período 3)
+  let regAway = 0;
+  let regHome = 0;
 
-  const regHome = regPeriods.reduce(
-    (sum: number, p: any) => sum + safeNum(p?.home?.goals),
-    0
-  );
+  for (const play of plays) {
+    if (
+      play?.typeDescKey === "goal" &&
+      play?.periodDescriptor?.number <= 3
+    ) {
+      const scoringTeamId = play?.details?.eventOwnerTeamId;
+
+      if (scoringTeamId === data?.awayTeam?.id) {
+        regAway++;
+      } else if (scoringTeamId === data?.homeTeam?.id) {
+        regHome++;
+      }
+    }
+  }
 
   let winnerAbbr: string | null = null;
   if (finalAway !== finalHome) {
