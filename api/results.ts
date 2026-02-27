@@ -159,7 +159,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ message: "date obrigatório (YYYY-MM-DD)" });
     }
 
-    const scheduleGames = await fetchNhlScheduleGames(date);
+   function addDays(d: string, days: number) {
+  const dt = new Date(d + "T00:00:00Z");
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return dt.toISOString().slice(0, 10);
+}
+
+const nextDate = addDays(date, 1);
+
+const [gamesToday, gamesNext] = await Promise.all([
+  fetchNhlScheduleGames(date),
+  fetchNhlScheduleGames(nextDate),
+]);
+
+const scheduleGames = [...gamesToday, ...gamesNext].filter(g => {
+  if (!g.startTimeUTC) return false;
+
+  const gameDateET = new Date(g.startTimeUTC).toLocaleDateString("en-CA", {
+    timeZone: "America/New_York",
+  });
+
+  return gameDateET === date;
+});
     if (!scheduleGames.length) {
       return res.status(200).json({ date, games: [], meta: { note: "Sem jogos nesta data." } });
     }
