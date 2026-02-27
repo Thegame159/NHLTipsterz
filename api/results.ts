@@ -75,6 +75,7 @@ async function fetchBoxscore(gameId: number): Promise<any | null> {
 }
 
 function deriveResultFromBoxscore(
+  console.log(JSON.stringify(box?.linescore, null, 2));
   gameId: number,
   awayAbbr: string,
   homeAbbr: string,
