@@ -15,6 +15,7 @@ type ApiResultGame = {
   winnerAbbr: string | null;
 };
 
+
 type ApiResultsResponse = {
   date: string;
   games: ApiResultGame[];
