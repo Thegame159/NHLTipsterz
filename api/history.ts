@@ -13,6 +13,7 @@ type StoreItem = {
 };
 
 const KEY_PREFIX = "history:";
+const INDEX_KEY = "history:index";
 
 function isDate(d: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(d);
@@ -30,15 +31,17 @@ function safeJsonParse(input: any) {
   }
 }
 
-function normalizeSideObject(obj: any) {
-  if (!obj || typeof obj !== "object") return obj;
+async function addToIndex(date: string) {
+  await redis.sadd(INDEX_KEY, date);
+}
 
-  const savedAt = Number(obj.savedAt);
+async function removeFromIndex(date: string) {
+  await redis.srem(INDEX_KEY, date);
+}
 
-  return {
-    savedAt: Number.isFinite(savedAt) ? savedAt : Date.now(),
-    suggestions: obj.suggestions ?? null,
-  };
+async function getIndex(): Promise<string[]> {
+  const dates = await redis.smembers(INDEX_KEY);
+  return Array.isArray(dates) ? dates.filter(isDate) : [];
 }
 
 export default async function handler(
@@ -46,22 +49,20 @@ export default async function handler(
   res: VercelResponse
 ) {
   try {
+
     // =========================
-    // DELETE (NOVO)
+    // DELETE
     // =========================
     if (req.method === "DELETE") {
       const date = String(req.query.date || "").trim();
-
       if (!date || !isDate(date)) {
         return res.status(400).json({ message: "Invalid date" });
       }
 
       await redis.del(keyForDate(date));
+      await removeFromIndex(date);
 
-      return res.status(200).json({
-        ok: true,
-        deleted: date,
-      });
+      return res.status(200).json({ ok: true, deleted: date });
     }
 
     // =========================
@@ -72,10 +73,6 @@ export default async function handler(
         typeof req.body === "string"
           ? safeJsonParse(req.body)
           : req.body || {};
-
-      if (!body || typeof body !== "object") {
-        return res.status(400).json({ message: "Invalid JSON body" });
-      }
 
       const date = String((body as any)?.date || "").trim();
       if (!date || !isDate(date)) {
@@ -90,13 +87,9 @@ export default async function handler(
 
       let existing: StoreItem = { date, auto: null, mine: null };
 
-      try {
-        const raw = await redis.get(keyForDate(date));
-        const parsed = safeJsonParse(raw);
-        if (parsed && typeof parsed === "object") {
-          existing = parsed as StoreItem;
-        }
-      } catch {}
+      const raw = await redis.get(keyForDate(date));
+      const parsed = safeJsonParse(raw);
+      if (parsed) existing = parsed;
 
       if (side && (body as any)?.suggestions) {
         existing[side] = {
@@ -105,18 +98,10 @@ export default async function handler(
         };
       }
 
-      if ((body as any)?.auto)
-        existing.auto = normalizeSideObject((body as any).auto);
-
-      if ((body as any)?.mine)
-        existing.mine = normalizeSideObject((body as any).mine);
-
       await redis.set(keyForDate(date), JSON.stringify(existing));
+      await addToIndex(date);
 
-      return res.status(200).json({
-        ok: true,
-        item: existing,
-      });
+      return res.status(200).json({ ok: true, item: existing });
     }
 
     // =========================
@@ -126,42 +111,26 @@ export default async function handler(
       const limitRaw = String(req.query.limit || "30");
       const limit = Math.min(parseInt(limitRaw, 10) || 30, 200);
 
-      const keys: string[] = [];
-      let cursor = "0";
+      const allDates = await getIndex();
 
-      do {
-        const result = await redis.scan(cursor, `${KEY_PREFIX}*`, 100);
-
-        if (!result) break;
-
-        cursor = result[0];
-        keys.push(...result[1]);
-      } while (cursor !== "0");
-
-      const dates = keys
-        .map((k) => k.replace(KEY_PREFIX, ""))
-        .filter(isDate)
+      const dates = allDates
         .sort((a, b) => (a < b ? 1 : -1))
         .slice(0, limit);
 
       const items: StoreItem[] = [];
 
       for (const date of dates) {
-        try {
-          const raw = await redis.get(keyForDate(date));
-          const parsed = safeJsonParse(raw);
-          if (parsed) items.push(parsed);
-        } catch {}
+        const raw = await redis.get(keyForDate(date));
+        const parsed = safeJsonParse(raw);
+        if (parsed) items.push(parsed);
       }
 
-      return res.status(200).json({
-        ok: true,
-        items,
-      });
+      return res.status(200).json({ ok: true, items });
     }
 
     res.setHeader("Allow", "GET, POST, DELETE");
     return res.status(405).json({ message: "Method not allowed" });
+
   } catch (e: any) {
     return res.status(500).json({
       message: "History fatal",
