@@ -1,63 +1,153 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { redis } from "./_redis.js";
 
 export const config = { runtime: "nodejs" };
 
-// ⚠️ Ajusta se estiveres a usar outro storage
-let HISTORY: any[] = [];
+type Suggestions = any;
+type HistorySide = "auto" | "mine";
 
-function setCors(req: VercelRequest, res: VercelResponse) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+type StoreItem = {
+  date: string;
+  auto: null | { savedAt: number; suggestions: Suggestions };
+  mine: null | { savedAt: number; suggestions: Suggestions };
+};
+
+const KEY_PREFIX = "history:";
+
+function isDate(d: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(d);
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  setCors(req, res);
+const keyForDate = (date: string) => `${KEY_PREFIX}${date}`;
 
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
+function safeJsonParse(input: any) {
+  try {
+    const s = typeof input === "string" ? input : input?.toString?.() ?? "";
+    if (!s) return null;
+    return JSON.parse(s);
+  } catch {
+    return null;
   }
+}
 
-  // GET
-  if (req.method === "GET") {
-    const limit = Number(req.query.limit || 120);
-    return res.status(200).json({
-      items: HISTORY.slice(-limit).reverse(),
+function normalizeSideObject(obj: any) {
+  if (!obj || typeof obj !== "object") return obj;
+
+  const savedAt = Number(obj.savedAt);
+
+  return {
+    savedAt: Number.isFinite(savedAt) ? savedAt : Date.now(),
+    suggestions: obj.suggestions ?? null,
+  };
+}
+
+export default async function handler(
+  req: VercelRequest,
+  res: VercelResponse
+) {
+  try {
+    // =========================
+    // POST
+    // =========================
+    if (req.method === "POST") {
+      const body =
+        typeof req.body === "string"
+          ? safeJsonParse(req.body)
+          : req.body || {};
+
+      if (!body || typeof body !== "object") {
+        return res.status(400).json({ message: "Invalid JSON body" });
+      }
+
+      const date = String((body as any)?.date || "").trim();
+      if (!date || !isDate(date)) {
+        return res.status(400).json({ message: "Invalid date" });
+      }
+
+      const side: HistorySide | undefined =
+        (body as any)?.side === "auto" ||
+        (body as any)?.side === "mine"
+          ? (body as any).side
+          : undefined;
+
+      let existing: StoreItem = { date, auto: null, mine: null };
+
+      try {
+        const raw = await redis.get(keyForDate(date));
+        const parsed = safeJsonParse(raw);
+        if (parsed && typeof parsed === "object") {
+          existing = parsed as StoreItem;
+        }
+      } catch {}
+
+      if (side && (body as any)?.suggestions) {
+        existing[side] = {
+          savedAt: Date.now(),
+          suggestions: (body as any).suggestions,
+        };
+      }
+
+      if ((body as any)?.auto)
+        existing.auto = normalizeSideObject((body as any).auto);
+
+      if ((body as any)?.mine)
+        existing.mine = normalizeSideObject((body as any).mine);
+
+      await redis.set(keyForDate(date), JSON.stringify(existing));
+
+      return res.status(200).json({
+        ok: true,
+        item: existing,
+      });
+    }
+
+    // =========================
+    // GET
+    // =========================
+    if (req.method === "GET") {
+      const limitRaw = String(req.query.limit || "30");
+      const limit = Math.min(parseInt(limitRaw, 10) || 30, 200);
+
+      const keys: string[] = [];
+      let cursor = "0";
+
+      do {
+        const result = await redis.scan(cursor, `${KEY_PREFIX}*`, 100);
+
+        if (!result) break;
+
+        cursor = result[0];
+        keys.push(...result[1]);
+      } while (cursor !== "0");
+
+      const dates = keys
+        .map((k) => k.replace(KEY_PREFIX, ""))
+        .filter(isDate)
+        .sort((a, b) => (a < b ? 1 : -1))
+        .slice(0, limit);
+
+      const items: StoreItem[] = [];
+
+      for (const date of dates) {
+        try {
+          const raw = await redis.get(keyForDate(date));
+          const parsed = safeJsonParse(raw);
+          if (parsed) items.push(parsed);
+        } catch {}
+      }
+
+      return res.status(200).json({
+        ok: true,
+        items,
+      });
+    }
+
+    res.setHeader("Allow", "GET, POST");
+    return res.status(405).json({ message: "Method not allowed" });
+  } catch (e: any) {
+    return res.status(500).json({
+      message: "History fatal",
+      details: String(e?.message || e),
     });
   }
-
-  // POST (guardar snapshot)
-  if (req.method === "POST") {
-    const { date, side, suggestions } = req.body || {};
-    if (!date || !side) {
-      return res.status(400).json({ message: "date e side obrigatórios" });
-    }
-
-    let existing = HISTORY.find((x) => x.date === date);
-    if (!existing) {
-      existing = { date, auto: null, mine: null };
-      HISTORY.push(existing);
-    }
-
-    existing[side] = {
-      savedAt: Date.now(),
-      suggestions,
-    };
-
-    return res.status(200).json({ ok: true });
-  }
-
-  // ✅ DELETE POR DATA
-  if (req.method === "DELETE") {
-    const date = String(req.query.date || "").trim();
-    if (!date) {
-      return res.status(400).json({ message: "date obrigatório" });
-    }
-
-    HISTORY = HISTORY.filter((x) => x.date !== date);
-
-    return res.status(200).json({ ok: true });
-  }
-
-  return res.status(405).json({ message: "Método não permitido" });
 }
