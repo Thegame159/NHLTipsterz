@@ -591,36 +591,41 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
   };
 
   const savePicks = async () => {
-    try {
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(storageKey(selectedDate), JSON.stringify(picks));
-      }
-    } catch {}
-
-    try {
-      const res = await fetch("/api/history", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          date: selectedDate,
-          side: "mine",
-          suggestions: picks,
-        }),
-      });
-
-      const data = await res.json().catch(() => null);
-      if (!res.ok) {
-        console.error("SAVE /api/history failed:", res.status, data);
-        alert("Falhou a guardar no servidor (ficou guardado no browser).");
-        return;
-      }
-
-      alert("Picks guardadas!");
-    } catch (err) {
-      console.error("Failed to save picks:", err);
-      alert("Falhou a guardar no servidor (ficou guardado no browser).");
+  try {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(storageKey(selectedDate), JSON.stringify(picks));
     }
-  };
+  } catch {}
+
+  try {
+    const res = await fetch("/api/history", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        date: selectedDate,
+        side: "mine",
+        suggestions: picks,
+      }),
+    });
+
+    const data = await res.json().catch(() => null);
+
+    if (!res.ok) {
+      console.error("SAVE /api/history failed:", res.status, data);
+      alert("Falhou a guardar no servidor (ficou guardado no browser).");
+      return;
+    }
+
+    alert("Picks guardadas!");
+
+    // 🔥 ADICIONA ESTA LINHA
+    window.dispatchEvent(new Event("history-updated"));
+
+  } catch (err) {
+    console.error("Failed to save picks:", err);
+    alert("Falhou a guardar no servidor (ficou guardado no browser).");
+  }
+};
 
   return (
     <div className="space-y-8 pb-24">
