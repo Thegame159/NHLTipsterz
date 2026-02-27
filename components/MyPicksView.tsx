@@ -619,7 +619,7 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
     alert("Picks guardadas!");
 
     // 🔥 ADICIONA ESTA LINHA
-    window.dispatchEvent(new Event("history-updated"));
+    window.dispatchEvent(new CustomEvent("history-updated"));
 
   } catch (err) {
     console.error("Failed to save picks:", err);
