@@ -570,7 +570,6 @@ console.log(
   }))
 );
 
-if (!scheduleGames.length) {
     if (!scheduleGames.length) {
       return res.status(200).json({
         predictions: [],
