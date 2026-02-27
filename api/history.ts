@@ -108,21 +108,28 @@ if (req.method === "DELETE") {
 // =========================
 // GET
 // =========================
-let cursor = "0";
-const keys: string[] = [];
+// =========================
+// GET
+// =========================
+if (req.method === "GET") {
+  const limitRaw = String(req.query.limit || "30");
+  const limit = Math.min(parseInt(limitRaw, 10) || 30, 200);
 
-do {
-  const result = await redis.scan(cursor, `${KEY_PREFIX}*`, 100);
+  let cursor = "0";
+  const keys: string[] = [];
 
-  if (!result) break;
+  do {
+    const result = await redis.scan(cursor, `${KEY_PREFIX}*`, 100);
 
-  const nextCursor = result[0];
-  const foundKeys = Array.isArray(result[1]) ? result[1] : [];
+    if (!result) break;
 
-  keys.push(...foundKeys);
+    const nextCursor = result[0];
+    const foundKeys = Array.isArray(result[1]) ? result[1] : [];
 
-  cursor = nextCursor;
-} while (cursor !== "0");
+    keys.push(...foundKeys);
+    cursor = nextCursor;
+
+  } while (cursor !== "0");
 
   const dates = keys
     .map((k) => k.replace(KEY_PREFIX, ""))
@@ -145,7 +152,6 @@ do {
     items,
   });
 }
-
     res.setHeader("Allow", "GET, POST, DELETE");
     return res.status(405).json({ message: "Method not allowed" });
 
