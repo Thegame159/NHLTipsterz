@@ -558,13 +558,12 @@ useEffect(() => {
   };
 }, []);
 
-  const dates = useMemo(() => historyItems.map((x) => x.date), [historyItems]);
-
-  useEffect(() => {
-    if (!dates.length) {
-      setReports([]);
-      return;
-    }
+  
+useEffect(() => {
+  if (!historyItems.length) {
+    setReports([]);
+    return;
+  }
 
     let cancelled = false;
 
@@ -581,7 +580,8 @@ useEffect(() => {
 
       const next: any[] = [];
 
-      for (const date of dates) {
+      for (const item of historyItems) {
+  const date = item.date;
         const history = historyItems.find((x) => x.date === date) || null;
         const autoSug: Suggestions | null = history?.auto?.suggestions ?? null;
         const mineSug: Suggestions | null = history?.mine?.suggestions ?? null;
@@ -630,7 +630,7 @@ useEffect(() => {
     return () => {
       cancelled = true;
     };
-  }, [dates, historyItems]);
+  }, [historyItems]);
 
   const totals = useMemo(() => {
     let aC = 0,
