@@ -134,7 +134,7 @@ type ScheduleGame = {
 };
 
 async function fetchNhlScheduleGames(date: string): Promise<ScheduleGame[]> {
-  const url = `https://api-web.nhle.com/v1/schedule/${date}`;
+  const url = `https://api-web.nhle.com/v1/score/${date}`;
   const res = await fetchWithTimeout(url, undefined, 8000);
 
   if (!res.ok) return [];
@@ -142,23 +142,17 @@ async function fetchNhlScheduleGames(date: string): Promise<ScheduleGame[]> {
   const data = await res.json();
   const games: ScheduleGame[] = [];
 
-  if (!data?.gameWeek?.length) return games;
+  if (!Array.isArray(data?.games)) return games;
 
-  for (const day of data.gameWeek) {
-    if (!Array.isArray(day?.games)) continue;
+  for (const g of data.games) {
+    if (!g?.id) continue;
 
-    for (const g of day.games) {
-      if (!g?.id || !g?.startTimeUTC) continue;
-
-      // 🔥 FILTRO REAL POR DATA EM NEW YORK (ET)
-      const gameDateET = new Date(g.startTimeUTC).toLocaleDateString("en-CA", {
-        timeZone: "America/New_York",
-      });
-
-      if (gameDateET === date) {
-        games.push(g);
-      }
-    }
+    games.push({
+      id: g.id,
+      startTimeUTC: g.startTimeUTC,
+      homeTeam: { abbrev: g.homeTeam?.abbrev },
+      awayTeam: { abbrev: g.awayTeam?.abbrev },
+    });
   }
 
   return games;
