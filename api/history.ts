@@ -117,16 +117,15 @@ if (req.method === "DELETE") {
 
       return res.status(200).json({ ok: true, item: existing });
     }
-
- // =========================
+// =========================
 // GET
 // =========================
 if (req.method === "GET") {
   const limitRaw = String(req.query.limit || "30");
   const limit = Math.min(parseInt(limitRaw, 10) || 30, 200);
 
-  const keys: string[] = [];
   let cursor = "0";
+  const keys: string[] = [];
 
   do {
     const result = await redis.scan(cursor, {
@@ -134,8 +133,10 @@ if (req.method === "GET") {
       count: 100,
     });
 
-    cursor = result[0];
-    keys.push(...result[1]);
+    if (!result) break;
+
+    cursor = result.cursor;
+    keys.push(...(result.keys || []));
   } while (cursor !== "0");
 
   const dates = keys
