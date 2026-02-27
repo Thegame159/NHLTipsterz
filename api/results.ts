@@ -103,10 +103,12 @@ function deriveResultFromBoxscore(
   const finalHome = safeNum(box?.homeTeam?.score ?? box?.summary?.home?.score);
 
   // Períodos
-  const byPeriod =
-    Array.isArray(box?.linescore?.byPeriod) ? box.linescore.byPeriod :
-    Array.isArray(box?.periods) ? box.periods :
-    [];
+const byPeriod =
+  Array.isArray(box?.linescore?.periods)
+    ? box.linescore.periods
+    : Array.isArray(box?.periods)
+    ? box.periods
+    : [];
 
   const p1 = byPeriod?.[0] ?? {};
   const p2 = byPeriod?.[1] ?? {};
