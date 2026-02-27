@@ -50,7 +50,7 @@ export default async function handler(
 ) {
   try {
 
-  // =========================
+// =========================
 // DELETE
 // =========================
 if (req.method === "DELETE") {
@@ -61,7 +61,12 @@ if (req.method === "DELETE") {
   }
 
   try {
+    // apagar histórico principal
     await redis.del(keyForDate(date));
+
+    // apagar validações manuais
+    await redis.del(`nhl:manual:${date}`);
+
   } catch (e: any) {
     return res.status(500).json({
       message: "History fatal",
