@@ -142,11 +142,16 @@ const App: React.FC = () => {
 
       // ✅ Guarda snapshot AUTO no histórico global (Redis)
 try {
-  await fetch("/api/history", {
+try {
+  const res = await fetch("/api/history", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ date, side: "auto", suggestions: analysis.suggestions }),
   });
+
+  if (res.ok) {
+    window.dispatchEvent(new Event("history-updated"));
+  }
 } catch {
   // ignore
 }
