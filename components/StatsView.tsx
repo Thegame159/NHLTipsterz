@@ -523,23 +523,40 @@ const StatsView: React.FC = () => {
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
   const [manualByDate, setManualByDate] = useState<Record<string, ManualStore | null>>({});
 
-  // carrega histórico global
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const r = await fetch("/api/history?limit=120");
-      if (!r.ok) {
-        if (!cancelled) setHistoryItems([]);
-        return;
-      }
-      const data = await r.json().catch(() => null);
-      const items: HistoryItem[] = Array.isArray(data?.items) ? data.items : [];
-      if (!cancelled) setHistoryItems(items);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+ // carrega histórico global
+const loadHistory = async () => {
+  try {
+    const r = await fetch("/api/history?limit=120");
+
+    if (!r.ok) {
+      setHistoryItems([]);
+      return;
+    }
+
+    const data = await r.json().catch(() => null);
+    const items: HistoryItem[] = Array.isArray(data?.items)
+      ? data.items
+      : [];
+
+    setHistoryItems(items);
+  } catch {
+    setHistoryItems([]);
+  }
+};
+
+useEffect(() => {
+  loadHistory();
+
+  const onHistoryUpdated = () => {
+    loadHistory();
+  };
+
+  window.addEventListener("history-updated", onHistoryUpdated);
+
+  return () => {
+    window.removeEventListener("history-updated", onHistoryUpdated);
+  };
+}, []);
 
   const dates = useMemo(() => historyItems.map((x) => x.date), [historyItems]);
 
