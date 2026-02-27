@@ -46,19 +46,16 @@ type GameResult = {
   homeAbbr: string;
   status: "FINAL" | "LIVE" | "SCHEDULED" | "UNKNOWN";
 
-  // Totais finais (inclui OT/SO se houver)
   finalAway: number;
   finalHome: number;
 
-  // Totais até ao fim do 3º período (tempo regulamentar)
   regAway: number;
   regHome: number;
 
-  // 1º período
   p1Away: number;
   p1Home: number;
 
-  winnerAbbr: string | null; // vencedor final (incl OT/SO)
+  winnerAbbr: string | null;
 };
 
 function safeNum(x: any): number {
@@ -77,40 +74,55 @@ async function fetchBoxscore(gameId: number): Promise<any | null> {
   return res.json().catch(() => null);
 }
 
-function deriveResultFromBoxscore(gameId: number, awayAbbr: string, homeAbbr: string, box: any): GameResult {
-  // status
-  const gameState = String(box?.gameState || box?.gameStateId || "").toUpperCase();
-  let status: GameResult["status"] = "UNKNOWN";
-  if (["FINAL", "OFFICIAL", "OVER"].some((k) => gameState.includes(k))) status = "FINAL";
-  else if (["LIVE", "INPROGRESS", "IN PROGRESS"].some((k) => gameState.includes(k))) status = "LIVE";
-  else if (["FUT", "PRE", "SCHEDULED"].some((k) => gameState.includes(k))) status = "SCHEDULED";
+function deriveResultFromBoxscore(
+  gameId: number,
+  awayAbbr: string,
+  homeAbbr: string,
+  box: any
+): GameResult {
 
-  // Totais finais (boxscore costuma ter awayTeam.score / homeTeam.score)
+  // ✅ STATUS CORRIGIDO
+  const rawState = String(box?.gameState ?? "").toUpperCase();
+
+  let status: GameResult["status"] = "UNKNOWN";
+
+  if (rawState === "OFF") {
+    status = "FINAL";
+  } else if (rawState === "LIVE") {
+    status = "LIVE";
+  } else if (rawState === "FUT") {
+    status = "SCHEDULED";
+  } else if (["FINAL", "OFFICIAL", "OVER"].some((k) => rawState.includes(k))) {
+    status = "FINAL";
+  } else if (["INPROGRESS", "IN PROGRESS"].some((k) => rawState.includes(k))) {
+    status = "LIVE";
+  }
+
+  // Totais finais
   const finalAway = safeNum(box?.awayTeam?.score ?? box?.summary?.away?.score);
   const finalHome = safeNum(box?.homeTeam?.score ?? box?.summary?.home?.score);
 
-  // Por períodos: tenta vários formatos
-  // 1) box.linescore.byPeriod (com awayGoals/homeGoals)
-  // 2) box.periods (array)
+  // Períodos
   const byPeriod =
     Array.isArray(box?.linescore?.byPeriod) ? box.linescore.byPeriod :
     Array.isArray(box?.periods) ? box.periods :
     [];
 
   const p1 = byPeriod?.[0] ?? {};
+  const p2 = byPeriod?.[1] ?? {};
+  const p3 = byPeriod?.[2] ?? {};
+
   const p1Away = safeNum(p1?.awayGoals ?? p1?.awayScore ?? p1?.away ?? p1?.awayTeam?.goals);
   const p1Home = safeNum(p1?.homeGoals ?? p1?.homeScore ?? p1?.home ?? p1?.homeTeam?.goals);
 
-  // reg totals: soma períodos 1..3 se existirem
-  const p2 = byPeriod?.[1] ?? {};
-  const p3 = byPeriod?.[2] ?? {};
   const p2Away = safeNum(p2?.awayGoals ?? p2?.awayScore ?? p2?.away ?? p2?.awayTeam?.goals);
   const p2Home = safeNum(p2?.homeGoals ?? p2?.homeScore ?? p2?.home ?? p2?.homeTeam?.goals);
+
   const p3Away = safeNum(p3?.awayGoals ?? p3?.awayScore ?? p3?.away ?? p3?.awayTeam?.goals);
   const p3Home = safeNum(p3?.homeGoals ?? p3?.homeScore ?? p3?.home ?? p3?.homeTeam?.goals);
 
   const has3Periods = byPeriod.length >= 3;
-  const regAway = has3Periods ? (p1Away + p2Away + p3Away) : finalAway; // fallback
+  const regAway = has3Periods ? (p1Away + p2Away + p3Away) : finalAway;
   const regHome = has3Periods ? (p1Home + p2Home + p3Home) : finalHome;
 
   let winnerAbbr: string | null = null;
@@ -150,7 +162,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ date, games: [], meta: { note: "Sem jogos nesta data." } });
     }
 
-    // fetch boxscores (paralelo com allSettled)
     const settled = await Promise.allSettled(
       scheduleGames.map(async (g) => {
         const gameId = g.id;
@@ -182,7 +193,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .filter((s) => s.status === "fulfilled")
       .map((s: any) => s.value);
 
-    // Também criamos lookup por "AWAY VS HOME"
     const byMatchup: Record<string, GameResult> = {};
     for (const r of results) {
       const key = `${r.awayAbbr} VS ${r.homeAbbr}`;
