@@ -47,6 +47,24 @@ export default async function handler(
 ) {
   try {
     // =========================
+    // DELETE (NOVO)
+    // =========================
+    if (req.method === "DELETE") {
+      const date = String(req.query.date || "").trim();
+
+      if (!date || !isDate(date)) {
+        return res.status(400).json({ message: "Invalid date" });
+      }
+
+      await redis.del(keyForDate(date));
+
+      return res.status(200).json({
+        ok: true,
+        deleted: date,
+      });
+    }
+
+    // =========================
     // POST
     // =========================
     if (req.method === "POST") {
@@ -142,7 +160,7 @@ export default async function handler(
       });
     }
 
-    res.setHeader("Allow", "GET, POST");
+    res.setHeader("Allow", "GET, POST, DELETE");
     return res.status(405).json({ message: "Method not allowed" });
   } catch (e: any) {
     return res.status(500).json({
