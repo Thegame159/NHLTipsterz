@@ -108,22 +108,21 @@ if (req.method === "DELETE") {
 // =========================
 // GET
 // =========================
-if (req.method === "GET") {
-  const limitRaw = String(req.query.limit || "30");
-  const limit = Math.min(parseInt(limitRaw, 10) || 30, 200);
+let cursor = "0";
+const keys: string[] = [];
 
-  let cursor = "0";
-  const keys: string[] = [];
-
-  do {
+do {
   const result = await redis.scan(cursor, `${KEY_PREFIX}*`, 100);
-    
 
-    if (!result) break;
+  if (!result) break;
 
-    cursor = result.cursor;
-    keys.push(...(result.keys || []));
-  } while (cursor !== "0");
+  const nextCursor = result[0];
+  const foundKeys = Array.isArray(result[1]) ? result[1] : [];
+
+  keys.push(...foundKeys);
+
+  cursor = nextCursor;
+} while (cursor !== "0");
 
   const dates = keys
     .map((k) => k.replace(KEY_PREFIX, ""))
