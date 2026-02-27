@@ -116,10 +116,8 @@ if (req.method === "GET") {
   const keys: string[] = [];
 
   do {
-    const result = await redis.scan(cursor, {
-      match: `${KEY_PREFIX}*`,
-      count: 100,
-    });
+  const result = await redis.scan(cursor, `${KEY_PREFIX}*`, 100);
+    
 
     if (!result) break;
 
