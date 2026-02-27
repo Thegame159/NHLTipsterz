@@ -546,7 +546,7 @@ const loadHistory = async () => {
 
 useEffect(() => {
   loadHistory();
-}, [openDate]);
+}, []);
 
   const dates = useMemo(() => historyItems.map((x) => x.date), [historyItems]);
 
