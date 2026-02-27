@@ -50,21 +50,30 @@ export default async function handler(
 ) {
   try {
 
-    // =========================
-    // DELETE
-    // =========================
-    if (req.method === "DELETE") {
-      const date = String(req.query.date || "").trim();
-      if (!date || !isDate(date)) {
-        return res.status(400).json({ message: "Invalid date" });
-      }
+  // =========================
+// DELETE
+// =========================
+if (req.method === "DELETE") {
+  const date = String(req.query.date || "").trim();
 
-      await redis.del(keyForDate(date));
-      await removeFromIndex(date);
+  if (!date || !isDate(date)) {
+    return res.status(400).json({ message: "Invalid date" });
+  }
 
-      return res.status(200).json({ ok: true, deleted: date });
-    }
+  try {
+    await redis.del(keyForDate(date));
+  } catch (e: any) {
+    return res.status(500).json({
+      message: "History fatal",
+      details: String(e?.message || e),
+    });
+  }
 
+  return res.status(200).json({
+    ok: true,
+    deleted: date,
+  });
+}
     // =========================
     // POST
     // =========================
