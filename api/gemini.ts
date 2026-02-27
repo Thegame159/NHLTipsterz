@@ -133,27 +133,35 @@ type ScheduleGame = {
   awayTeam?: { abbrev?: string; placeName?: { default?: string } };
 };
 
-const games: ScheduleGame[] = [];
-if (!data?.gameWeek?.length) return games;
+async function fetchNhlScheduleGames(date: string): Promise<ScheduleGame[]> {
+  const url = `https://api-web.nhle.com/v1/schedule/${date}`;
+  const res = await fetchWithTimeout(url, undefined, 8000);
 
-for (const day of data.gameWeek) {
-  if (!Array.isArray(day?.games)) continue;
+  if (!res.ok) return [];
 
-  for (const g of day.games) {
-    if (!g?.id || !g?.startTimeUTC) continue;
+  const data = await res.json();
+  const games: ScheduleGame[] = [];
 
-    // 🔥 FILTRO REAL POR DATA EM NEW YORK (ET)
-    const gameDateET = new Date(g.startTimeUTC).toLocaleDateString("en-CA", {
-      timeZone: "America/New_York",
-    });
+  if (!data?.gameWeek?.length) return games;
 
-    if (gameDateET === date) {
-      games.push(g);
+  for (const day of data.gameWeek) {
+    if (!Array.isArray(day?.games)) continue;
+
+    for (const g of day.games) {
+      if (!g?.id || !g?.startTimeUTC) continue;
+
+      // 🔥 FILTRO REAL POR DATA EM NEW YORK (ET)
+      const gameDateET = new Date(g.startTimeUTC).toLocaleDateString("en-CA", {
+        timeZone: "America/New_York",
+      });
+
+      if (gameDateET === date) {
+        games.push(g);
+      }
     }
   }
-}
 
-return games;
+  return games;
 }
 
 // ---------------- TEAM NAME MAP (para casar ESPN->ABBR) ----------------
