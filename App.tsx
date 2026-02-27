@@ -140,13 +140,16 @@ const App: React.FC = () => {
       setData(analysis);
       setLoadedDate(date);
 
-      // ✅ Guarda snapshot AUTO no histórico global (Redis)
-try {
+// ✅ Guarda snapshot AUTO no histórico global (Redis)
 try {
   const res = await fetch("/api/history", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ date, side: "auto", suggestions: analysis.suggestions }),
+    body: JSON.stringify({
+      date,
+      side: "auto",
+      suggestions: analysis.suggestions,
+    }),
   });
 
   if (res.ok) {
