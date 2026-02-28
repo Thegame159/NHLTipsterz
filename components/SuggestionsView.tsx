@@ -230,8 +230,10 @@ const cleanSuggestionLabel = (text: string) => {
 };
 
 const SuggestionItem: React.FC<{ text: string; badgeColor: string; index: number }> = ({ text, badgeColor, index }) => {
-  const { core, perc } = cleanSuggestionLabel(text);
-  const teamMatches = parseTeamsFromText(core);
+ const { core, perc } = cleanSuggestionLabel(text);
+
+// ⚠️ Extrair equipas do texto original (ANTES da conversão)
+const teamMatches = parseTeamsFromText(text);
 
   return (
     <div className="flex items-center gap-3 bg-slate-900/60 p-3 rounded-xl border border-slate-700/50 group hover:border-blue-500/30 transition-colors">
