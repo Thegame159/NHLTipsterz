@@ -471,7 +471,7 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
       const away = String((g as any).awayTeamAbbr || "").trim().toUpperCase();
       const home = String((g as any).homeTeamAbbr || "").trim().toUpperCase();
       if (!away || !home) continue;
-      const txt = normalizeGameText(`${away} VS ${home}`);
+      const txt = normalizeGameText(`${away} @ ${home}`);
       if (txt.includes(" VS ")) set.add(txt);
     }
     return Array.from(set).sort();
