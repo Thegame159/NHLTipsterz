@@ -50,6 +50,20 @@ const getLogoUrl = (abbr: string) => {
   return `https://a.espncdn.com/i/teamlogos/nhl/500/${code}.png`;
 };
 
+/** 🔄 Converte formato NHL (AWAY @ HOME) para formato PT (HOME vs AWAY) */
+const formatGameToPT = (text: string) => {
+  if (!text) return text;
+
+  const cleaned = text.trim();
+
+  if (cleaned.includes(" @ ")) {
+    const [away, home] = cleaned.split(" @ ").map((t) => t.trim());
+    return `${home} vs ${away}`;
+  }
+
+  return cleaned;
+};
+
 /** --- mapping de nomes -> abreviações --- */
 const TEAM_NAME_TO_ABBR: Record<string, string> = {
   // Atlantic
@@ -127,7 +141,7 @@ const TEAM_NAME_TO_ABBR: Record<string, string> = {
   Vegas: "VGK",
   "Vegas Golden Knights": "VGK",
 
-  // Utah / Arizona (caso uses)
+  // Utah / Arizona
   Utah: "UTA",
   "Utah Hockey Club": "UTA",
   Arizona: "ARI",
@@ -142,9 +156,10 @@ const normName = (s: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
-const TEAM_KEYS_NORMALIZED: Array<{ key: string; keyNorm: string; abbr: string }> = Object.entries(TEAM_NAME_TO_ABBR)
-  .map(([key, abbr]) => ({ key, keyNorm: normName(key), abbr }))
-  .sort((a, b) => b.keyNorm.length - a.keyNorm.length);
+const TEAM_KEYS_NORMALIZED: Array<{ key: string; keyNorm: string; abbr: string }> =
+  Object.entries(TEAM_NAME_TO_ABBR)
+    .map(([key, abbr]) => ({ key, keyNorm: normName(key), abbr }))
+    .sort((a, b) => b.keyNorm.length - a.keyNorm.length);
 
 const findSingleTeamAbbrFromText = (text: string): string | null => {
   const t = normName(text.replace(/\(\d+%\)/g, ""));
@@ -189,28 +204,24 @@ const parseTeamsFromText = (text: string): string[] => {
   return single ? [single] : [];
 };
 
-/** ✅ NOVO: remove IDs tipo 2025020917 no início e desfaz parênteses exteriores */
+/** remove IDs e aplica conversão PT */
 const cleanSuggestionLabel = (text: string) => {
   const raw = String(text || "").trim();
 
-  // mantém percentagem (ex: "(75%)" ou "75%")
   const percMatch = raw.match(/\d+%/);
   const perc = percMatch ? percMatch[0] : "";
 
-  // remove percentagens para limpar o core
   let core = raw.replace(/\(\s*\d+%\s*\)/g, "").trim();
-
-  // remove ID inicial (ex: "2025020917 " ou "2025020917-")
   core = core.replace(/^\d+\s*[-–—:]?\s*/, "").trim();
 
-  // se estiver como "(EDM)" ou "(TBL vs TOR)" -> "EDM" / "TBL vs TOR"
   const m = core.match(/^\((.*)\)$/);
   if (m) core = m[1].trim();
 
-  // normaliza espaços
   core = core.replace(/\s+/g, " ").trim();
 
-  // volta a meter percentagem se existia
+  // 🔄 Inversão formato americano → PT
+  core = formatGameToPT(core);
+
   return { core, perc };
 };
 
