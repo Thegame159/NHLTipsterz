@@ -51,18 +51,7 @@ const getLogoUrl = (abbr: string) => {
 };
 
 /** 🔄 Converte formato NHL (AWAY @ HOME) para formato PT (HOME vs AWAY) */
-const formatGameToPT = (text: string) => {
-  if (!text) return text;
 
-  const cleaned = text.trim();
-
-  if (cleaned.includes(" @ ")) {
-    const [away, home] = cleaned.split(" @ ").map((t) => t.trim());
-    return `${home} vs ${away}`;
-  }
-
-  return cleaned;
-};
 
 /** --- mapping de nomes -> abreviações --- */
 const TEAM_NAME_TO_ABBR: Record<string, string> = {
@@ -172,36 +161,28 @@ const findSingleTeamAbbrFromText = (text: string): string | null => {
 };
 
 const parseTeamsFromText = (text: string): string[] => {
-  const raw = (text || "").trim();
+  if (!text) return [];
 
-  const abbrMatches = raw.match(/\b[A-Z]{2,4}\b/g) || [];
-  const cleanedAbbr = abbrMatches.map((s) => s.toUpperCase()).filter((s) => s !== "OT" && s !== "VS" && s !== "V");
-  if (cleanedAbbr.length >= 2) return cleanedAbbr.slice(0, 2);
-  if (cleanedAbbr.length === 1) return cleanedAbbr;
+  const upper = text.toUpperCase().trim();
 
-  const normalized = raw.replace(/\s+/g, " ").replace(/\(\d+%\)/g, "").trim();
-  const split = normalized.includes(" vs ")
-    ? normalized.split(" vs ")
-    : normalized.includes(" v ")
-      ? normalized.split(" v ")
-      : normalized.includes(" @ ")
-        ? normalized.split(" @ ")
-        : null;
-
-  if (split && split.length >= 2) {
-    const aName = split[0].trim();
-    const bName = split[1].trim();
-    const a = findSingleTeamAbbrFromText(aName);
-    const b = findSingleTeamAbbrFromText(bName);
-
-    const res: string[] = [];
-    if (a) res.push(a);
-    if (b) res.push(b);
-    if (res.length) return res;
+  // 🔄 Se vier formato NHL AWAY @ HOME → inverter
+  if (upper.includes(" @ ")) {
+    const [away, home] = upper.split(" @ ").map(s => s.trim());
+    return [home, away];
   }
 
-  const single = findSingleTeamAbbrFromText(normalized);
-  return single ? [single] : [];
+  // 🔄 Se vier formato VS
+  if (upper.includes(" VS ")) {
+    const [home, away] = upper.split(" VS ").map(s => s.trim());
+    return [home, away];
+  }
+
+  const abbrMatches = upper.match(/\b[A-Z]{2,4}\b/g) || [];
+  const cleaned = abbrMatches.filter(
+    (s) => s !== "OT" && s !== "VS" && s !== "V"
+  );
+
+  return cleaned.slice(0, 2);
 };
 
 /** remove IDs e aplica conversão PT */
@@ -220,7 +201,7 @@ const cleanSuggestionLabel = (text: string) => {
   core = core.replace(/\s+/g, " ").trim();
 
   // 🔄 Inversão formato americano → PT
-  core = formatGameToPT(core);
+ 
 
   return { core, perc };
 };
