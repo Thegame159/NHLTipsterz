@@ -17,9 +17,27 @@ const getLogoUrl = (abbr: string) => {
     'FLA': 'fla','MIN': 'min','OTT': 'ott','PHI': 'phi',
     'PIT': 'pit','SEA': 'sea','STL': 'stl','VAN': 'van',
   };
+
   const normalizedAbbr = abbr?.toUpperCase();
   const code = map[normalizedAbbr] || normalizedAbbr?.toLowerCase();
   return `https://a.espncdn.com/i/teamlogos/nhl/500/${code}.png`;
+};
+
+/* 🔥 FILTRO MADRUGADA 23:00 → 05:00 */
+const isMadrugadaGame = (dateTime: string) => {
+  if (!dateTime) return false;
+
+  const d = new Date(dateTime);
+  const hour = d.getHours();
+  const minutes = d.getMinutes();
+
+  const total = hour * 60 + minutes;
+
+  const start = 23 * 60; // 23:00
+  const end = 5 * 60;    // 05:00
+
+  // intervalo atravessa meia-noite
+  return total >= start || total <= end;
 };
 
 const ProbabilityCell: React.FC<{ value: number }> = ({ value }) => {
@@ -44,7 +62,7 @@ const ProbabilityCell: React.FC<{ value: number }> = ({ value }) => {
         <div 
           className={`h-full ${getBarColor(value)} transition-all duration-1000`} 
           style={{ width: `${value}%` }}
-        ></div>
+        />
       </div>
     </div>
   );
@@ -62,7 +80,6 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
         onClick={() => setIsExpanded(!isExpanded)}
         className="group border-b border-slate-800/50 hover:bg-blue-500/5 transition-colors cursor-pointer"
       >
-        {/* ================= JOGO ================= */}
         <td className="py-6 pl-4">
           <div className="flex flex-col">
             <span className="text-[10px] font-bold text-slate-500 mb-3 flex items-center gap-1.5">
@@ -71,10 +88,10 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
                 ? new Date(game.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
                 : '00:00'}
             </span>
-            
+
             <div className="space-y-4">
 
-              {/* CASA EM CIMA */}
+              {/* CASA */}
               <div className="flex items-center gap-3">
                 <img 
                   src={getLogoUrl(game.homeTeamAbbr)} 
@@ -92,12 +109,11 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
                 </div>
               </div>
 
-              {/* VS */}
               <div className="pl-2.5">
                 <span className="text-slate-600 font-bold text-xs">vs</span>
               </div>
 
-              {/* FORA EM BAIXO */}
+              {/* FORA */}
               <div className="flex items-center gap-3">
                 <img 
                   src={getLogoUrl(game.awayTeamAbbr)} 
@@ -119,7 +135,6 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
           </div>
         </td>
 
-        {/* ================= PROB VITÓRIA ================= */}
         <td className="text-right py-6 pr-8">
           <div className="flex flex-col items-end gap-1">
             <div className="flex gap-4 text-[10px] font-bold text-slate-500 uppercase mb-2">
@@ -144,12 +159,11 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
                   isHomeFav ? 'bg-amber-500' : 'bg-emerald-500'
                 }`} 
                 style={{ width: `${maxProb}%` }}
-              ></div>
+              />
             </div>
           </div>
         </td>
 
-        {/* RESTO DAS COLUNAS */}
         <td className="py-6 text-center"><ProbabilityCell value={game.drawTRProb} /></td>
         <td className="py-6 text-center"><ProbabilityCell value={game.over15P1Prob} /></td>
         <td className="py-6 text-center"><ProbabilityCell value={game.bttsP1Prob} /></td>
@@ -171,6 +185,10 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
 };
 
 const GameTable: React.FC<Props> = ({ predictions }) => {
+  const madrugadaGames = predictions.filter(game =>
+    isMadrugadaGame(game.dateTime)
+  );
+
   return (
     <div className="w-full overflow-x-auto rounded-2xl border border-slate-800 bg-slate-800/20 shadow-2xl backdrop-blur-sm">
       <table className="w-full text-left border-collapse min-w-[1000px]">
@@ -185,7 +203,7 @@ const GameTable: React.FC<Props> = ({ predictions }) => {
           </tr>
         </thead>
         <tbody>
-          {predictions.map((game, idx) => (
+          {madrugadaGames.map((game, idx) => (
             <GameRow key={game.id || idx} game={game} />
           ))}
         </tbody>
