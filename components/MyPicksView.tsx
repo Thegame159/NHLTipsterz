@@ -63,16 +63,26 @@ const getLogoUrl = (abbr: string) => {
   return `https://a.espncdn.com/i/teamlogos/nhl/500/${code}.png`;
 };
 
-const normalizeGameText = (s: string) =>
-  (s || "")
+const normalizeGameText = (s: string) => {
+  let str = (s || "")
     .trim()
     .toUpperCase()
     .replace(/\(\s*\d+(\.\d+)?%\s*\)/g, "")
-    .replace(/\s+VS\s+/g, " VS ")
-    .replace(/\s+@\s+/g, " VS ")
-    .replace(/\s+V\s+/g, " VS ")
     .replace(/\s+/g, " ")
     .trim();
+
+  // 🔄 inverter formato americano AWAY @ HOME
+  if (str.includes(" @ ")) {
+    const [away, home] = str.split(" @ ").map((t) => t.trim());
+    str = `${home} VS ${away}`;
+  }
+
+  // normalizar VS
+  str = str.replace(/\s+VS\s+/g, " VS ");
+  str = str.replace(/\s+V\s+/g, " VS ");
+
+  return str;
+};
 
 const parseTeamsFromText = (text: string): string[] => {
   const raw = (text || "").trim();
