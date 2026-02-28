@@ -190,22 +190,30 @@ type ManualStore = {
 };
 
 async function fetchManual(date: string): Promise<ManualStore | null> {
-  const r = await fetch(`/api/manual?date=${date}`);
+  const r = await fetch(`/api/manual?date=${date}&t=${Date.now()}`, {
+    cache: "no-store",
+  });
+
   if (!r.ok) return null;
+
   const data = await r.json().catch(() => null);
   return data?.store ?? null;
 }
 
 async function saveManual(date: string, store: ManualStore) {
-  await fetch(`/api/manual?date=${date}`, {
+  await fetch(`/api/manual?date=${date}&t=${Date.now()}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    cache: "no-store",
     body: JSON.stringify({ store }),
   });
 }
 
 async function clearManual(date: string) {
-  await fetch(`/api/manual?date=${date}`, { method: "DELETE" });
+  await fetch(`/api/manual?date=${date}&t=${Date.now()}`, {
+    method: "DELETE",
+    cache: "no-store",
+  });
 }
 
 function getManualValue(store: ManualStore | null, side: ManualSide, market: string, label: string): ManualValue | undefined {
@@ -526,7 +534,9 @@ const StatsView: React.FC = () => {
  // carrega histórico global
 const loadHistory = async () => {
   try {
-    const r = await fetch("/api/history?limit=120");
+   const r = await fetch(`/api/history?limit=120&t=${Date.now()}`, {
+  cache: "no-store",
+});
 
     if (!r.ok) {
       setHistoryItems([]);
@@ -577,7 +587,12 @@ useEffect(() => {
         const mineSug: Suggestions | null = history?.mine?.suggestions ?? null;
 
         try {
-          const [rRes, manualStore] = await Promise.all([fetch(`/api/results?date=${date}`), fetchManual(date)]);
+        const [rRes, manualStore] = await Promise.all([
+  fetch(`/api/results?date=${date}&t=${Date.now()}`, {
+    cache: "no-store",
+  }),
+  fetchManual(date),
+]);
 
           if (!rRes.ok) throw new Error(`results HTTP ${rRes.status}`);
           const results = (await rRes.json()) as ApiResultsResponse;
@@ -713,9 +728,10 @@ useEffect(() => {
   if (!ok) return;
 
   try {
-    const r = await fetch(`/api/history?date=${date}`, {
-      method: "DELETE",
-    });
+   const r = await fetch(`/api/history?date=${date}&t=${Date.now()}`, {
+  method: "DELETE",
+  cache: "no-store",
+});
 
     if (!r.ok) {
       alert("Erro ao eliminar histórico.");
