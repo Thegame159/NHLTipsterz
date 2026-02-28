@@ -172,36 +172,37 @@ const findSingleTeamAbbrFromText = (text: string): string | null => {
 };
 
 const parseTeamsFromText = (text: string): string[] => {
-  const raw = (text || "").trim();
+  if (!text) return [];
 
-  const abbrMatches = raw.match(/\b[A-Z]{2,4}\b/g) || [];
-  const cleanedAbbr = abbrMatches.map((s) => s.toUpperCase()).filter((s) => s !== "OT" && s !== "VS" && s !== "V");
-  if (cleanedAbbr.length >= 2) return cleanedAbbr.slice(0, 2);
-  if (cleanedAbbr.length === 1) return cleanedAbbr;
+  const upper = text.toUpperCase().trim();
 
-  const normalized = raw.replace(/\s+/g, " ").replace(/\(\d+%\)/g, "").trim();
-  const split = normalized.includes(" vs ")
-    ? normalized.split(" vs ")
-    : normalized.includes(" v ")
-      ? normalized.split(" v ")
-      : normalized.includes(" @ ")
-        ? normalized.split(" @ ")
-        : null;
-
-  if (split && split.length >= 2) {
-    const aName = split[0].trim();
-    const bName = split[1].trim();
-    const a = findSingleTeamAbbrFromText(aName);
-    const b = findSingleTeamAbbrFromText(bName);
-
-    const res: string[] = [];
-    if (a) res.push(a);
-    if (b) res.push(b);
-    if (res.length) return res;
+  // 🔥 FORMATO COM HÍFEN (FLA-BUF)
+  if (upper.includes("-")) {
+    const parts = upper.split("-").map(s => s.trim());
+    if (parts.length >= 2) {
+      return [parts[0], parts[1]];
+    }
   }
 
-  const single = findSingleTeamAbbrFromText(normalized);
-  return single ? [single] : [];
+  // FORMATO VS
+  if (upper.includes(" VS ")) {
+    const [home, away] = upper.split(" VS ").map(s => s.trim());
+    return [home, away];
+  }
+
+  // FORMATO @
+  if (upper.includes(" @ ")) {
+    const [away, home] = upper.split(" @ ").map(s => s.trim());
+    return [home, away];
+  }
+
+  // fallback por regex
+  const abbrMatches = upper.match(/\b[A-Z]{2,4}\b/g) || [];
+  const cleaned = abbrMatches.filter(
+    (s) => s !== "OT" && s !== "VS" && s !== "V"
+  );
+
+  return cleaned.slice(0, 2);
 };
 
 /** remove IDs e aplica conversão PT */
