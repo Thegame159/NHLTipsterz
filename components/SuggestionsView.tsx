@@ -174,35 +174,38 @@ const findSingleTeamAbbrFromText = (text: string): string | null => {
 const parseTeamsFromText = (text: string): string[] => {
   if (!text) return [];
 
-  const upper = text.toUpperCase().trim();
+  // 🔥 remove percentagens e lixo
+  const cleanedText = text
+    .replace(/\d+%/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toUpperCase();
 
-  // 🔥 FORMATO COM HÍFEN (FLA-BUF)
-  if (upper.includes("-")) {
-    const parts = upper.split("-").map(s => s.trim());
-    if (parts.length >= 2) {
-      return [parts[0], parts[1]];
-    }
+  // 🔥 divide por hífen com ou sem espaços
+  const dashSplit = cleanedText.split(/\s*-\s*/);
+  if (dashSplit.length === 2) {
+    return [dashSplit[0], dashSplit[1]];
   }
 
-  // FORMATO VS
-  if (upper.includes(" VS ")) {
-    const [home, away] = upper.split(" VS ").map(s => s.trim());
-    return [home, away];
+  // divide por VS
+  const vsSplit = cleanedText.split(/\s+VS\s+/);
+  if (vsSplit.length === 2) {
+    return [vsSplit[0], vsSplit[1]];
   }
 
-  // FORMATO @
-  if (upper.includes(" @ ")) {
-    const [away, home] = upper.split(" @ ").map(s => s.trim());
-    return [home, away];
+  // divide por @
+  const atSplit = cleanedText.split(/\s*@\s*/);
+  if (atSplit.length === 2) {
+    return [atSplit[1], atSplit[0]];
   }
 
-  // fallback por regex
-  const abbrMatches = upper.match(/\b[A-Z]{2,4}\b/g) || [];
-  const cleaned = abbrMatches.filter(
-    (s) => s !== "OT" && s !== "VS" && s !== "V"
+  // fallback regex
+  const abbrMatches = cleanedText.match(/\b[A-Z]{2,4}\b/g) || [];
+  const filtered = abbrMatches.filter(
+    (s) => !["OT", "VS", "V"].includes(s)
   );
 
-  return cleaned.slice(0, 2);
+  return filtered.slice(0, 2);
 };
 
 /** remove IDs e aplica conversão PT */
