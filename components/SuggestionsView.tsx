@@ -50,9 +50,6 @@ const getLogoUrl = (abbr: string) => {
   return `https://a.espncdn.com/i/teamlogos/nhl/500/${code}.png`;
 };
 
-/** 🔄 Converte formato NHL (AWAY @ HOME) para formato PT (HOME vs AWAY) */
-
-
 /** --- mapping de nomes -> abreviações --- */
 const TEAM_NAME_TO_ABBR: Record<string, string> = {
   // Atlantic
@@ -130,7 +127,7 @@ const TEAM_NAME_TO_ABBR: Record<string, string> = {
   Vegas: "VGK",
   "Vegas Golden Knights": "VGK",
 
-  // Utah / Arizona
+  // Utah / Arizona (caso uses)
   Utah: "UTA",
   "Utah Hockey Club": "UTA",
   Arizona: "ARI",
@@ -145,10 +142,9 @@ const normName = (s: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
-const TEAM_KEYS_NORMALIZED: Array<{ key: string; keyNorm: string; abbr: string }> =
-  Object.entries(TEAM_NAME_TO_ABBR)
-    .map(([key, abbr]) => ({ key, keyNorm: normName(key), abbr }))
-    .sort((a, b) => b.keyNorm.length - a.keyNorm.length);
+const TEAM_KEYS_NORMALIZED: Array<{ key: string; keyNorm: string; abbr: string }> = Object.entries(TEAM_NAME_TO_ABBR)
+  .map(([key, abbr]) => ({ key, keyNorm: normName(key), abbr }))
+  .sort((a, b) => b.keyNorm.length - a.keyNorm.length);
 
 const findSingleTeamAbbrFromText = (text: string): string | null => {
   const t = normName(text.replace(/\(\d+%\)/g, ""));
@@ -161,48 +157,60 @@ const findSingleTeamAbbrFromText = (text: string): string | null => {
 };
 
 const parseTeamsFromText = (text: string): string[] => {
-  if (!text) return [];
+  const raw = (text || "").trim();
 
-  const upper = text.toUpperCase().trim();
+  const abbrMatches = raw.match(/\b[A-Z]{2,4}\b/g) || [];
+  const cleanedAbbr = abbrMatches.map((s) => s.toUpperCase()).filter((s) => s !== "OT" && s !== "VS" && s !== "V");
+  if (cleanedAbbr.length >= 2) return cleanedAbbr.slice(0, 2);
+  if (cleanedAbbr.length === 1) return cleanedAbbr;
 
-  // 🔄 Se vier formato NHL AWAY @ HOME → inverter
-  if (upper.includes(" @ ")) {
-    const [away, home] = upper.split(" @ ").map(s => s.trim());
-    return [home, away];
+  const normalized = raw.replace(/\s+/g, " ").replace(/\(\d+%\)/g, "").trim();
+  const split = normalized.includes(" vs ")
+    ? normalized.split(" vs ")
+    : normalized.includes(" v ")
+      ? normalized.split(" v ")
+      : normalized.includes(" @ ")
+        ? normalized.split(" @ ")
+        : null;
+
+  if (split && split.length >= 2) {
+    const aName = split[0].trim();
+    const bName = split[1].trim();
+    const a = findSingleTeamAbbrFromText(aName);
+    const b = findSingleTeamAbbrFromText(bName);
+
+    const res: string[] = [];
+    if (a) res.push(a);
+    if (b) res.push(b);
+    if (res.length) return res;
   }
 
-  // 🔄 Se vier formato VS
-  if (upper.includes(" VS ")) {
-    const [home, away] = upper.split(" VS ").map(s => s.trim());
-    return [home, away];
-  }
-
-  const abbrMatches = upper.match(/\b[A-Z]{2,4}\b/g) || [];
-  const cleaned = abbrMatches.filter(
-    (s) => s !== "OT" && s !== "VS" && s !== "V"
-  );
-
-  return cleaned.slice(0, 2);
+  const single = findSingleTeamAbbrFromText(normalized);
+  return single ? [single] : [];
 };
 
-/** remove IDs e aplica conversão PT */
+/** ✅ NOVO: remove IDs tipo 2025020917 no início e desfaz parênteses exteriores */
 const cleanSuggestionLabel = (text: string) => {
   const raw = String(text || "").trim();
 
+  // mantém percentagem (ex: "(75%)" ou "75%")
   const percMatch = raw.match(/\d+%/);
   const perc = percMatch ? percMatch[0] : "";
 
+  // remove percentagens para limpar o core
   let core = raw.replace(/\(\s*\d+%\s*\)/g, "").trim();
+
+  // remove ID inicial (ex: "2025020917 " ou "2025020917-")
   core = core.replace(/^\d+\s*[-–—:]?\s*/, "").trim();
 
+  // se estiver como "(EDM)" ou "(TBL vs TOR)" -> "EDM" / "TBL vs TOR"
   const m = core.match(/^\((.*)\)$/);
   if (m) core = m[1].trim();
 
+  // normaliza espaços
   core = core.replace(/\s+/g, " ").trim();
 
-  // 🔄 Inversão formato americano → PT
- 
-
+  // volta a meter percentagem se existia
   return { core, perc };
 };
 
