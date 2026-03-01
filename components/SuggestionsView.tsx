@@ -484,7 +484,6 @@ const SuggestionCard: React.FC<{
                   {perc && <span className="text-[9px] opacity-70 ml-1">{perc}</span>}
                 </div>
               })}
-
             {suggestions.over55Suggestions.length === 0 && <span className="text-slate-600 text-sm italic">Nenhuma sugestão adicional.</span>}
           </div>
 
