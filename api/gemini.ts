@@ -493,7 +493,11 @@ function buildSuggestions(predictions: any[]) {
     .slice(0, 2);
 
   return {
-    tripleWin: byWin.slice(0, 3).map(format),
+    tripleWin: byWin.slice(0, 3).map((g: any) =>
+  g.winProbabilityHome >= g.winProbabilityAway
+    ? g.homeTeamAbbr
+    : g.awayTeamAbbr
+),
     tripleOver15P1: tripleOver15.map(format),
     doubleOver15P1: doubleOver15.map(format),
     quadrupleOver45: byOver45.slice(0, 4).map(format),
