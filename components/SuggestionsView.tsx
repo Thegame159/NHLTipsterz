@@ -461,29 +461,39 @@ const SuggestionCard: React.FC<{
           </h3>
 
           <div className="flex flex-wrap gap-2 mt-auto">
-          {filterSuggestionsByTime(suggestions.over55Suggestions).map((item, idx) => {
-              const { core, perc } = cleanSuggestionLabel(item);
-              const teamMatches = parseTeamsFromText(core);
+         {filterSuggestionsByTime(suggestions.over55Suggestions).map((item, idx) => {
+  const { core, perc } = cleanSuggestionLabel(item);
+  const teamMatches = parseTeamsFromText(core);
 
-              return (
-                <div key={idx} className="bg-pink-500/5 hover:bg-pink-500/10 text-pink-300 px-3 py-2 rounded-xl text-[11px] font-bold border border-pink-500/20 transition-all flex items-center gap-2">
-                  <div className="flex -space-x-1.5">
-                    {teamMatches.map((abbr, i) => (
-                      <img
-                        key={`${abbr}-${i}`}
-                        src={getLogoUrl(abbr)}
-                        className="w-4 h-4 object-contain bg-slate-900 rounded-full p-0.5 border border-slate-700"
-                        alt={abbr}
-                        loading="lazy"
-                        decoding="async"
-                        onError={(e) => (e.currentTarget.style.display = "none")}
-                      />
-                    ))}
-                  </div>
-                  <span>{core}</span>
-                  {perc && <span className="text-[9px] opacity-70 ml-1">{perc}</span>}
-                </div>
-              })}
+  return (
+    <div
+      key={idx}
+      className="bg-pink-500/5 hover:bg-pink-500/10 text-pink-300 px-3 py-2 rounded-xl text-[11px] font-bold border border-pink-500/20 transition-all flex items-center gap-2"
+    >
+      <div className="flex -space-x-1.5">
+        {teamMatches.map((abbr, i) => (
+          <img
+            key={`${abbr}-${i}`}
+            src={getLogoUrl(abbr)}
+            className="w-4 h-4 object-contain bg-slate-900 rounded-full p-0.5 border border-slate-700"
+            alt={abbr}
+            loading="lazy"
+            decoding="async"
+            onError={(e) => (e.currentTarget.style.display = "none")}
+          />
+        ))}
+      </div>
+
+      <span>{core}</span>
+
+      {perc && (
+        <span className="text-[9px] opacity-70 ml-1">
+          {perc}
+        </span>
+      )}
+    </div>
+  );
+})}
             {suggestions.over55Suggestions.length === 0 && <span className="text-slate-600 text-sm italic">Nenhuma sugestão adicional.</span>}
           </div>
 
