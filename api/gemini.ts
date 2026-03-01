@@ -707,9 +707,19 @@ ${JSON.stringify(gamesForAI, null, 2)}
       await redis.setPx(geminiCacheKey, JSON.stringify({ savedAt: Date.now(), data: geminiObj }), geminiTtlMs);
     }
 
-    // 5) Merge final
-    const finalData: any = mergeInjuriesIntoPredictions(geminiObj, injuriesPack.injuriesByTeam);
-    finalData.suggestions = buildSuggestions(finalData.predictions);
+   // 5) Merge final
+const finalData: any = mergeInjuriesIntoPredictions(geminiObj, injuriesPack.injuriesByTeam);
+
+// ✅ aplicar filtro horário antes de gerar sugestões
+const now = new Date();
+
+const filteredPredictions = finalData.predictions.filter((p: any) => {
+  if (!p.dateTime) return false;
+  const gameDate = new Date(p.dateTime);
+  return gameDate.getTime() >= now.getTime();
+});
+
+finalData.suggestions = buildSuggestions(filteredPredictions);
 
 
     
