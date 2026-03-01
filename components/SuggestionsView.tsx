@@ -1,8 +1,11 @@
 import React from "react";
-import { Suggestions } from "../types";
+
+
+import { Suggestions, Prediction } from "../types";
 
 interface Props {
   suggestions: Suggestions;
+  predictions: Prediction[];
 }
 
 const getLogoUrl = (abbr: string) => {
@@ -303,8 +306,44 @@ const SuggestionCard: React.FC<{
   </div>
 );
 
-const SuggestionsView: React.FC<Props> = ({ suggestions }) => {
+  
+  const SuggestionsView: React.FC<Props> = ({ suggestions, predictions }) => {
+
+  // ✅ FILTRO HORÁRIO NA UI
+  const now = new Date();
+
+  const validGameSet = new Set(
+    predictions
+      .filter(p => {
+        if (!p.dateTime) return false;
+        return new Date(p.dateTime).getTime() >= now.getTime();
+      })
+      .map(p => `${p.homeTeamAbbr} vs ${p.awayTeamAbbr}`)
+  );
+
+  const filterSuggestionsByTime = (items: string[]) => {
+    return items.filter(item => {
+      const { core } = cleanSuggestionLabel(item);
+      return validGameSet.has(core);
+    });
+  };
+
+  const filterTripleWin = (items: string[]) => {
+    return items.filter(team =>
+      predictions.some(p => {
+        if (!p.dateTime) return false;
+        const isFuture = new Date(p.dateTime).getTime() >= now.getTime();
+        return isFuture && (
+          p.homeTeamAbbr === team || p.awayTeamAbbr === team
+        );
+      })
+    );
+  };
+
+  // 👇 SÓ AGORA vem o return
   return (
+
+    
     <div className="space-y-8 pb-24">
       <div className="bg-gradient-to-r from-blue-900/40 to-slate-900/40 border border-blue-500/20 rounded-2xl p-6 sm:p-8 flex flex-col sm:flex-row items-center gap-6">
         <div className="bg-blue-600/20 p-4 rounded-2xl border border-blue-500/30">
@@ -323,7 +362,7 @@ const SuggestionsView: React.FC<Props> = ({ suggestions }) => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <SuggestionCard
           title="Triplete de Vitórias"
-          items={suggestions.tripleWin}
+          items={filterTripleWin(suggestions.tripleWin)}
           icon="fa-award"
           gradient="bg-gradient-to-br from-amber-500 to-orange-600"
           badgeColor="bg-amber-500"
@@ -332,7 +371,7 @@ const SuggestionsView: React.FC<Props> = ({ suggestions }) => {
 
         <SuggestionCard
           title="Triplete Over 1.5 P1"
-          items={suggestions.tripleOver15P1}
+          items={filterSuggestionsByTime(suggestions.tripleOver15P1)}
           icon="fa-fire-alt"
           gradient="bg-gradient-to-br from-red-500 to-rose-700"
           badgeColor="bg-red-500"
@@ -341,7 +380,7 @@ const SuggestionsView: React.FC<Props> = ({ suggestions }) => {
 
         <SuggestionCard
           title="Dupla Over 1.5 P1"
-          items={suggestions.doubleOver15P1}
+         items={filterSuggestionsByTime(suggestions.doubleOver15P1)}
           icon="fa-bolt"
           gradient="bg-gradient-to-br from-blue-500 to-indigo-700"
           badgeColor="bg-blue-500"
@@ -350,7 +389,7 @@ const SuggestionsView: React.FC<Props> = ({ suggestions }) => {
 
         <SuggestionCard
           title="Quadriplete O4.5"
-          items={suggestions.quadrupleOver45}
+         items={filterSuggestionsByTime(suggestions.quadrupleOver45)}
           icon="fa-hockey-puck"
           gradient="bg-gradient-to-br from-emerald-500 to-teal-700"
           badgeColor="bg-emerald-500"
@@ -422,7 +461,7 @@ const SuggestionsView: React.FC<Props> = ({ suggestions }) => {
           </h3>
 
           <div className="flex flex-wrap gap-2 mt-auto">
-            {suggestions.over55Suggestions.map((item, idx) => {
+           {filterSuggestionsByTime(suggestions.over55Suggestions).map((item, idx) => (
               const { core, perc } = cleanSuggestionLabel(item);
               const teamMatches = parseTeamsFromText(core);
 
