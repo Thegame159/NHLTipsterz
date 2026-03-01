@@ -461,7 +461,7 @@ const SuggestionCard: React.FC<{
           </h3>
 
           <div className="flex flex-wrap gap-2 mt-auto">
-           {filterSuggestionsByTime(suggestions.over55Suggestions).map((item, idx) => (
+          {filterSuggestionsByTime(suggestions.over55Suggestions).map((item, idx) => {
               const { core, perc } = cleanSuggestionLabel(item);
               const teamMatches = parseTeamsFromText(core);
 
@@ -483,8 +483,7 @@ const SuggestionCard: React.FC<{
                   <span>{core}</span>
                   {perc && <span className="text-[9px] opacity-70 ml-1">{perc}</span>}
                 </div>
-              );
-            })}
+              })}
 
             {suggestions.over55Suggestions.length === 0 && <span className="text-slate-600 text-sm italic">Nenhuma sugestão adicional.</span>}
           </div>
