@@ -704,7 +704,7 @@ ${JSON.stringify(gamesForAI, null, 2)}
       const { modelUsed, parsed } = await generatePredictionsWithFallback(ai, prompt);
       geminiObj = { ...parsed, modelUsed };
 
-      await redis.setPx(geminiCacheKey, JSON.stringify({ savedAt: Date.now(), data: geminiObj }), geminiTtlMs);
+    
     }
 
 // 5) Merge final
@@ -724,6 +724,12 @@ finalData.predictions = filteredPredictions;
 
 // gerar sugestões com base nos mesmos jogos
 finalData.suggestions = buildSuggestions(filteredPredictions);
+
+     await redis.setPx(
+  geminiCacheKey,
+  JSON.stringify({ savedAt: Date.now(), data: finalData }),
+  geminiTtlMs
+);
     
     const debug = String((req.query as any)?.debug ?? "") === "1";
     if (debug) {
