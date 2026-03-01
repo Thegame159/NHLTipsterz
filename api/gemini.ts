@@ -469,7 +469,41 @@ function mergeInjuriesIntoPredictions(geminiObj: any, injuriesByTeam: Record<str
     lastUpdated: new Date().toISOString(),
   };
 }
+function buildSuggestions(predictions: any[]) {
+  const format = (g: any) => `${g.homeTeamAbbr} vs ${g.awayTeamAbbr}`;
 
+  const sortByMaxWin = (a: any, b: any) =>
+    Math.max(b.winProbabilityHome, b.winProbabilityAway) -
+    Math.max(a.winProbabilityHome, a.winProbabilityAway);
+
+  const sortBy = (key: string) => (a: any, b: any) =>
+    Number(b?.[key] ?? 0) - Number(a?.[key] ?? 0);
+
+  const byWin = [...predictions].sort(sortByMaxWin);
+  const byOver15 = [...predictions].sort(sortBy("over15P1Prob"));
+  const byOver45 = [...predictions].sort(sortBy("over45Prob"));
+  const byOver55 = [...predictions].sort(sortBy("over55Prob"));
+  const byDraw = [...predictions].sort(sortBy("drawTRProb"));
+
+  const tripleOver15 = byOver15.slice(0, 3);
+
+  const tripleIds = new Set(tripleOver15.map((g: any) => String(g.id)));
+  const doubleOver15 = byOver15
+    .filter((g: any) => !tripleIds.has(String(g.id)))
+    .slice(0, 2);
+
+  return {
+    tripleWin: byWin.slice(0, 3).map(format),
+    tripleOver15P1: tripleOver15.map(format),
+    doubleOver15P1: doubleOver15.map(format),
+    quadrupleOver45: byOver45.slice(0, 4).map(format),
+    over55Suggestions: byOver55.slice(0, 4).map(format),
+    drawSuggestions: byDraw.slice(0, 2).map((g: any) => ({
+      game: format(g),
+      explanation: "Elevada probabilidade de empate segundo o modelo.",
+    })),
+  };
+}
 // ---------------- CORS HELPERS ----------------
 function setCors(req: VercelRequest, res: VercelResponse) {
   const origin = String(req.headers.origin ?? "");
@@ -671,43 +705,10 @@ ${JSON.stringify(gamesForAI, null, 2)}
 
     // 5) Merge final
     const finalData: any = mergeInjuriesIntoPredictions(geminiObj, injuriesPack.injuriesByTeam);
-function buildSuggestions(predictions: any[]) {
-  const format = (g:any) => `${g.homeTeamAbbr} vs ${g.awayTeamAbbr}`;
-
-  const byWin = [...predictions].sort((a,b) =>
-    Math.max(b.winProbabilityHome,b.winProbabilityAway) -
-    Math.max(a.winProbabilityHome,a.winProbabilityAway)
-  );
-
-  const byOver15 = [...predictions].sort((a,b) =>
-    b.over15P1Prob - a.over15P1Prob
-  );
-
-  const byOver45 = [...predictions].sort((a,b) =>
-    b.over45Prob - a.over45Prob
-  );
-
-  const byOver55 = [...predictions].sort((a,b) =>
-    b.over55Prob - a.over55Prob
-  );
-
-  const byDraw = [...predictions].sort((a,b) =>
-    b.drawTRProb - a.drawTRProb
-  );
-
-  return {
-    tripleWin: byWin.slice(0,3).map(format),
-    tripleOver15P1: byOver15.slice(0,3).map(format),
-    doubleOver15P1: byOver15.slice(3,5).map(format),
-    quadrupleOver45: byOver45.slice(0,4).map(format),
-    over55Suggestions: byOver55.slice(0,4).map(format),
-    drawSuggestions: byDraw.slice(0,2).map(g => ({
-      game: format(g),
-      explanation: "Elevada probabilidade de empate segundo o modelo."
-    }))
-  };
-}
     finalData.suggestions = buildSuggestions(finalData.predictions);
+
+}
+    
     const debug = String((req.query as any)?.debug ?? "") === "1";
     if (debug) {
       finalData.meta = {
