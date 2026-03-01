@@ -89,7 +89,19 @@ const getYesterdayString = () => {
   d.setDate(d.getDate() - 1);
   return toDateStringLocal(d);
 };
+const isWithinPortugalNightWindow = (dateTime: string) => {
+  const d = new Date(dateTime);
 
+  const ptString = d.toLocaleString("en-US", {
+    timeZone: "Europe/Lisbon",
+    hour12: false,
+  });
+
+  const ptDate = new Date(ptString);
+  const hour = ptDate.getHours();
+
+  return hour >= 23 || hour < 5;
+};
 const App: React.FC = () => {
   const [data, setData] = useState<NHLAnalysisData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -133,11 +145,15 @@ const App: React.FC = () => {
       }, 1800);
 
       const analysis = await fetchNHLAnalysis(date);
+      // ✅ FILTRO GLOBAL 23:00–05:00 PT
+const filteredPredictions = analysis.predictions.filter(
+  (p) => p.dateTime && isWithinPortugalNightWindow(p.dateTime)
+);
 
       if (reqId !== requestIdRef.current) return;
 
       setProgress(100);
-      setData(analysis);
+     setData({...analysis,predictions: filteredPredictions,});
       setLoadedDate(date);
 
 // ✅ Guarda snapshot AUTO no histórico global (Redis)
