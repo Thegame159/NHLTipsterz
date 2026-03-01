@@ -320,7 +320,10 @@ try {
             ) : activeTab === 'suggestions' ? (
               <>
                 {loadedDate && data ? (
-                  <SuggestionsView suggestions={data.suggestions} />
+                  <SuggestionsView 
+  suggestions={data.suggestions} 
+  predictions={data.predictions}
+/>
                 ) : (
                   <div className="py-24 text-center text-slate-600 text-[10px] font-black uppercase tracking-widest">
                     Escolhe uma data e clica em Analisar
