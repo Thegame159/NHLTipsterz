@@ -671,7 +671,43 @@ ${JSON.stringify(gamesForAI, null, 2)}
 
     // 5) Merge final
     const finalData: any = mergeInjuriesIntoPredictions(geminiObj, injuriesPack.injuriesByTeam);
+function buildSuggestions(predictions: any[]) {
+  const format = (g:any) => `${g.homeTeamAbbr} vs ${g.awayTeamAbbr}`;
 
+  const byWin = [...predictions].sort((a,b) =>
+    Math.max(b.winProbabilityHome,b.winProbabilityAway) -
+    Math.max(a.winProbabilityHome,a.winProbabilityAway)
+  );
+
+  const byOver15 = [...predictions].sort((a,b) =>
+    b.over15P1Prob - a.over15P1Prob
+  );
+
+  const byOver45 = [...predictions].sort((a,b) =>
+    b.over45Prob - a.over45Prob
+  );
+
+  const byOver55 = [...predictions].sort((a,b) =>
+    b.over55Prob - a.over55Prob
+  );
+
+  const byDraw = [...predictions].sort((a,b) =>
+    b.drawTRProb - a.drawTRProb
+  );
+
+  return {
+    tripleWin: byWin.slice(0,3).map(format),
+    tripleOver15P1: byOver15.slice(0,3).map(format),
+    doubleOver15P1: byOver15.slice(3,5).map(format),
+    quadrupleOver45: byOver45.slice(0,4).map(format),
+    over55Suggestions: byOver55.slice(0,4).map(format),
+    drawSuggestions: byDraw.slice(0,2).map(g => ({
+      game: format(g),
+      explanation: "Elevada probabilidade de empate segundo o modelo."
+    }))
+  };
+}
+    finalData.suggestions = buildSuggestions(finalData.predictions);
     const debug = String((req.query as any)?.debug ?? "") === "1";
     if (debug) {
       finalData.meta = {
