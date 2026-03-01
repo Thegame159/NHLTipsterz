@@ -707,7 +707,7 @@ ${JSON.stringify(gamesForAI, null, 2)}
     const finalData: any = mergeInjuriesIntoPredictions(geminiObj, injuriesPack.injuriesByTeam);
     finalData.suggestions = buildSuggestions(finalData.predictions);
 
-}
+
     
     const debug = String((req.query as any)?.debug ?? "") === "1";
     if (debug) {
