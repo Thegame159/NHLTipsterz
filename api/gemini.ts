@@ -485,9 +485,12 @@ function buildSuggestions(predictions: any[]) {
   const byOver55 = [...predictions].sort(sortBy("over55Prob"));
   const byDraw = [...predictions].sort(sortBy("drawTRProb"));
   
-  const tripleOver15 = byOver15.slice(0, Math.min(3, byOver15.length));
+ const tripleOver15 = byOver15.slice(0, 3);
+const tripleIds = new Set(tripleOver15.map((g: any) => String(g.id)));
 
- const doubleOver15 = byOver15.slice(0, Math.min(2, byOver15.length));
+ const doubleOver15 = byOver15
+  .filter((g: any) => !tripleIds.has(String(g.id)))
+  .slice(0, 2);
 
   return {
     tripleWin: byWin
@@ -498,8 +501,8 @@ function buildSuggestions(predictions: any[]) {
       : g.awayTeamAbbr
   ),
 ),
-    tripleOver15P1: tripleOver15.map(format),
-    doubleOver15P1: doubleOver15.map(format),
+   tripleOver15P1: tripleOver15.length === 3 ? tripleOver15.map(format) : [],
+   doubleOver15P1: doubleOver15.length === 2 ? doubleOver15.map(format) : [],
    quadrupleOver45: byOver45
   .slice(0, Math.min(4, byOver45.length))
   .map(format),
