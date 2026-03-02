@@ -190,6 +190,7 @@ const GameTable: React.FC<Props> = ({ predictions }) => {
   );
 
   return (
+      <div className="space-y-8 pb-32"> 
     <div className="w-full overflow-x-auto rounded-2xl border border-slate-800 bg-slate-800/20 shadow-2xl backdrop-blur-sm">
       <table className="w-full text-left border-collapse min-w-[1000px]">
         <thead>
@@ -209,6 +210,7 @@ const GameTable: React.FC<Props> = ({ predictions }) => {
         </tbody>
       </table>
     </div>
+    </div>      
   );
 };
 
