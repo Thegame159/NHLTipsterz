@@ -309,35 +309,8 @@ const SuggestionCard: React.FC<{
   
   const SuggestionsView: React.FC<Props> = ({ suggestions, predictions }) => {
 
-  // ✅ FILTRO HORÁRIO NA UI
-  const now = new Date();
-
-  const validGameSet = new Set(
-    predictions
-      .filter(p => {
-        if (!p.dateTime) return false;
-        return new Date(p.dateTime).getTime() >= now.getTime();
-      })
-      .map(p => `${p.homeTeamAbbr} vs ${p.awayTeamAbbr}`)
-  );
-
-  const filterSuggestionsByTime = (items: string[]) => {
-    return items.filter(item => {
-      const { core } = cleanSuggestionLabel(item);
-      return validGameSet.has(core);
-    });
-  };
-
-  const filterTripleWin = (items: string[]) => {
-    return items.filter(team =>
-      predictions.some(p => {
-        if (!p.dateTime) return false;
-        const isFuture = new Date(p.dateTime).getTime() >= now.getTime();
-        return isFuture && (
-          p.homeTeamAbbr === team || p.awayTeamAbbr === team
-        );
-      })
-    );
+  const filterSuggestionsByTime = (items: string[]) => items;
+const filterTripleWin = (items: string[]) => items;
   };
 
   // 👇 SÓ AGORA vem o return
