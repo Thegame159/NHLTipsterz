@@ -778,14 +778,33 @@ const dates = useMemo(() => historyItems.map((x) => x.date), [historyItems]);
         <div className="bg-indigo-600/20 p-4 rounded-2xl border border-indigo-500/30">
           <i className="fas fa-chart-line text-4xl text-indigo-300" />
         </div>
-        <div className="flex-1">
-          <h2 className="text-2xl font-black text-white italic">
-            <span className="text-indigo-300">STATS</span> HISTÓRICO
-          </h2>
-          <p className="text-slate-400 text-sm max-w-2xl">
-            Taxa de acerto das escolhas automáticas vs as tuas. Os jogos “pendentes” não contam para a percentagem.
-          </p>
-        </div>
+       <div className="flex-1">
+  <div className="flex items-center justify-between">
+    <h2 className="text-2xl font-black text-white italic flex items-center gap-3">
+      <span>
+        <span className="text-indigo-300">STATS</span> HISTÓRICO
+      </span>
+
+      
+    </h2>
+    <button
+        onClick={forceRefresh}
+        disabled={refreshing}
+        className={`w-8 h-8 flex items-center justify-center rounded-full border transition ${
+          refreshing
+            ? "bg-white/5 border-white/10 text-slate-500 cursor-not-allowed"
+            : "bg-indigo-500/10 border-indigo-500/30 text-indigo-300 hover:bg-indigo-500/20"
+        }`}
+        title="Forçar atualização"
+      >
+        <i className={`fas fa-rotate-right ${refreshing ? "animate-spin" : ""}`} />
+      </button>
+  </div>
+
+  <p className="text-slate-400 text-sm max-w-2xl">
+    Taxa de acerto das escolhas automáticas vs as tuas. Os jogos “pendentes” não contam para a percentagem.
+  </p>
+</div>
 
         <div className="flex items-center gap-6 self-end sm:self-auto">
           <div className="text-right">
@@ -807,18 +826,7 @@ const dates = useMemo(() => historyItems.map((x) => x.date), [historyItems]);
               </span>
             </div>
             {/* 👇 COLA AQUI (linha 808) */}
-  <button
-    onClick={forceRefresh}
-    disabled={refreshing}
-    className={`ml-4 px-3 py-2 rounded-lg border text-[10px] font-black uppercase tracking-widest transition ${
-      refreshing
-        ? "bg-white/5 border-white/10 text-slate-500 cursor-not-allowed"
-        : "bg-indigo-500/10 border-indigo-500/30 text-indigo-200 hover:bg-indigo-500/20"
-    }`}
-    title="Forçar atualização das stats"
-  >
-    {refreshing ? "A atualizar..." : "🔄 Atualizar"}
-  </button>
+  
 
           </div>
           
