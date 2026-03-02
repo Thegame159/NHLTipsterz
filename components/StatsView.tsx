@@ -787,7 +787,7 @@ const dates = useMemo(() => historyItems.map((x) => x.date), [historyItems]);
           </p>
         </div>
 
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-6 ml-auto">
           <div className="text-right">
             <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Auto (geral)</div>
             <div className="text-sm font-black text-amber-300">
