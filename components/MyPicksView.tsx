@@ -509,14 +509,32 @@ const tripleWinOptions = useMemo(() => {
     [picks.doubleOver15P1]
   );
 
-  const tripleOverOptions = useMemo(
-    () => gameOptionsAll.filter((o) => !doubleOverSet.has(normalizeGameText(o.value))),
-    [gameOptionsAll, doubleOverSet]
+  const tripleOverOptions = useMemo(() => {
+  const tripleSet = new Set(
+    (picks.tripleOver15P1 || []).map(normalizeGameText)
   );
-  const doubleOverOptions = useMemo(
-    () => gameOptionsAll.filter((o) => !tripleOverSet.has(normalizeGameText(o.value))),
-    [gameOptionsAll, tripleOverSet]
+
+  return gameOptionsAll.filter((o) => {
+    const normalized = normalizeGameText(o.value);
+    return (
+      !doubleOverSet.has(normalized) &&   // não pode estar na dupla
+      !tripleSet.has(normalized)         // não pode estar na própria tripla
+    );
+  });
+}, [gameOptionsAll, doubleOverSet, picks.tripleOver15P1]);
+  const doubleOverOptions = useMemo(() => {
+  const doubleSet = new Set(
+    (picks.doubleOver15P1 || []).map(normalizeGameText)
   );
+
+  return gameOptionsAll.filter((o) => {
+    const normalized = normalizeGameText(o.value);
+    return (
+      !tripleOverSet.has(normalized) &&  // não pode estar na tripla
+      !doubleSet.has(normalized)        // não pode estar na própria dupla
+    );
+  });
+}, [gameOptionsAll, tripleOverSet, picks.doubleOver15P1]);
 
   const over45Options = useMemo(() => {
     const chosen = new Set((picks.quadrupleOver45 || []).map(normalizeGameText));
