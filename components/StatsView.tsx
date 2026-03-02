@@ -774,7 +774,7 @@ const dates = useMemo(() => historyItems.map((x) => x.date), [historyItems]);
 
   return (
     <div className="space-y-8 pb-24">
-     <div className="bg-gradient-to-r ... flex flex-col sm:flex-row items-center justify-between gap-6">
+     <div className="bg-gradient-to-r from-indigo-900/40 via-indigo-800/30 to-transparent border border-indigo-500/20 rounded-2xl p-6 flex flex-col sm:flex-row items-center justify-between gap-6">
         <div className="bg-indigo-600/20 p-4 rounded-2xl border border-indigo-500/30">
           <i className="fas fa-chart-line text-4xl text-indigo-300" />
         </div>
