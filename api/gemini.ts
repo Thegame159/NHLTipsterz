@@ -710,21 +710,25 @@ ${JSON.stringify(gamesForAI, null, 2)}
 // 5) Merge final
 const finalData: any = mergeInjuriesIntoPredictions(geminiObj, injuriesPack.injuriesByTeam);
 
-// ✅ FILTRO NA ORIGEM (aplicado a toda a API)
-const now = new Date();
-
-const filteredPredictions = finalData.predictions.filter((p: any) => {
+// 🇵🇹 Filtrar apenas jogos entre 23:00 e 05:00 (hora de Portugal)
+finalData.predictions = finalData.predictions.filter((p: any) => {
   if (!p.dateTime) return false;
+
   const gameDate = new Date(p.dateTime);
-  return gameDate.getTime() >= now.getTime();
+
+  const ptHour = Number(
+    gameDate.toLocaleString("en-GB", {
+      timeZone: "Europe/Lisbon",
+      hour: "2-digit",
+      hour12: false,
+    })
+  );
+
+  return ptHour >= 23 || ptHour <= 5;
 });
 
-// substituir predictions pelos filtrados
-finalData.predictions = filteredPredictions;
-
-// gerar sugestões com base nos mesmos jogos
-finalData.suggestions = buildSuggestions(filteredPredictions);
-
+// gerar sugestões com base nesses jogos
+finalData.suggestions = buildSuggestions(finalData.predictions);
      await redis.setPx(
   geminiCacheKey,
   JSON.stringify({ savedAt: Date.now(), data: finalData }),
