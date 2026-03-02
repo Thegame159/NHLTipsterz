@@ -788,17 +788,22 @@ const dates = useMemo(() => historyItems.map((x) => x.date), [historyItems]);
       
     </h2>
     <button
-        onClick={forceRefresh}
-        disabled={refreshing}
-        className={`w-8 h-8 flex items-center justify-center rounded-full border transition ${
-          refreshing
-            ? "bg-white/5 border-white/10 text-slate-500 cursor-not-allowed"
-            : "bg-indigo-500/10 border-indigo-500/30 text-indigo-300 hover:bg-indigo-500/20"
-        }`}
-        title="Forçar atualização"
-      >
-        <i className={`fas fa-rotate-right ${refreshing ? "animate-spin" : ""}`} />
-      </button>
+  onClick={forceRefresh}
+  disabled={refreshing}
+  className={`ml-4 w-9 h-9 flex items-center justify-center rounded-full border transition-all duration-200 shrink-0
+    ${
+      refreshing
+        ? "bg-indigo-500/10 border-indigo-500/20 text-indigo-300 cursor-not-allowed"
+        : "bg-indigo-500/10 border-indigo-500/30 text-indigo-300 hover:bg-indigo-500/20 hover:scale-105"
+    }`}
+  title="Atualizar stats"
+>
+  <i
+    className={`fas fa-rotate-right text-sm ${
+      refreshing ? "animate-spin" : ""
+    }`}
+  />
+</button>
   </div>
 
   <p className="text-slate-400 text-sm max-w-2xl">
