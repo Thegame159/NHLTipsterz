@@ -311,7 +311,7 @@ const SuggestionCard: React.FC<{
 
   const filterSuggestionsByTime = (items: string[]) => items;
 const filterTripleWin = (items: string[]) => items;
-  };
+  
 
   // 👇 SÓ AGORA vem o return
   return (
