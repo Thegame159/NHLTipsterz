@@ -774,7 +774,7 @@ const dates = useMemo(() => historyItems.map((x) => x.date), [historyItems]);
 
   return (
     <div className="space-y-8 pb-24">
-      <div className="bg-gradient-to-r from-indigo-900/40 to-slate-900/40 border border-indigo-500/20 rounded-2xl p-6 sm:p-8 flex flex-col sm:flex-row items-center gap-6">
+     <div className="bg-gradient-to-r ... flex flex-col sm:flex-row items-center justify-between gap-6">
         <div className="bg-indigo-600/20 p-4 rounded-2xl border border-indigo-500/30">
           <i className="fas fa-chart-line text-4xl text-indigo-300" />
         </div>
@@ -787,7 +787,7 @@ const dates = useMemo(() => historyItems.map((x) => x.date), [historyItems]);
           </p>
         </div>
 
-        <div className="flex items-center gap-6 ml-auto">
+        <div className="flex items-center gap-6 self-end sm:self-auto">
           <div className="text-right">
             <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Auto (geral)</div>
             <div className="text-sm font-black text-amber-300">
@@ -795,6 +795,7 @@ const dates = useMemo(() => historyItems.map((x) => x.date), [historyItems]);
               <span className="text-[10px] text-slate-500 ml-2">
                 {totals.aC}/{totals.aT}
               </span>
+              .
             </div>
           </div>
           <div className="text-right">
