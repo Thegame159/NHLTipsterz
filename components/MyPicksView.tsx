@@ -481,7 +481,16 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
     () => allowedTeams.map((abbr) => ({ value: abbr, label: abbr, teams: [abbr] })),
     [allowedTeams]
   );
+const tripleWinOptions = useMemo(() => {
+  const chosen = new Set(
+    (picks.tripleWin || []).map(t => t.trim().toUpperCase())
+  );
 
+  return teamOptions.filter(o =>
+    !chosen.has(o.value.trim().toUpperCase())
+  );
+}, [teamOptions, picks.tripleWin]);
+  
   const gameOptionsAll: Option[] = useMemo(
     () =>
       gamesOfDay.map((g) => {
@@ -674,7 +683,7 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
           badgeColor="bg-amber-500"
           description="Escolhe 3 equipas do dia para vencer (incl. OT)."
           max={3}
-          options={teamOptions}
+          options={tripleWinOptions}
           selectedItems={picks.tripleWin}
           placeholder="Seleciona equipa..."
           onAdd={addTeamToTripleWin}
