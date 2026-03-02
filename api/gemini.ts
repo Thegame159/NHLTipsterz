@@ -480,17 +480,24 @@ function buildSuggestions(predictions: any[]) {
     Number(b?.[key] ?? 0) - Number(a?.[key] ?? 0);
 
   const byWin = [...predictions].sort(sortByMaxWin);
-  const byOver15 = [...predictions].sort(sortBy("over15P1Prob"));
-  const byOver45 = [...predictions].sort(sortBy("over45Prob"));
-  const byOver55 = [...predictions].sort(sortBy("over55Prob"));
-  const byDraw = [...predictions].sort(sortBy("drawTRProb"));
-  
- const tripleOver15 = byOver15.slice(0, 3);
-const tripleIds = new Set(tripleOver15.map((g: any) => String(g.id)));
+const byOver15 = [...predictions].sort(sortBy("over15P1Prob"));
+const byOver45 = [...predictions].sort(sortBy("over45Prob"));
+const byOver55 = [...predictions].sort(sortBy("over55Prob"));
+const byDraw  = [...predictions].sort(sortBy("drawTRProb"));
+let tripleOver15: any[] = [];
+let doubleOver15: any[] = [];
 
- const doubleOver15 = byOver15
-  .filter((g: any) => !tripleIds.has(String(g.id)))
-  .slice(0, 2);
+if (byOver15.length >= 3) {
+  tripleOver15 = byOver15.slice(0, 3);
+  const tripleIds = new Set(tripleOver15.map((g: any) => String(g.id)));
+
+  doubleOver15 = byOver15
+    .filter((g: any) => !tripleIds.has(String(g.id)))
+    .slice(0, 2);
+} else {
+  // menos de 3 jogos => só faz dupla com os 2 melhores
+  doubleOver15 = byOver15.slice(0, 2);
+}
 
   return {
     tripleWin: byWin
@@ -502,7 +509,7 @@ const tripleIds = new Set(tripleOver15.map((g: any) => String(g.id)));
   ),
 ),
    tripleOver15P1: tripleOver15.length === 3 ? tripleOver15.map(format) : [],
-   doubleOver15P1: doubleOver15.length === 2 ? doubleOver15.map(format) : [],
+doubleOver15P1: doubleOver15.length === 2 ? doubleOver15.map(format) : [],
    quadrupleOver45: byOver45
   .slice(0, Math.min(4, byOver45.length))
   .map(format),
