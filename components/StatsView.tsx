@@ -563,8 +563,8 @@ async function forceRefresh() {
   try {
     setRefreshing(true);
 
-    // limpa reports para evitar estado visual antigo
-    setReports([]);
+    // NÃO limpar reports
+    // Apenas recarregar history (que vai disparar o useEffect)
 
     await loadHistory();
 
