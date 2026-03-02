@@ -526,6 +526,7 @@ const MarketBlock: React.FC<{
 
 const StatsView: React.FC = () => {
   const [reports, setReports] = useState<any[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
   const [openDate, setOpenDate] = useState<string>("");
   const [editDate, setEditDate] = useState<string>("");
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
@@ -557,8 +558,22 @@ const loadHistory = async () => {
 useEffect(() => {
   loadHistory();
 }, []);
+// 👇 COLA A FUNÇÃO AQUI
+async function forceRefresh() {
+  try {
+    setRefreshing(true);
 
-  const dates = useMemo(() => historyItems.map((x) => x.date), [historyItems]);
+    // limpa reports para evitar estado visual antigo
+    setReports([]);
+
+    await loadHistory();
+
+  } finally {
+    setRefreshing(false);
+  }
+}
+
+const dates = useMemo(() => historyItems.map((x) => x.date), [historyItems]);
 
   useEffect(() => {
     if (!dates.length) {
@@ -790,7 +805,22 @@ useEffect(() => {
                 {totals.mC}/{totals.mT}
               </span>
             </div>
+            {/* 👇 COLA AQUI (linha 808) */}
+  <button
+    onClick={forceRefresh}
+    disabled={refreshing}
+    className={`ml-4 px-3 py-2 rounded-lg border text-[10px] font-black uppercase tracking-widest transition ${
+      refreshing
+        ? "bg-white/5 border-white/10 text-slate-500 cursor-not-allowed"
+        : "bg-indigo-500/10 border-indigo-500/30 text-indigo-200 hover:bg-indigo-500/20"
+    }`}
+    title="Forçar atualização das stats"
+  >
+    {refreshing ? "A atualizar..." : "🔄 Atualizar"}
+  </button>
+
           </div>
+          
         </div>
       </div>
 
