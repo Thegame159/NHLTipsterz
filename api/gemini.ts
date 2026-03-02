@@ -5,12 +5,8 @@ import { redis } from "./_redis.js";
 
 export const config = { runtime: "nodejs" };
 
-// Cache do Gemini (predictions) e das lesões
-const GEMINI_TTL_MS = 1000 * 60 * 60 * 12; // 12h
-
-// Lesões mudam muito: cache mais curto
-const INJURIES_TTL_MS_DEFAULT = 1000 * 60 * 30; // 30 min
-const INJURIES_TTL_MS_NEAR_TODAY = 1000 * 60 * 15; // 15 min (hoje/ontem/amanhã)
+// Cache FIXA para tudo (Gemini + Lesões)
+const CACHE_TTL_MS = 1000 * 60 * 60 * 9; // 9 horas
 
 // Rate limit
 const RL_WINDOW_SEC = 600; // 10 min
@@ -611,8 +607,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const selectedDate = v.value;
     const diffDays = (v as any).diffDays as number;
 
-    const geminiTtlMs = Math.abs(diffDays) <= 1 ? 1000 * 60 * 60 * 2 : GEMINI_TTL_MS;
-    const injuriesTtlMs = Math.abs(diffDays) <= 1 ? INJURIES_TTL_MS_NEAR_TODAY : INJURIES_TTL_MS_DEFAULT;
+    const geminiTtlMs = CACHE_TTL_MS;
+    const injuriesTtlMs = CACHE_TTL_MS;
 
     const refresh = String((req.query as any)?.refresh ?? "") === "1";
 
