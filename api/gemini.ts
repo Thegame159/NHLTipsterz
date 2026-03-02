@@ -506,7 +506,6 @@ if (byOver15.length >= 3) {
     g.winProbabilityHome >= g.winProbabilityAway
       ? g.homeTeamAbbr
       : g.awayTeamAbbr
-  ),
 ),
    tripleOver15P1: tripleOver15.length === 3 ? tripleOver15.map(format) : [],
 doubleOver15P1: doubleOver15.length === 2 ? doubleOver15.map(format) : [],
