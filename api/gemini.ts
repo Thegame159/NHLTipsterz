@@ -316,7 +316,7 @@ ${chunk}
 
  const resp = await withRetry(() =>
   ai.models.generateContent({
-    model: "gemini-3-flash-preview",
+    model: "gemini-2.5-flash",
     contents: prompt,
     config: { responseMimeType: "application/json" },
   })
@@ -432,7 +432,7 @@ async function getInjuriesByAbbr(
 
 // ---------------- GEMINI PREDICTIONS ----------------
 async function generatePredictionsWithFallback(ai: GoogleGenAI, prompt: string) {
-  const modelsToTry = ["gemini-2.0-flash", "gemini-3-flash-preview", "gemini-3-pro-preview"];
+  const modelsToTry = ["gemini-2.5-flash"];
   let lastErr: any = null;
 
   for (const model of modelsToTry) {
