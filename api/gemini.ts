@@ -456,7 +456,15 @@ async function generatePredictionsWithFallback(ai: GoogleGenAI, prompt: string) 
 
   throw new Error(`Nenhum modelo disponível. Último erro: ${String(lastErr?.message ?? lastErr)}`);
 }
+function normalizeProb(value: any) {
+  const n = Number(value ?? 0);
 
+  if (!isFinite(n) || n < 0) return 0;
+
+  if (n <= 1) return n * 100;
+
+  return n;
+}
 function mergeInjuriesIntoPredictions(geminiObj: any, injuriesByTeam: Record<string, string[]>) {
   const root = geminiObj && typeof geminiObj === "object" ? geminiObj : {};
   const predictions = Array.isArray(root.predictions) ? root.predictions : [];
@@ -476,13 +484,13 @@ function mergeInjuriesIntoPredictions(geminiObj: any, injuriesByTeam: Record<str
       awayTeamAbbr: awayAbbr,
       awayRecordL10: String(p?.awayRecordL10 ?? "N/A"),
       dateTime: String(p?.dateTime ?? ""),
-      winProbabilityHome: Number(p?.winProbabilityHome ?? 0),
-      winProbabilityAway: Number(p?.winProbabilityAway ?? 0),
-      over15P1Prob: Number(p?.over15P1Prob ?? 0),
-      bttsP1Prob: Number(p?.bttsP1Prob ?? 0),
-      drawTRProb: Number(p?.drawTRProb ?? 0),
-      over45Prob: Number(p?.over45Prob ?? 0),
-      over55Prob: Number(p?.over55Prob ?? 0),
+      winProbabilityHome: normalizeProb(p?.winProbabilityHome),
+winProbabilityAway: normalizeProb(p?.winProbabilityAway),
+over15P1Prob: normalizeProb(p?.over15P1Prob),
+bttsP1Prob: normalizeProb(p?.bttsP1Prob),
+drawTRProb: normalizeProb(p?.drawTRProb),
+over45Prob: normalizeProb(p?.over45Prob),
+over55Prob: normalizeProb(p?.over55Prob),
       analysisSummary: String(p?.analysisSummary ?? ""),
       injuries: {
         home: injuriesByTeam[homeAbbr] ?? [],
