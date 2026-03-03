@@ -121,6 +121,46 @@ function sha256(text: string) {
   return crypto.createHash("sha256").update(text).digest("hex");
 }
 
+function isRetryableGeminiError(e: any) {
+  const msg = String(e?.message ?? e ?? "").toLowerCase();
+  const status = e?.status ?? e?.code ?? e?.response?.status;
+
+  return (
+    status === 503 ||
+    msg.includes("unavailable") ||
+    msg.includes("high demand") ||
+    msg.includes("503")
+  );
+}
+
+async function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  retries = 3,
+  baseMs = 900
+) {
+  let lastErr: any;
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (e: any) {
+      lastErr = e;
+
+      if (attempt === retries || !isRetryableGeminiError(e)) {
+        throw e;
+      }
+
+      const backoff = baseMs * Math.pow(2, attempt);
+      await sleep(backoff);
+    }
+  }
+
+  throw lastErr;
+}
 // ---------------- NHL SCHEDULE (real) ----------------
 type ScheduleGame = {
   id: number;
@@ -274,11 +314,13 @@ HTML:
 ${chunk}
 `.trim();
 
-  const resp = await ai.models.generateContent({
+ const resp = await withRetry(() =>
+  ai.models.generateContent({
     model: "gemini-3-flash-preview",
     contents: prompt,
     config: { responseMimeType: "application/json" },
-  });
+  })
+);
 
   const parsed = safeJsonParse(resp.text || "");
   if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as any).teams)) {
@@ -390,16 +432,18 @@ async function getInjuriesByAbbr(
 
 // ---------------- GEMINI PREDICTIONS ----------------
 async function generatePredictionsWithFallback(ai: GoogleGenAI, prompt: string) {
-  const modelsToTry = ["gemini-3-flash-preview", "gemini-3-pro-preview", "gemini-2.0-flash"];
+  const modelsToTry = ["gemini-2.0-flash", "gemini-3-flash-preview", "gemini-3-pro-preview"];
   let lastErr: any = null;
 
   for (const model of modelsToTry) {
     try {
-      const resp = await ai.models.generateContent({
-        model,
-        contents: prompt,
-        config: { responseMimeType: "application/json" },
-      });
+     const resp = await withRetry(() =>
+  ai.models.generateContent({
+    model,
+    contents: prompt,
+    config: { responseMimeType: "application/json" },
+  })
+);
       const parsed = safeJsonParse(resp.text || "") ?? {};
       return { modelUsed: model, parsed };
     } catch (e: any) {
@@ -657,9 +701,10 @@ console.log(
       const raw = await redis.get(geminiCacheKey);
       const cached = raw ? safeJsonParse(raw) : null;
       if (cached?.savedAt && Date.now() - cached.savedAt < geminiTtlMs) {
-        geminiObj = cached.data;
-        geminiHit = true;
-      }
+  geminiHit = true;
+
+  return res.status(200).json(cached.data);
+}
     }
 
     if (!geminiObj) {
@@ -761,10 +806,20 @@ finalData.suggestions = buildSuggestions(finalData.predictions);
 
     return res.status(200).json(finalData);
   } catch (err: any) {
-    // devolve SEMPRE JSON com stack/message
-    return jsonError(res, 500, "INTERNAL", "Erro interno no /api/gemini", {
-      message: String(err?.message ?? err),
-      stack: String(err?.stack ?? ""),
-    });
+
+  if (isRetryableGeminiError(err)) {
+    return jsonError(
+      res,
+      503,
+      "UNAVAILABLE",
+      "Modelo temporariamente sobrecarregado. Tenta novamente.",
+      { message: String(err?.message ?? err) }
+    );
   }
+
+  return jsonError(res, 500, "INTERNAL", "Erro interno no /api/gemini", {
+    message: String(err?.message ?? err),
+    stack: String(err?.stack ?? ""),
+  });
+}
 }
