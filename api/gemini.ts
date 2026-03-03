@@ -548,14 +548,20 @@ if (byOver15.length >= 3) {
 }
 
   return {
-    tripleWin: byWin
-  .slice(0, Math.min(3, byWin.length))
+tripleWin: byWin
+  .filter((g: any) =>
+    Math.max(g.winProbabilityHome, g.winProbabilityAway) >= 55
+  )
+  .slice(0, 3)
   .map((g: any) =>
     g.winProbabilityHome >= g.winProbabilityAway
       ? g.homeTeamAbbr
       : g.awayTeamAbbr
-),
-   tripleOver15P1: tripleOver15.length === 3 ? tripleOver15.map(format) : [],
+  ),
+   tripleOver15P1: byOver15
+  .filter((g: any) => g.over15P1Prob >= 60)
+  .slice(0, 3)
+  .map(format),
 doubleOver15P1: doubleOver15.length === 2 ? doubleOver15.map(format) : [],
    quadrupleOver45: byOver45
   .slice(0, Math.min(4, byOver45.length))
@@ -564,10 +570,17 @@ doubleOver15P1: doubleOver15.length === 2 ? doubleOver15.map(format) : [],
 over55Suggestions: byOver55
   .slice(0, Math.min(4, byOver55.length))
   .map(format),
-    drawSuggestions: byDraw.slice(0, 2).map((g: any) => ({
-      game: format(g),
-      explanation: "Elevada probabilidade de empate segundo o modelo.",
-    })),
+   drawSuggestions: byDraw
+  .filter((g: any) =>
+    g.drawTRProb >= 20 &&
+    g.drawTRProb <= 30 &&
+    Math.abs(g.winProbabilityHome - g.winProbabilityAway) <= 15
+  )
+  .slice(0, 2)
+  .map((g: any) => ({
+    game: format(g),
+    explanation: "Jogo equilibrado com probabilidade realista de empate.",
+  })),
   };
 }
 // ---------------- CORS HELPERS ----------------
@@ -725,10 +738,23 @@ console.log(
         awayTeamAbbr: normAbbr(g.awayTeam?.abbrev || ""),
       }));
 
-      const prompt = `
+     
+const prompt = `
 Responde APENAS com JSON válido (sem texto extra).
 
+Regras obrigatórias:
+
+- Usa percentagens entre 0 e 100 (não valores decimais entre 0 e 1).
+- A soma de winProbabilityHome + winProbabilityAway + drawTRProb deve ser aproximadamente 100.
+- Na NHL, a probabilidade de empate no tempo regulamentar (drawTRProb) normalmente situa-se entre 17% e 30%.
+- Só sai desse intervalo se houver uma razão estatística muito forte.
+- Evita valores extremos irrealistas (ex: 90% vitória em jogos equilibrados).
+- Mantém coerência matemática e realismo estatístico.
+- Se uma equipa é favorita clara, aumenta winProbability mas mantém draw dentro de intervalo plausível.
+- Baseia as estimativas em forma recente (last 10), equilíbrio ofensivo/defensivo e contexto geral típico da NHL.
+
 Analisa estes jogos da NHL para ${selectedDate} e devolve EXACTAMENTE este formato:
+
 {
   "predictions": [
     {
@@ -763,6 +789,7 @@ Analisa estes jogos da NHL para ${selectedDate} e devolve EXACTAMENTE este forma
 Jogos (IDs e abreviações):
 ${JSON.stringify(gamesForAI, null, 2)}
 `.trim();
+
 
       const { modelUsed, parsed } = await generatePredictionsWithFallback(ai, prompt);
       geminiObj = { ...parsed, modelUsed };
