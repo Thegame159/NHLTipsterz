@@ -562,7 +562,7 @@ tripleWin: byWin
       : g.awayTeamAbbr
   ),
    tripleOver15P1: byOver15
-  .filter((g: any) => g.over15P1Prob >= 60)
+  .filter((g: any) => g.over15P1Prob >= 55)
   .slice(0, 3)
   .map(format),
 doubleOver15P1: doubleOver15.length === 2 ? doubleOver15.map(format) : [],
@@ -804,18 +804,40 @@ if (refresh) {
 const prompt = `
 Responde APENAS com JSON válido (sem texto extra).
 
-Regras obrigatórias:
+Objetivo:
+Estimar probabilidades realistas para jogos da NHL.
 
-- Usa percentagens entre 0 e 100 (não valores decimais entre 0 e 1).
-- A soma de winProbabilityHome + winProbabilityAway + drawTRProb deve ser aproximadamente 100.
-- Na NHL, a probabilidade de empate no tempo regulamentar (drawTRProb) normalmente situa-se entre 17% e 30%.
-- Só sai desse intervalo se houver uma razão estatística muito forte.
-- Evita valores extremos irrealistas (ex: 90% vitória em jogos equilibrados).
-- Mantém coerência matemática e realismo estatístico.
-- Se uma equipa é favorita clara, aumenta winProbability mas mantém draw dentro de intervalo plausível.
-- Baseia as estimativas em forma recente (last 10), equilíbrio ofensivo/defensivo e contexto geral típico da NHL.
+Metodologia obrigatória:
 
-Analisa estes jogos da NHL para ${selectedDate} e devolve EXACTAMENTE este formato:
+1. Assume que as probabilidades devem refletir:
+- forma recente das equipas (últimos 10 jogos)
+- desempenho casa vs fora
+- impacto das lesões
+- equilíbrio típico da NHL
+
+2. Na NHL a maioria dos jogos é equilibrada.
+- Favoritos fortes raramente ultrapassam 60-65%.
+- Jogos equilibrados normalmente ficam entre 45-55%.
+
+3. Empates no tempo regulamentar (drawTRProb):
+- normalmente entre 17% e 28%.
+
+4. Over 1.5 no 1º período:
+- normalmente entre 40% e 60%.
+
+5. BTTS 1º período:
+- normalmente entre 18% e 35%.
+
+6. Over 4.5:
+- normalmente entre 65% e 80%.
+
+Regras matemáticas:
+
+- winProbabilityHome + winProbabilityAway + drawTRProb ≈ 100
+- Evita probabilidades irreais (>70% vitória).
+- Se as equipas forem equilibradas mantém probabilidades próximas.
+
+Formato obrigatório:
 
 {
   "predictions": [
@@ -848,7 +870,7 @@ Analisa estes jogos da NHL para ${selectedDate} e devolve EXACTAMENTE este forma
   }
 }
 
-Jogos (IDs e abreviações):
+Jogos:
 ${JSON.stringify(gamesForAI, null, 2)}
 `.trim();
 
