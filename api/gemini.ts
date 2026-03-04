@@ -357,7 +357,7 @@ async function extractInjuriesWithGemini(apiKey: string, html: string): Promise<
     i = Math.max(0, end - OVERLAP);
   }
 
- const MAX_CHUNKS = 2;
+ const MAX_CHUNKS = 1;
   const clippedChunks = chunks.slice(0, MAX_CHUNKS);
 
   const partials: InjuriesExtractResult[] = [];
