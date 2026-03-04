@@ -552,14 +552,17 @@ if (byOver15.length >= 3) {
 
   return {
 tripleWin: byWin
-  .filter((g: any) =>
-    Math.max(g.winProbabilityHome, g.winProbabilityAway) >= 55
-  )
   .slice(0, 3)
-  .map((g: any) =>
-    g.winProbabilityHome >= g.winProbabilityAway
-      ? g.homeTeamAbbr
-      : g.awayTeamAbbr
+  .map((g: any) => {
+    const isHome = g.winProbabilityHome >= g.winProbabilityAway;
+
+    return {
+      team: isHome ? g.homeTeamAbbr : g.awayTeamAbbr,
+      prob: Math.round(
+        isHome ? g.winProbabilityHome : g.winProbabilityAway
+      )
+    };
+  }),
   ),
    tripleOver15P1: byOver15
   .filter((g: any) => g.over15P1Prob >= 55)
