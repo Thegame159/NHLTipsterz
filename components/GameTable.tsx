@@ -41,22 +41,24 @@ const isMadrugadaGame = (dateTime: string) => {
 };
 
 const ProbabilityCell: React.FC<{ value: number }> = ({ value }) => {
-  const getColorClass = (v: number) => {
-    if (v >= 70) return 'text-emerald-400 border-emerald-500/30';
-    if (v >= 50) return 'text-amber-400 border-amber-500/30';
-    return 'text-rose-400 border-rose-500/30';
-  };
+const getColorClass = (v: number) => {
+  if (v <= 30) return 'text-rose-400 border-rose-500/30';
+  if (v <= 49) return 'text-amber-400 border-amber-500/30';
+  if (v <= 69) return 'text-green-400 border-green-500/30';
+  return 'text-emerald-400 border-emerald-600/40';
+};
 
-  const getBarColor = (v: number) => {
-    if (v >= 70) return 'bg-emerald-500';
-    if (v >= 50) return 'bg-amber-500';
-    return 'bg-rose-500';
-  };
+const getBarColor = (v: number) => {
+  if (v <= 30) return 'bg-rose-500';
+  if (v <= 49) return 'bg-amber-500';
+  if (v <= 69) return 'bg-green-500';
+  return 'bg-emerald-600';
+};
 
   return (
     <div className="flex flex-col items-center justify-center min-w-[80px]">
       <div className={`px-4 py-1.5 rounded-lg border bg-slate-900/60 font-black text-sm mb-1.5 ${getColorClass(value)}`}>
-        {value.toFixed(1)}%
+        {Math.round(value)}%
       </div>
       <div className="w-full h-1 bg-slate-800 rounded-full overflow-hidden max-w-[60px]">
         <div 
@@ -100,9 +102,10 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
                   onError={(e) => (e.currentTarget.src = 'https://a.espncdn.com/i/teamlogos/nhl/500/scoreboard/nhl.png')}
                 />
                 <div className="flex items-center gap-2">
-                  <span className="font-black text-lg text-slate-100">
-                    {game.homeTeamAbbr}
+                 <span className={`font-black text-lg ${isHomeFav ? 'text-white' : 'text-slate-400'}`}>
+                  {game.homeTeamAbbr}
                   </span>
+               
                   <span className="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-bold uppercase">
                     {game.homeRecordL10 || '0-0-0'}
                   </span>
@@ -122,9 +125,9 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
                   onError={(e) => (e.currentTarget.src = 'https://a.espncdn.com/i/teamlogos/nhl/500/scoreboard/nhl.png')}
                 />
                 <div className="flex items-center gap-2">
-                  <span className="font-black text-lg text-slate-100">
-                    {game.awayTeamAbbr}
-                  </span>
+                 <span className={`font-black text-lg ${!isHomeFav ? 'text-white' : 'text-slate-400'}`}>
+                {game.awayTeamAbbr}
+                </span>
                   <span className="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-bold uppercase">
                     {game.awayRecordL10 || '0-0-0'}
                   </span>
