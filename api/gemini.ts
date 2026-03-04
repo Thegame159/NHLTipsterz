@@ -3,7 +3,10 @@ import { GoogleGenAI } from "@google/genai";
 import crypto from "crypto";
 import { redis } from "./_redis.js";
 
-export const config = { runtime: "nodejs" };
+export const config = {
+  runtime: "nodejs",
+  maxDuration: 60,
+};
 
 // Cache FIXA para tudo (Gemini + Lesões)
 const CACHE_TTL_MS = 1000 * 60 * 60 * 9; // 9 horas
@@ -340,8 +343,8 @@ ${chunk}
 async function extractInjuriesWithGemini(apiKey: string, html: string): Promise<InjuriesExtractResult> {
   const ai = new GoogleGenAI({ apiKey });
 
-  const MAX_CHARS_PER_CHUNK = 90_000;
-  const OVERLAP = 2_000;
+ const MAX_CHARS_PER_CHUNK = 30000;
+ const OVERLAP = 500;
 
   const chunks: string[] = [];
   if (!html) return { teams: [] };
@@ -354,7 +357,7 @@ async function extractInjuriesWithGemini(apiKey: string, html: string): Promise<
     i = Math.max(0, end - OVERLAP);
   }
 
-  const MAX_CHUNKS = 6;
+ const MAX_CHUNKS = 2;
   const clippedChunks = chunks.slice(0, MAX_CHUNKS);
 
   const partials: InjuriesExtractResult[] = [];
@@ -711,8 +714,38 @@ console.log(
     }
 
     // 3) Injuries
-    const injuriesPack = await getInjuriesByAbbr(apiKey, teamAbbrs, { injuriesTtlMs, refresh });
+    // 3) Injuries (BEST EFFORT)
+// - Se houver cache => usa
+// - Se não houver cache => NÃO faz extração (evita timeout)
+let injuriesPack: any = {
+  injuriesByTeam: Object.fromEntries(Array.from(teamAbbrs).map(a => [a, []])),
+  injuriesCounts: Object.fromEntries(Array.from(teamAbbrs).map(a => [a, 0])),
+  debugMatch: {},
+  extractedTeams: 0,
+  meta: { hit: false, skipped: true, reason: "no_cache" },
+};
 
+const todayKey = new Date().toISOString().slice(0, 10);
+const injuriesCacheKey = `espn_br_injuries_extracted_v2:${todayKey}`;
+
+if (!refresh) {
+  const raw = await redis.get(injuriesCacheKey);
+  const cached = raw ? safeJsonParse(raw) : null;
+
+  if (cached?.savedAt && Date.now() - cached.savedAt < injuriesTtlMs && cached?.data?.teams) {
+    const extracted = cached.data;
+    const mapped = mapExtractedToAbbr(extracted, teamAbbrs);
+    injuriesPack = {
+      ...mapped,
+      meta: { hit: true, key: injuriesCacheKey, savedAt: cached.savedAt, htmlHash: cached.htmlHash ?? null },
+    };
+  }
+}
+
+// Só tenta atualizar lesões se refresh=1 (manual)
+if (refresh) {
+  injuriesPack = await getInjuriesByAbbr(apiKey, teamAbbrs, { injuriesTtlMs, refresh: true });
+}
     // 4) Gemini predictions cache
     const geminiCacheKey = `gemini_only:v2:${selectedDate}`;
     let geminiObj: any = null;
@@ -721,10 +754,39 @@ console.log(
     if (!refresh) {
       const raw = await redis.get(geminiCacheKey);
       const cached = raw ? safeJsonParse(raw) : null;
-      if (cached?.savedAt && Date.now() - cached.savedAt < geminiTtlMs) {
+     if (cached?.savedAt && Date.now() - cached.savedAt < geminiTtlMs) {
   geminiHit = true;
 
-  return res.status(200).json(cached.data);
+  const cachedData = cached.data;
+
+  // juntar lesões às predictions
+  const merged = mergeInjuriesIntoPredictions(
+    cachedData,
+    injuriesPack.injuriesByTeam
+  );
+
+  // aplicar filtro de horário PT
+  merged.predictions = merged.predictions.filter((p: any) => {
+    if (!p.dateTime) return false;
+
+    const gameDate = new Date(p.dateTime);
+
+    const ptHour = Number(
+      gameDate.toLocaleString("en-GB", {
+        timeZone: "Europe/Lisbon",
+        hour: "2-digit",
+        hour12: false,
+      })
+    );
+
+    return ptHour >= 23 || ptHour <= 5;
+  });
+
+  // recalcular sugestões
+  merged.suggestions = buildSuggestions(merged.predictions);
+
+  return res.status(200).json(merged);
+
 }
     }
 
@@ -821,7 +883,7 @@ finalData.predictions = finalData.predictions.filter((p: any) => {
 finalData.suggestions = buildSuggestions(finalData.predictions);
      await redis.setPx(
   geminiCacheKey,
-  JSON.stringify({ savedAt: Date.now(), data: finalData }),
+  JSON.stringify({ savedAt: Date.now(), data: geminiObj }),
   geminiTtlMs
 );
     
