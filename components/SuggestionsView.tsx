@@ -51,7 +51,46 @@ const getLogoUrl = (abbr: string) => {
   const normalizedAbbr = abbr?.trim().toUpperCase();
   const code = map[normalizedAbbr] || normalizedAbbr?.toLowerCase();
   return `https://a.espncdn.com/i/teamlogos/nhl/500/${code}.png`;
+  };
+  const TEAM_SHORT_NAMES: Record<string, string> = {
+  ANA: "Ducks",
+  ARI: "Coyotes",
+  BOS: "Bruins",
+  BUF: "Sabres",
+  CAR: "Hurricanes",
+  CBJ: "Blue Jackets",
+  CGY: "Flames",
+  CHI: "Blackhawks",
+  COL: "Avalanche",
+  DAL: "Stars",
+  DET: "Red Wings",
+  EDM: "Oilers",
+  FLA: "Panthers",
+  LAK: "Kings",
+  MIN: "Wild",
+  MTL: "Canadiens",
+  NJD: "Devils",
+  NSH: "Predators",
+  NYI: "Islanders",
+  NYR: "Rangers",
+  OTT: "Senators",
+  PHI: "Flyers",
+  PIT: "Penguins",
+  SEA: "Kraken",
+  SJS: "Sharks",
+  STL: "Blues",
+  TBL: "Lightning",
+  TOR: "Leafs",
+  UTA: "Utah",
+  VAN: "Canucks",
+  VGK: "Vegas",
+  WPG: "Jets",
+  WSH: "Capitals",
 };
+
+const teamLabel = (abbr: string) =>
+  TEAM_SHORT_NAMES[abbr?.toUpperCase()] || abbr;
+
 
 /** 🔄 Converte formato NHL (AWAY @ HOME) para formato PT (HOME vs AWAY) */
 const formatGameToPT = (text: string) => {
@@ -237,6 +276,12 @@ const SuggestionItem: React.FC<{ text: string; badgeColor: string; index: number
 
 // ⚠️ Extrair equipas do texto original (ANTES da conversão)
 const teamMatches = parseTeamsFromText(text);
+  const displayText =
+  teamMatches.length === 1
+    ? teamLabel(teamMatches[0])
+    : teamMatches.length === 2
+    ? `${teamLabel(teamMatches[0])} vs ${teamLabel(teamMatches[1])}`
+    : core;
 
   return (
     <div className="flex items-center gap-3 bg-slate-900/60 p-3 rounded-xl border border-slate-700/50 group hover:border-blue-500/30 transition-colors">
@@ -261,7 +306,9 @@ const teamMatches = parseTeamsFromText(text);
             ))}
           </div>
         )}
-        <span className="text-sm font-semibold text-slate-200 group-hover:text-white truncate">{core}</span>
+       <span className="text-sm font-semibold text-slate-200 group-hover:text-white truncate">
+  {displayText}
+</span>
       </div>
 
       {perc && (
