@@ -556,12 +556,12 @@ tripleWin: byWin
   .map((g: any) => {
     const isHome = g.winProbabilityHome >= g.winProbabilityAway;
 
-    return {
-      team: isHome ? g.homeTeamAbbr : g.awayTeamAbbr,
-      prob: Math.round(
-        isHome ? g.winProbabilityHome : g.winProbabilityAway
-      )
-    };
+    const team = isHome ? g.homeTeamAbbr : g.awayTeamAbbr;
+    const prob = Math.round(
+      isHome ? g.winProbabilityHome : g.winProbabilityAway
+    );
+
+    return `${team} (${prob}%)`;
   }),
   ),
    tripleOver15P1: byOver15
