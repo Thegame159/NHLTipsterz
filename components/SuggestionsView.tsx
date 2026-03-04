@@ -271,18 +271,24 @@ const cleanSuggestionLabel = (text: string) => {
   return { core, perc };
 };
 
-const SuggestionItem: React.FC<{ text: string; badgeColor: string; index: number }> = ({ text, badgeColor, index }) => {
+const SuggestionItem: React.FC<{
+  text: string;
+  badgeColor: string;
+  index: number;
+  showFullNames?: boolean;
+}> = ({ text, badgeColor, index, showFullNames }) => {
  const { core, perc } = cleanSuggestionLabel(text);
 
 // ⚠️ Extrair equipas do texto original (ANTES da conversão)
 const teamMatches = parseTeamsFromText(text);
-  const displayText =
-  teamMatches.length === 1
-    ? teamLabel(teamMatches[0])
-    : teamMatches.length === 2
-    ? `${teamLabel(teamMatches[0])} vs ${teamLabel(teamMatches[1])}`
+ const displayText =
+  showFullNames
+    ? teamMatches.length === 1
+      ? teamLabel(teamMatches[0])
+      : teamMatches.length === 2
+      ? `${teamLabel(teamMatches[0])} vs ${teamLabel(teamMatches[1])}`
+      : core
     : core;
-
   return (
     <div className="flex items-center gap-3 bg-slate-900/60 p-3 rounded-xl border border-slate-700/50 group hover:border-blue-500/30 transition-colors">
       <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${badgeColor} text-white shrink-0 shadow-sm`}>
@@ -344,7 +350,15 @@ const SuggestionCard: React.FC<{
 
       <div className="space-y-3">
         {items.length > 0 ? (
-          items.map((item, idx) => <SuggestionItem key={`${title}-${idx}`} text={item} badgeColor={badgeColor} index={idx} />)
+          items.map((item, idx) => (
+  <SuggestionItem
+    key={`${title}-${idx}`}
+    text={item}
+    badgeColor={badgeColor}
+    index={idx}
+    showFullNames={title === "Triplete de Vitórias"}
+  />
+))
         ) : (
           <p className="text-slate-500 italic text-sm py-4">Sem seleções disponíveis para este mercado.</p>
         )}
