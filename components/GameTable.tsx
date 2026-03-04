@@ -49,10 +49,10 @@ const getColorClass = (v: number) => {
 };
 
 const getBarColor = (v: number) => {
-  if (v <= 30) return 'bg-rose-500';
-  if (v <= 49) return 'bg-amber-500';
-  if (v <= 69) return 'bg-green-500';
-  return 'bg-emerald-600';
+  if (v <= 30) return 'bg-gradient-to-r from-rose-500 to-red-500';
+  if (v <= 49) return 'bg-gradient-to-r from-yellow-500 to-amber-500';
+  if (v <= 69) return 'bg-gradient-to-r from-green-500 to-emerald-500';
+  return 'bg-gradient-to-r from-emerald-500 to-green-600';
 };
 
   return (
@@ -146,11 +146,15 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
             </div>
 
             <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border font-black text-xs min-w-[100px] justify-center ${
-              isHomeFav
-                ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
-                : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+            maxProb <= 30
+  ? 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+  : maxProb <= 49
+  ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+  : maxProb <= 69
+  ? 'bg-green-500/10 border-green-500/30 text-green-400'
+  : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
             }`}>
-              {maxProb.toFixed(1)}%
+              {Math.round(maxProb)}%
               <span className="text-[8px] opacity-60 ml-1">
                 {isHomeFav ? 'CASA' : 'FORA'}
               </span>
