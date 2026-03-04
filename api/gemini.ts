@@ -563,7 +563,7 @@ tripleWin: byWin
 
     return `${team} (${prob}%)`;
   }),
-  ),
+  
    tripleOver15P1: byOver15
   .filter((g: any) => g.over15P1Prob >= 55)
   .slice(0, 3)
