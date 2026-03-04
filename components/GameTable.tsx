@@ -23,6 +23,43 @@ const getLogoUrl = (abbr: string) => {
   return `https://a.espncdn.com/i/teamlogos/nhl/500/${code}.png`;
 };
 
+const TEAM_SHORT_NAMES: Record<string, string> = {
+  ANA: "Ducks",
+  ARI: "Coyotes",
+  BOS: "Bruins",
+  BUF: "Sabres",
+  CAR: "Hurricanes",
+  CBJ: "Blue Jackets",
+  CGY: "Flames",
+  CHI: "Blackhawks",
+  COL: "Avalanche",
+  DAL: "Stars",
+  DET: "Red Wings",
+  EDM: "Oilers",
+  FLA: "Panthers",
+  LAK: "Kings",
+  MIN: "Wild",
+  MTL: "Canadiens",
+  NJD: "Devils",
+  NSH: "Predators",
+  NYI: "Islanders",
+  NYR: "Rangers",
+  OTT: "Senators",
+  PHI: "Flyers",
+  PIT: "Penguins",
+  SEA: "Kraken",
+  SJS: "Sharks",
+  STL: "Blues",
+  TBL: "Lightning",
+  TOR: "Leafs",
+  UTA: "Utah",
+  VAN: "Canucks",
+  VGK: "Vegas",
+  WPG: "Jets",
+  WSH: "Capitals",
+};
+const teamLabel = (abbr: string) => TEAM_SHORT_NAMES[abbr?.toUpperCase()] || abbr;
+
 /* 🔥 FILTRO MADRUGADA 23:00 → 05:00 */
 const isMadrugadaGame = (dateTime: string) => {
   if (!dateTime) return false;
@@ -103,7 +140,7 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
                 />
                 <div className="flex items-center gap-2">
                  <span className={`font-black text-lg ${isHomeFav ? 'text-white' : 'text-slate-400'}`}>
-                  {game.homeTeamAbbr}
+                  {teamLabel(game.homeTeamAbbr)}
                   </span>
                
                   <span className="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-bold uppercase">
@@ -126,7 +163,7 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
                 />
                 <div className="flex items-center gap-2">
                  <span className={`font-black text-lg ${!isHomeFav ? 'text-white' : 'text-slate-400'}`}>
-                {game.awayTeamAbbr}
+                {teamLabel(game.awayTeamAbbr)}
                 </span>
                   <span className="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-bold uppercase">
                     {game.awayRecordL10 || '0-0-0'}
