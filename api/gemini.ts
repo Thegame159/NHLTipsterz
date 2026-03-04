@@ -793,13 +793,14 @@ if (refresh) {
     if (!geminiObj) {
       const ai = new GoogleGenAI({ apiKey });
 
-      const gamesForAI = scheduleGames.map((g) => ({
-        id: String(g.id),
-        dateTime: g.startTimeUTC ?? "",
-        homeTeamAbbr: normAbbr(g.homeTeam?.abbrev || ""),
-        awayTeamAbbr: normAbbr(g.awayTeam?.abbrev || ""),
-      }));
-
+     const gamesForAI = scheduleGames.map((g) => ({
+  id: String(g.id),
+  dateTime: g.startTimeUTC ?? "",
+  homeTeamAbbr: normAbbr(g.homeTeam?.abbrev || ""),
+  awayTeamAbbr: normAbbr(g.awayTeam?.abbrev || ""),
+  homeTeam: g.homeTeam?.abbrev || "",
+  awayTeam: g.awayTeam?.abbrev || ""
+}));
      
 const prompt = `
 Responde APENAS com JSON válido (sem texto extra).
@@ -836,6 +837,19 @@ Regras matemáticas:
 - winProbabilityHome + winProbabilityAway + drawTRProb ≈ 100
 - Evita probabilidades irreais (>70% vitória).
 - Se as equipas forem equilibradas mantém probabilidades próximas.
+
+Regras para sugestões:
+
+- "tripleWin": escolhe os 3 favoritos com maior probabilidade de vitória.
+- "tripleOver15P1": escolhe os 3 jogos com maior probabilidade de over15P1Prob.
+- "doubleOver15P1": escolhe os 2 jogos seguintes com maior over15P1Prob que não estejam na tripla.
+- "quadrupleOver45": escolhe até 4 jogos com maior over45Prob.
+- "over55Suggestions": escolhe jogos com maior over55Prob.
+
+Regras adicionais:
+- Só inclui jogos que existam na lista "predictions".
+- Evita duplicar o mesmo jogo em múltiplas sugestões quando possível.
+- Prioriza jogos com probabilidades claramente acima da média da lista.
 
 Formato obrigatório:
 
