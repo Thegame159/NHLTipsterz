@@ -275,7 +275,7 @@ const teamMatches = parseTeamsFromText(text);
 
       <div className="flex items-center gap-2 overflow-hidden flex-1">
         {teamMatches.length > 0 && (
-          <div className="flex -space-x-2 mr-1">
+         <div className="flex gap-1 mr-1">
             {teamMatches.map((abbr, i) => (
               <img
                 key={`${abbr}-${i}`}
