@@ -261,7 +261,9 @@ async function fetchEspnInjuriesJson() {
   "Out";
     if (!teamName || !player) continue;
 
-    const abbr = guessAbbrFromTeamName(teamName);
+   const abbr =
+  inj?.team?.abbreviation ||
+  guessAbbrFromTeamName(teamName);
     if (!abbr) continue;
 
     if (!injuriesByTeam[abbr]) injuriesByTeam[abbr] = [];
