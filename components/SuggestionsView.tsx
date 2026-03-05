@@ -216,16 +216,30 @@ const findSingleTeamAbbrFromText = (text: string): string | null => {
 const parseTeamsFromText = (text: string): string[] => {
   if (!text) return [];
 
-  const cleaned = text
+  // 🔧 remover percentagem primeiro
+  const cleanedText = text
     .replace(/\(\d+%\)/g, "")
-    .toUpperCase()
-    .trim();
+    .replace(/\d+%/g, "")
+    .trim()
+    .toUpperCase();
 
-  const matches = cleaned.match(/\b[A-Z]{2,3}\b/g);
+  const vsSplit = cleanedText.split(/\s+VS\s+/);
+  if (vsSplit.length === 2) {
+    return [vsSplit[0], vsSplit[1]];
+  }
 
-  if (!matches) return [];
+  const atSplit = cleanedText.split(/\s*@\s*/);
+  if (atSplit.length === 2) {
+    return [atSplit[1], atSplit[0]];
+  }
 
-  return matches.slice(0, 2);
+  const dashSplit = cleanedText.split(/\s*-\s*/);
+  if (dashSplit.length === 2) {
+    return [dashSplit[0], dashSplit[1]];
+  }
+
+  const abbrMatches = cleanedText.match(/\b[A-Z]{2,4}\b/g) || [];
+  return abbrMatches.slice(0, 2);
 };
 
 /** remove IDs e aplica conversão PT */
