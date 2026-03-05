@@ -294,82 +294,50 @@ function mergeExtracted(results: InjuriesExtractResult[]): InjuriesExtractResult
   };
 }
 
-async function extractInjuriesChunkWithGemini(ai: GoogleGenAI, chunk: string): Promise<InjuriesExtractResult> {
-  const prompt = `
-Vais receber um excerto de HTML da página de lesões da NHL (ESPN Brasil).
-A tua tarefa é APENAS extrair as lesões listadas NESSE HTML. NÃO INVENTES NADA.
 
-Regras:
-- Se não encontrares uma equipa ou jogador no HTML, não cries entradas.
-- Devolve APENAS JSON válido.
-- Formato EXATO:
-{
-  "teams": [
-    { "team": "string", "injuries": ["string", "..."] }
-  ]
-}
 
-O campo "team" deve ser o nome da equipa como aparece no HTML (ex: "Boston Bruins").
-Cada item em "injuries" deve ser uma linha curta por jogador (ex: "Nome (OUT) - Lesão" ou "Nome - Lesão" se o estado não existir).
-Se não encontrares lesões, devolve: { "teams": [] }
 
-HTML:
-${chunk}
-`.trim();
+function extractInjuriesFromHtml(html: string) {
+  const teams: { team: string; injuries: string[] }[] = [];
 
- const resp = await withRetry(() =>
-  ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: prompt,
-    config: { responseMimeType: "application/json" },
-  })
-);
+  if (!html) return { teams };
 
-  const parsed = safeJsonParse(resp.text || "");
-  if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as any).teams)) {
-    return { teams: [] };
-  }
+  const teamBlocks = html.split(/<h2[^>]*>/i);
 
-  const teams: ExtractedTeamInjuries[] = (parsed as any).teams
-    .filter((x: any) => x && typeof x.team === "string" && Array.isArray(x.injuries))
-    .map((x: any) => ({
-      team: String(x.team),
-      injuries: x.injuries.map((s: any) => String(s)).filter((s: string) => s.trim().length > 0),
-    }));
+  for (const block of teamBlocks) {
+    const teamMatch = block.match(/^([^<]+)/);
+    if (!teamMatch) continue;
 
-  return { teams };
-}
+    const teamName = teamMatch[1].trim();
 
-async function extractInjuriesWithGemini(apiKey: string, html: string): Promise<InjuriesExtractResult> {
-  const ai = new GoogleGenAI({ apiKey });
+    const injuries: string[] = [];
 
- const MAX_CHARS_PER_CHUNK = 30000;
- const OVERLAP = 500;
+    const playerMatches = block.match(/<td[^>]*>(.*?)<\/td>/g);
 
-  const chunks: string[] = [];
-  if (!html) return { teams: [] };
+    if (playerMatches) {
+      for (const td of playerMatches) {
+        const clean = td.replace(/<[^>]+>/g, "").trim();
 
-  let i = 0;
-  while (i < html.length) {
-    const end = Math.min(i + MAX_CHARS_PER_CHUNK, html.length);
-    chunks.push(html.slice(i, end));
-    if (end >= html.length) break;
-    i = Math.max(0, end - OVERLAP);
-  }
+        if (
+          clean &&
+          clean.length < 80 &&
+          !clean.includes("Status") &&
+          !clean.includes("Player")
+        ) {
+          injuries.push(clean);
+        }
+      }
+    }
 
- const MAX_CHUNKS = 1;
-  const clippedChunks = chunks.slice(0, MAX_CHUNKS);
-
-  const partials: InjuriesExtractResult[] = [];
-  for (const c of clippedChunks) {
-    try {
-      partials.push(await extractInjuriesChunkWithGemini(ai, c));
-    } catch (e) {
-      console.error("Chunk extraction failed:", e);
+    if (injuries.length) {
+      teams.push({
+        team: teamName,
+        injuries,
+      });
     }
   }
 
-  return mergeExtracted(partials);
+  return { teams };
 }
 
 function mapExtractedToAbbr(extracted: InjuriesExtractResult, teamsOnDate: Set<string>) {
@@ -417,7 +385,7 @@ async function getInjuriesByAbbr(
 
   const htmlRes = await fetchEspnBrazilInjuriesHtml();
   const htmlHash = sha256(htmlRes.html || "");
-  const extracted = await extractInjuriesWithGemini(apiKey, htmlRes.html);
+const extracted = extractInjuriesFromHtml(htmlRes.html);
   const mapped = mapExtractedToAbbr(extracted, teamsOnDate);
 
   await redis.setPx(cacheKey, JSON.stringify({ savedAt: Date.now(), htmlHash, data: extracted }), opts.injuriesTtlMs);
