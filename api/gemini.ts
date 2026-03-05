@@ -243,32 +243,36 @@ async function fetchEspnInjuriesJson() {
 
   const injuriesByTeam: Record<string, string[]> = {};
 
-  const injuries = Array.isArray(data?.injuries) ? data.injuries : [];
+  const teams = Array.isArray(data?.injuries) ? data.injuries : [];
 
-  for (const inj of injuries) {
-   const teamName =
-  inj?.team?.displayName ||
-  inj?.team?.name ||
-  inj?.team?.shortDisplayName;
-   const player =
-  inj?.athlete?.fullName ||
-  inj?.athlete?.displayName ||
-  inj?.athlete?.shortName;
-   const status =
-  inj?.status?.type?.description ||
-  inj?.status?.displayName ||
-  inj?.status ||
-  "Out";
-    if (!teamName || !player) continue;
+  for (const team of teams) {
 
-   const abbr =
-  inj?.team?.abbreviation ||
-  guessAbbrFromTeamName(teamName);
+    const teamName = team?.displayName;
+    const abbr = guessAbbrFromTeamName(teamName);
+
     if (!abbr) continue;
 
-    if (!injuriesByTeam[abbr]) injuriesByTeam[abbr] = [];
+    const teamInjuries = Array.isArray(team?.injuries) ? team.injuries : [];
 
-    injuriesByTeam[abbr].push(`${player} (${status})`);
+    for (const inj of teamInjuries) {
+
+      const player =
+        inj?.athlete?.fullName ||
+        inj?.athlete?.displayName ||
+        inj?.athlete?.shortName;
+
+      const status =
+        inj?.status?.type?.description ||
+        inj?.status?.displayName ||
+        inj?.status ||
+        "Out";
+
+      if (!player) continue;
+
+      if (!injuriesByTeam[abbr]) injuriesByTeam[abbr] = [];
+
+      injuriesByTeam[abbr].push(`${player} (${status})`);
+    }
   }
 
   return injuriesByTeam;
