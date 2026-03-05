@@ -521,7 +521,14 @@ over55Prob: normalizeProb(p?.over55Prob),
   };
 }
 function buildSuggestions(predictions: any[]) {
-  const format = (g: any) => `${g.homeTeamAbbr} vs ${g.awayTeamAbbr}`;
+  const format = (g: any, probKey?: string) => {
+  const game = `${g.homeTeamAbbr} vs ${g.awayTeamAbbr}`;
+
+  if (!probKey) return game;
+
+  const prob = Math.round(Number(g?.[probKey] ?? 0));
+  return `${game} (${prob}%)`;
+};
 
   const sortByMaxWin = (a: any, b: any) =>
     Math.max(b.winProbabilityHome, b.winProbabilityAway) -
@@ -564,18 +571,17 @@ tripleWin: byWin
     return `${team} (${prob}%)`;
   }),
   
-   tripleOver15P1: byOver15
-  .filter((g: any) => g.over15P1Prob >= 55)
-  .slice(0, 3)
-  .map(format),
-doubleOver15P1: doubleOver15.length === 2 ? doubleOver15.map(format) : [],
+  tripleOver15P1: tripleOver15
+  .map((g:any)=>format(g,"over15P1Prob")),
+doubleOver15P1: doubleOver15.length === 2
+  ? doubleOver15.map((g:any)=>format(g,"over15P1Prob"))
+  : [],
    quadrupleOver45: byOver45
   .slice(0, Math.min(4, byOver45.length))
-  .map(format),
-
+ .map((g:any)=>format(g,"over45Prob")),
 over55Suggestions: byOver55
   .slice(0, Math.min(4, byOver55.length))
-  .map(format),
+  .map((g:any)=>format(g,"over55Prob")),
    drawSuggestions: byDraw
   .filter((g: any) =>
     g.drawTRProb >= 20 &&
@@ -584,7 +590,7 @@ over55Suggestions: byOver55
   )
   .slice(0, 2)
   .map((g: any) => ({
-    game: format(g),
+    game: format(g,"drawTRProb"),
     explanation: "Jogo equilibrado com probabilidade realista de empate.",
   })),
   };
