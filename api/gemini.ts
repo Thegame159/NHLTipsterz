@@ -752,8 +752,11 @@ if (!refresh) {
 }
 
 // Só tenta atualizar lesões se refresh=1 (manual)
-if (refresh) {
-  injuriesPack = await getInjuriesByAbbr(apiKey, teamAbbrs, { injuriesTtlMs, refresh: true });
+if (!injuriesPack.meta?.hit) {
+  injuriesPack = await getInjuriesByAbbr(apiKey, teamAbbrs, {
+    injuriesTtlMs,
+    refresh: false
+  });
 }
     // 4) Gemini predictions cache
     const geminiCacheKey = `gemini_only:v2:${selectedDate}`;
