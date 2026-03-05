@@ -246,8 +246,14 @@ async function fetchEspnInjuriesJson() {
   const injuries = Array.isArray(data?.injuries) ? data.injuries : [];
 
   for (const inj of injuries) {
-    const teamName = inj?.team?.displayName;
-   const player = inj?.athlete?.fullName || inj?.athlete?.displayName;
+   const teamName =
+  inj?.team?.displayName ||
+  inj?.team?.name ||
+  inj?.team?.shortDisplayName;
+   const player =
+  inj?.athlete?.fullName ||
+  inj?.athlete?.displayName ||
+  inj?.athlete?.shortName;
    const status =
   inj?.status?.type?.description ||
   inj?.status?.displayName ||
