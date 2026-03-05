@@ -214,7 +214,7 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
         <td className="py-6 text-center pr-4"><ProbabilityCell value={game.over45Prob} /></td>
       </tr>
 
-     {isExpanded && (
+{isExpanded && (
   <tr className="bg-slate-900/40 border-b border-slate-800">
     <td colSpan={6} className="p-6 space-y-4">
 
@@ -225,21 +225,35 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
       </div>
 
       {/* LESÕES */}
-      {(game.injuries?.home?.length || game.injuries?.away?.length) && (
-        <div className="text-sm text-slate-300">
-          <span className="text-red-500 font-black uppercase mr-2">Lesões:</span>
+      {(game.injuries?.home?.length > 0 || game.injuries?.away?.length > 0) && (
+        <div className="grid grid-cols-2 gap-6 text-sm">
 
-          <div className="mt-2 space-y-1 text-xs text-slate-400">
+          {/* HOME */}
+          <div>
+            <div className="text-rose-400 font-bold mb-2">
+              Lesões {teamLabel(game.homeTeamAbbr)}
+            </div>
 
-            {game.injuries.home?.map((p: string, i: number) => (
-              <div key={`h${i}`}>🏠 {p}</div>
-            ))}
-
-            {game.injuries.away?.map((p: string, i: number) => (
-              <div key={`a${i}`}>✈️ {p}</div>
-            ))}
-
+            <ul className="space-y-1 text-slate-400">
+              {game.injuries.home.map((inj, i) => (
+                <li key={i}>• {inj}</li>
+              ))}
+            </ul>
           </div>
+
+          {/* AWAY */}
+          <div>
+            <div className="text-rose-400 font-bold mb-2">
+              Lesões {teamLabel(game.awayTeamAbbr)}
+            </div>
+
+            <ul className="space-y-1 text-slate-400">
+              {game.injuries.away.map((inj, i) => (
+                <li key={i}>• {inj}</li>
+              ))}
+            </ul>
+          </div>
+
         </div>
       )}
 
