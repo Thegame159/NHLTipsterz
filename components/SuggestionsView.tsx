@@ -216,38 +216,16 @@ const findSingleTeamAbbrFromText = (text: string): string | null => {
 const parseTeamsFromText = (text: string): string[] => {
   if (!text) return [];
 
-  // 🔥 remove percentagens e lixo
-  const cleanedText = text
-    .replace(/\d+%/g, "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .toUpperCase();
+  const cleaned = text
+    .replace(/\(\d+%\)/g, "")
+    .toUpperCase()
+    .trim();
 
-  // 🔥 divide por hífen com ou sem espaços
-  const dashSplit = cleanedText.split(/\s*-\s*/);
-  if (dashSplit.length === 2) {
-    return [dashSplit[0], dashSplit[1]];
-  }
+  const matches = cleaned.match(/\b[A-Z]{2,3}\b/g);
 
-  // divide por VS
-  const vsSplit = cleanedText.split(/\s+VS\s+/);
-  if (vsSplit.length === 2) {
-    return [vsSplit[0], vsSplit[1]];
-  }
+  if (!matches) return [];
 
-  // divide por @
-  const atSplit = cleanedText.split(/\s*@\s*/);
-  if (atSplit.length === 2) {
-    return [atSplit[1], atSplit[0]];
-  }
-
-  // fallback regex
-  const abbrMatches = cleanedText.match(/\b[A-Z]{2,4}\b/g) || [];
-  const filtered = abbrMatches.filter(
-    (s) => !["OT", "VS", "V"].includes(s)
-  );
-
-  return filtered.slice(0, 2);
+  return matches.slice(0, 2);
 };
 
 /** remove IDs e aplica conversão PT */
