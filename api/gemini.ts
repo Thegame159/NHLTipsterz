@@ -302,10 +302,10 @@ function extractInjuriesFromHtml(html: string) {
 
   if (!html) return { teams };
 
-  const teamBlocks = html.split(/<h2[^>]*>/i);
+ const teamBlocks = html.split(/<h[23][^>]*>|<div class="Table__Title"[^>]*>/i);
 
   for (const block of teamBlocks) {
-    const teamMatch = block.match(/<h2[^>]*>(.*?)<\/h2>/is);
+   const teamMatch = block.match(/>([^<]+)<\/(h2|h3|div)>/i);
 
 if (!teamMatch) continue;
 const teamName = teamMatch[1]
@@ -830,6 +830,8 @@ Regras adicionais:
 - Só inclui jogos que existam na lista "predictions".
 - Evita duplicar o mesmo jogo em múltiplas sugestões quando possível.
 - Prioriza jogos com probabilidades claramente acima da média da lista.
+-A resposta deve ser escrita em português europeu.
+-O campo "analysisSummary" deve estar sempre em português.
 
 Formato obrigatório:
 
