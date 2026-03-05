@@ -535,9 +535,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const refresh = String((req.query as any)?.refresh ?? "") === "1";
 
-  // 1) schedule real
+// 1) schedule + injuries em paralelo
 const scheduleGames = await fetchNhlScheduleGames(selectedDate);
-
 // 👇 ADICIONA ISTO AQUI
 console.log("SELECTED DATE:", selectedDate);
 console.log(
@@ -561,6 +560,7 @@ console.log(
 
     // 2) teams no dia
     const teamAbbrs = new Set<string>();
+    const injuriesCacheKey = `injuries:nhl:v1`;
     for (const g of scheduleGames) {
       const h = normAbbr(g.homeTeam?.abbrev || "");
       const a = normAbbr(g.awayTeam?.abbrev || "");
@@ -570,13 +570,30 @@ console.log(
 
    // ---------------- INJURIES (ESPN JSON) ----------------
 
-const espnInjuries = await fetchEspnInjuriesJson();
 
-const injuriesByTeam: Record<string,string[]> = {};
 
-for (const abbr of teamAbbrs) {
-  injuriesByTeam[abbr] = espnInjuries?.[abbr] ?? [];
+let injuriesByTeam: Record<string,string[]> = {};
+
+const cachedInjuries = await redis.get(injuriesCacheKey);
+
+if (cachedInjuries) {
+
+  injuriesByTeam = safeJsonParse(cachedInjuries) || {};
+
+} else {
+
+  const espnInjuries = await fetchEspnInjuriesJson();
+
+  injuriesByTeam = espnInjuries || {};
+
+  await redis.setPx(
+    injuriesCacheKey,
+    JSON.stringify(injuriesByTeam),
+    CACHE_TTL_MS
+  );
+
 }
+
 
 const injuriesPack = {
   injuriesByTeam,
@@ -585,7 +602,7 @@ const injuriesPack = {
   ),
   debugMatch: {},
   extractedTeams: Object.values(injuriesByTeam).filter(v => v.length).length,
-  meta: { source: "espn-json" }
+  meta: { source: "redis-cache" }
 };
     // 4) Gemini predictions cache
     const geminiCacheKey = `gemini_only:v2:${selectedDate}`;
@@ -772,7 +789,7 @@ finalData.suggestions = buildSuggestions(finalData.predictions);
         selectedDate,
         refresh,
         cache: { geminiHit, geminiKey: geminiCacheKey, injuries: injuriesPack.meta },
-        injuriesTtlMs,
+      injuriesTtlMs: CACHE_TTL_MS,
         injuriesCounts: injuriesPack.injuriesCounts,
         injuriesMatch: injuriesPack.debugMatch,
         extractedTeams: injuriesPack.extractedTeams,
