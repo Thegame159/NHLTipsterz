@@ -233,6 +233,38 @@ const TEAM_FULLNAMES: Record<string, string[]> = {
   UTA: ["utah hockey club", "utah"],
   ARI: ["arizona coyotes", "coyotes"],
 };
+// ---------------- ESPN JSON INJURIES ----------------
+async function fetchEspnInjuriesJson() {
+  const url = "https://site.web.api.espn.com/apis/site/v2/sports/hockey/nhl/injuries";
+  const res = await fetchWithTimeout(url, undefined, 8000);
+  if (!res.ok) return {};
+
+  const data = await res.json();
+
+  const injuriesByTeam: Record<string, string[]> = {};
+
+  const injuries = Array.isArray(data?.injuries) ? data.injuries : [];
+
+  for (const inj of injuries) {
+    const teamName = inj?.team?.displayName;
+   const player = inj?.athlete?.fullName || inj?.athlete?.displayName;
+   const status =
+  inj?.status?.type?.description ||
+  inj?.status?.displayName ||
+  inj?.status ||
+  "Out";
+    if (!teamName || !player) continue;
+
+    const abbr = guessAbbrFromTeamName(teamName);
+    if (!abbr) continue;
+
+    if (!injuriesByTeam[abbr]) injuriesByTeam[abbr] = [];
+
+    injuriesByTeam[abbr].push(`${player} (${status})`);
+  }
+
+  return injuriesByTeam;
+}
 
 function guessAbbrFromTeamName(teamName: string): string | null {
   const t = norm(teamName);
@@ -246,160 +278,6 @@ function guessAbbrFromTeamName(teamName: string): string | null {
   return null;
 }
 
-// ---------------- ESPN HTML -> GEMINI (extract injuries) ----------------
-type ExtractedTeamInjuries = { team: string; injuries: string[] };
-type InjuriesExtractResult = { teams: ExtractedTeamInjuries[] };
-
-async function fetchEspnBrazilInjuriesHtml(): Promise<{ ok: boolean; status: number; url: string; html: string }> {
-  const url = "https://www.espn.com.br/nhl/lesoes";
-  const res = await fetchWithTimeout(
-    url,
-    {
-      headers: {
-        accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "accept-language": "pt-PT,pt;q=0.9,en;q=0.7",
-        "user-agent":
-          "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123 Safari/537.36",
-      },
-    },
-    12000
-  );
-
-  const html = await res.text().catch(() => "");
-  return { ok: res.ok, status: res.status, url, html };
-}
-
-function mergeExtracted(results: InjuriesExtractResult[]): InjuriesExtractResult {
-  const map = new Map<string, Set<string>>();
-
-  for (const r of results) {
-    for (const t of r.teams || []) {
-      const team = String(t.team || "").trim();
-      if (!team) continue;
-
-      const set = map.get(team) ?? new Set<string>();
-      for (const inj of t.injuries || []) {
-        const s = String(inj || "").trim();
-        if (s) set.add(s);
-      }
-      map.set(team, set);
-    }
-  }
-
-  return {
-    teams: Array.from(map.entries()).map(([team, set]) => ({
-      team,
-      injuries: Array.from(set),
-    })),
-  };
-}
-
-
-
-
-function extractInjuriesFromHtml(html: string) {
-  const teams: { team: string; injuries: string[] }[] = [];
-
-  if (!html) return { teams };
-
- const teamBlocks = html.split(/<h[23][^>]*>|<div class="Table__Title"[^>]*>/i);
-
-  for (const block of teamBlocks) {
-   const teamMatch = block.match(/>([^<]+)<\/(h2|h3|div)>/i);
-
-if (!teamMatch) continue;
-const teamName = teamMatch[1]
-  .replace(/<[^>]+>/g, "")
-  .trim();
-
-    const injuries: string[] = [];
-
-const cols = block.match(/<td[^>]*>(.*?)<\/td>/g);
-
-if (cols && cols.length >= 4) {
-  for (let i = 0; i < cols.length; i += 4) {
-    const name = cols[i]?.replace(/<[^>]+>/g, "").trim();
-    const pos = cols[i + 1]?.replace(/<[^>]+>/g, "").trim();
-    const date = cols[i + 2]?.replace(/<[^>]+>/g, "").trim();
-    const status = cols[i + 3]?.replace(/<[^>]+>/g, "").trim();
-
-    if (name && status) {
-      injuries.push(`${name} (${status})`);
-    }
-  }
-}
-
-    if (injuries.length) {
-      teams.push({
-        team: teamName,
-        injuries,
-      });
-    }
-  }
-
-  return { teams };
-}
-
-function mapExtractedToAbbr(extracted: InjuriesExtractResult, teamsOnDate: Set<string>) {
-  const injuriesByTeam: Record<string, string[]> = {};
-  const debug: Record<string, any> = {};
-
-  for (const abbr of teamsOnDate) injuriesByTeam[abbr] = [];
-
-  for (const t of extracted.teams) {
-    const abbr = guessAbbrFromTeamName(t.team);
-    if (!abbr) continue;
-    if (!teamsOnDate.has(abbr)) continue;
-
-    injuriesByTeam[abbr] = t.injuries;
-    debug[abbr] = { matchedFrom: t.team, count: t.injuries.length };
-  }
-
-  const injuriesCounts = Object.fromEntries(
-    Object.entries(injuriesByTeam).map(([k, v]) => [k, Array.isArray(v) ? v.length : 0])
-  );
-
-  return { injuriesByTeam, injuriesCounts, debugMatch: debug, extractedTeams: extracted.teams.length };
-}
-
-async function getInjuriesByAbbr(
-  apiKey: string,
-  teamsOnDate: Set<string>,
-  opts: { injuriesTtlMs: number; refresh: boolean }
-) {
-  const todayKey = new Date().toISOString().slice(0, 10);
-  const cacheKey = `espn_br_injuries_extracted_v2:${todayKey}`;
-
-  if (!opts.refresh) {
-    const raw = await redis.get(cacheKey);
-    const cached = raw ? safeJsonParse(raw) : null;
-    if (cached?.savedAt && Date.now() - cached.savedAt < opts.injuriesTtlMs && cached?.data?.teams) {
-      const extracted: InjuriesExtractResult = cached.data;
-      const mapped = mapExtractedToAbbr(extracted, teamsOnDate);
-      return {
-        ...mapped,
-        meta: { hit: true, key: cacheKey, savedAt: cached.savedAt, htmlHash: cached.htmlHash ?? null },
-      };
-    }
-  }
-
-  const htmlRes = await fetchEspnBrazilInjuriesHtml();
-  const htmlHash = sha256(htmlRes.html || "");
-const extracted = extractInjuriesFromHtml(htmlRes.html);
-  const mapped = mapExtractedToAbbr(extracted, teamsOnDate);
-
-  await redis.setPx(cacheKey, JSON.stringify({ savedAt: Date.now(), htmlHash, data: extracted }), opts.injuriesTtlMs);
-
-  return {
-    ...mapped,
-    meta: {
-      hit: false,
-      key: cacheKey,
-      htmlHash,
-      espn: { ok: htmlRes.ok, status: htmlRes.status, url: htmlRes.url, htmlLen: htmlRes.html.length },
-    },
-  };
-}
 
 // ---------------- GEMINI PREDICTIONS ----------------
 async function generatePredictionsWithFallback(ai: GoogleGenAI, prompt: string) {
@@ -653,7 +531,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const diffDays = (v as any).diffDays as number;
 
     const geminiTtlMs = CACHE_TTL_MS;
-    const injuriesTtlMs = CACHE_TTL_MS;
+    
 
     const refresh = String((req.query as any)?.refresh ?? "") === "1";
 
@@ -690,42 +568,25 @@ console.log(
       if (a) teamAbbrs.add(a);
     }
 
-    // 3) Injuries
-    // 3) Injuries (BEST EFFORT)
-// - Se houver cache => usa
-// - Se não houver cache => NÃO faz extração (evita timeout)
-let injuriesPack: any = {
-  injuriesByTeam: Object.fromEntries(Array.from(teamAbbrs).map(a => [a, []])),
-  injuriesCounts: Object.fromEntries(Array.from(teamAbbrs).map(a => [a, 0])),
+   // ---------------- INJURIES (ESPN JSON) ----------------
+
+const espnInjuries = await fetchEspnInjuriesJson();
+
+const injuriesByTeam: Record<string,string[]> = {};
+
+for (const abbr of teamAbbrs) {
+  injuriesByTeam[abbr] = espnInjuries?.[abbr] ?? [];
+}
+
+const injuriesPack = {
+  injuriesByTeam,
+  injuriesCounts: Object.fromEntries(
+    Object.entries(injuriesByTeam).map(([k,v]) => [k, v.length])
+  ),
   debugMatch: {},
-  extractedTeams: 0,
-  meta: { hit: false, skipped: true, reason: "no_cache" },
+  extractedTeams: Object.values(injuriesByTeam).filter(v => v.length).length,
+  meta: { source: "espn-json" }
 };
-
-const todayKey = new Date().toISOString().slice(0, 10);
-const injuriesCacheKey = `espn_br_injuries_extracted_v2:${todayKey}`;
-
-if (!refresh) {
-  const raw = await redis.get(injuriesCacheKey);
-  const cached = raw ? safeJsonParse(raw) : null;
-
-  if (cached?.savedAt && Date.now() - cached.savedAt < injuriesTtlMs && cached?.data?.teams) {
-    const extracted = cached.data;
-    const mapped = mapExtractedToAbbr(extracted, teamAbbrs);
-    injuriesPack = {
-      ...mapped,
-      meta: { hit: true, key: injuriesCacheKey, savedAt: cached.savedAt, htmlHash: cached.htmlHash ?? null },
-    };
-  }
-}
-
-// Só tenta atualizar lesões se refresh=1 (manual)
-if (!injuriesPack.meta?.hit) {
-  injuriesPack = await getInjuriesByAbbr(apiKey, teamAbbrs, {
-    injuriesTtlMs,
-    refresh: false
-  });
-}
     // 4) Gemini predictions cache
     const geminiCacheKey = `gemini_only:v2:${selectedDate}`;
     let geminiObj: any = null;
