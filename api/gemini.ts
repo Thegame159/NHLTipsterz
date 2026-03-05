@@ -305,10 +305,11 @@ function extractInjuriesFromHtml(html: string) {
   const teamBlocks = html.split(/<h2[^>]*>/i);
 
   for (const block of teamBlocks) {
-    const teamMatch = block.match(/^([^<]+)/);
-    if (!teamMatch) continue;
+    const teamMatch = block.match(/>([^<]+)<\/h2>/i);
 
-    const teamName = teamMatch[1].trim();
+if (!teamMatch) continue;
+
+const teamName = teamMatch[1].trim();
 
     const injuries: string[] = [];
 
