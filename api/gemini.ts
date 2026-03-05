@@ -312,22 +312,20 @@ function extractInjuriesFromHtml(html: string) {
 
     const injuries: string[] = [];
 
-    const playerMatches = block.match(/<td[^>]*>(.*?)<\/td>/g);
+const cols = block.match(/<td[^>]*>(.*?)<\/td>/g);
 
-    if (playerMatches) {
-      for (const td of playerMatches) {
-        const clean = td.replace(/<[^>]+>/g, "").trim();
+if (cols && cols.length >= 4) {
+  for (let i = 0; i < cols.length; i += 4) {
+    const name = cols[i]?.replace(/<[^>]+>/g, "").trim();
+    const pos = cols[i + 1]?.replace(/<[^>]+>/g, "").trim();
+    const date = cols[i + 2]?.replace(/<[^>]+>/g, "").trim();
+    const status = cols[i + 3]?.replace(/<[^>]+>/g, "").trim();
 
-        if (
-          clean &&
-          clean.length < 80 &&
-          !clean.includes("Status") &&
-          !clean.includes("Player")
-        ) {
-          injuries.push(clean);
-        }
-      }
+    if (name && status) {
+      injuries.push(`${name} (${status})`);
     }
+  }
+}
 
     if (injuries.length) {
       teams.push({
