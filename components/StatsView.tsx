@@ -635,9 +635,10 @@ const dates = useMemo(() => historyItems.map((x) => x.date), [historyItems]);
         }))
       );
 
-      const next: any[] = [];
+     const next: any[] = new Array(dates.length);
 
-      for (const date of dates) {
+      for (let i = 0; i < dates.length; i++) {
+        const date = dates[i];
         const history = historyItems.find((x) => x.date === date) || null;
         const autoSug: Suggestions | null = history?.auto?.suggestions ?? null;
         const mineSug: Suggestions | null = history?.mine?.suggestions ?? null;
@@ -645,7 +646,7 @@ const dates = useMemo(() => historyItems.map((x) => x.date), [historyItems]);
         const mineStats = history?.mine?.stats ?? null;
 // se já existem stats guardados não precisamos recalcular
 if (autoStats || mineStats) {
-  next.push({
+next[i] = {
     date,
     auto: {
       percent: autoStats?.percent ?? null,
@@ -661,7 +662,7 @@ if (autoStats || mineStats) {
     },
     resultsStatus: "ready",
     hasManual: false,
-  });
+  };
 
   continue;
 }
@@ -703,7 +704,7 @@ if (mineSug && mineApplied.total > 0) {
     percent: minePct,
   });
 }
-          next.push({
+          next[i] = {
             date,
             auto: { percent: autoPct, correct: autoApplied.correct, total: autoApplied.total, byMarket: autoApplied.byMarket },
             mine: { percent: minePct, correct: mineApplied.correct, total: mineApplied.total, byMarket: mineApplied.byMarket },
@@ -711,7 +712,7 @@ if (mineSug && mineApplied.total > 0) {
             hasManual: autoApplied.hasManual || mineApplied.hasManual,
           });
         } catch (e: any) {
-          next.push({
+          next[i] = {
             date,
             auto: { percent: null, correct: 0, total: 0, byMarket: {} },
             mine: { percent: null, correct: 0, total: 0, byMarket: {} },
