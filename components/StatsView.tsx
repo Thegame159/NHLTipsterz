@@ -44,7 +44,6 @@ type HistoryItem = {
   };
   markets?: Record<string, PickEval[]>;
 };
-  };
 };
 
 // ----------------- TEAM NAME -> ABBR -----------------
