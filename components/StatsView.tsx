@@ -710,7 +710,7 @@ if (mineSug && mineApplied.total > 0) {
             mine: { percent: minePct, correct: mineApplied.correct, total: mineApplied.total, byMarket: mineApplied.byMarket },
             resultsStatus: "ready",
             hasManual: autoApplied.hasManual || mineApplied.hasManual,
-          });
+          };
         } catch (e: any) {
           next[i] = {
             date,
