@@ -719,7 +719,7 @@ if (mineSug && mineApplied.total > 0) {
             resultsStatus: "error",
             error: String(e?.message ?? e),
             hasManual: false,
-          });
+          };
         }
       }
 
