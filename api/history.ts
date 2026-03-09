@@ -14,6 +14,7 @@ type StoreSide = {
     total: number;
     percent: number | null;
   };
+  markets?: Record<string, any>;
 };
 
 type StoreItem = {
@@ -103,21 +104,21 @@ if (req.method === "DELETE") {
       const parsed = safeJsonParse(raw);
       if (parsed) existing = parsed;
 
-      const incomingSuggestions = (body as any)?.suggestions;
+const incomingSuggestions = (body as any)?.suggestions;
 const incomingStats = (body as any)?.stats;
+const incomingMarkets = (body as any)?.markets;
 
 if (!side) {
   return res.status(400).json({ message: "Missing side" });
 }
 
 const currentSide = existing[side] ?? null;
-
 existing[side] = {
   savedAt: currentSide?.savedAt ?? Date.now(),
   suggestions: incomingSuggestions ?? currentSide?.suggestions ?? null,
   stats: incomingStats ?? currentSide?.stats,
+  markets: incomingMarkets ?? currentSide?.markets,
 };
-
       await redis.set(keyForDate(date), JSON.stringify(existing));
      
 
