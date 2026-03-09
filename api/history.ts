@@ -6,10 +6,20 @@ export const config = { runtime: "nodejs" };
 type Suggestions = any;
 type HistorySide = "auto" | "mine";
 
+type StoreSide = {
+  savedAt: number;
+  suggestions: Suggestions | null;
+  stats?: {
+    correct: number;
+    total: number;
+    percent: number | null;
+  };
+};
+
 type StoreItem = {
   date: string;
-  auto: null | { savedAt: number; suggestions: Suggestions };
-  mine: null | { savedAt: number; suggestions: Suggestions };
+  auto: null | StoreSide;
+  mine: null | StoreSide;
 };
 
 const KEY_PREFIX = "history:";
@@ -93,12 +103,20 @@ if (req.method === "DELETE") {
       const parsed = safeJsonParse(raw);
       if (parsed) existing = parsed;
 
-      if (side && (body as any)?.suggestions) {
-        existing[side] = {
-          savedAt: Date.now(),
-          suggestions: (body as any).suggestions,
-        };
-      }
+      const incomingSuggestions = (body as any)?.suggestions;
+const incomingStats = (body as any)?.stats;
+
+if (!side) {
+  return res.status(400).json({ message: "Missing side" });
+}
+
+const currentSide = existing[side] ?? null;
+
+existing[side] = {
+  savedAt: currentSide?.savedAt ?? Date.now(),
+  suggestions: incomingSuggestions ?? currentSide?.suggestions ?? null,
+  stats: incomingStats ?? currentSide?.stats,
+};
 
       await redis.set(keyForDate(date), JSON.stringify(existing));
      
