@@ -651,8 +651,7 @@ const dates = useMemo(() => historyItems.map((x) => x.date), [historyItems]);
         const autoStats = history?.auto?.stats ?? null;
         const mineStats = history?.mine?.stats ?? null;
 // se já existem stats guardados não precisamos recalcular
-if (autoStats && mineStats) {
-  next[i] = {
+if (autoStats && mineStats && history?.auto?.markets && history?.mine?.markets) {
     date,
     auto: {
       percent: autoStats?.percent ?? null,
