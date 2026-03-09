@@ -645,7 +645,7 @@ const dates = useMemo(() => historyItems.map((x) => x.date), [historyItems]);
         const autoStats = history?.auto?.stats ?? null;
         const mineStats = history?.mine?.stats ?? null;
 // se já existem stats guardados não precisamos recalcular
-if (autoStats || mineStats) {
+if (false && (autoStats || mineStats)) {
 next[i] = {
     date,
     auto: {
