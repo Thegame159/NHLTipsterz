@@ -650,8 +650,15 @@ const dates = useMemo(() => historyItems.map((x) => x.date), [historyItems]);
         const mineSug: Suggestions | null = history?.mine?.suggestions ?? null;
         const autoStats = history?.auto?.stats ?? null;
         const mineStats = history?.mine?.stats ?? null;
-// se já existem stats guardados não precisamos recalcular
-if (autoStats && mineStats && history?.auto?.markets && history?.mine?.markets) {
+
+// se já existem stats guardados e markets guardados não precisamos recalcular
+if (
+  autoStats &&
+  mineStats &&
+  history?.auto?.markets &&
+  history?.mine?.markets
+) {
+  next[i] = {
     date,
     auto: {
       percent: autoStats?.percent ?? null,
