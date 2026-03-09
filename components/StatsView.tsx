@@ -31,15 +31,19 @@ type HistoryItem = {
       total: number;
       percent: number | null;
     };
+    markets?: Record<string, PickEval[]>;
   };
+  
   mine: null | {
-    savedAt: number;
-    suggestions: Suggestions;
-    stats?: {
-      correct: number;
-      total: number;
-      percent: number | null;
-    };
+  savedAt: number;
+  suggestions: Suggestions;
+  stats?: {
+    correct: number;
+    total: number;
+    percent: number | null;
+  };
+  markets?: Record<string, PickEval[]>;
+};
   };
 };
 
@@ -238,8 +242,10 @@ async function saveHistoryStats(
     correct: number;
     total: number;
     percent: number | null;
-  }
-) {
+  },
+  markets: Record<string, PickEval[]>
+)
+ {
   try {
     await fetch(`/api/history?t=${Date.now()}`, {
       method: "POST",
@@ -251,6 +257,7 @@ async function saveHistoryStats(
         date,
         side,
         stats,
+        markets
       }),
     });
   } catch {
@@ -645,20 +652,20 @@ const dates = useMemo(() => historyItems.map((x) => x.date), [historyItems]);
         const autoStats = history?.auto?.stats ?? null;
         const mineStats = history?.mine?.stats ?? null;
 // se já existem stats guardados não precisamos recalcular
-if (false && (autoStats || mineStats)) {
-next[i] = {
+if (autoStats && mineStats) {
+  next[i] = {
     date,
     auto: {
       percent: autoStats?.percent ?? null,
       correct: autoStats?.correct ?? 0,
       total: autoStats?.total ?? 0,
-      byMarket: {},
+      byMarket: history?.auto?.markets ?? {},
     },
     mine: {
       percent: mineStats?.percent ?? null,
       correct: mineStats?.correct ?? 0,
       total: mineStats?.total ?? 0,
-      byMarket: {},
+      byMarket: history?.mine?.markets ?? {},
     },
     resultsStatus: "ready",
     hasManual: false,
@@ -690,19 +697,29 @@ next[i] = {
           const autoPct = autoSug && autoApplied.total > 0 ? (autoApplied.correct / autoApplied.total) * 100 : null;
           const minePct = mineSug && mineApplied.total > 0 ? (mineApplied.correct / mineApplied.total) * 100 : null;
 if (autoSug && autoApplied.total > 0) {
-  saveHistoryStats(date, "auto", {
+ saveHistoryStats(
+  date,
+  "auto",
+  {
     correct: autoApplied.correct,
     total: autoApplied.total,
     percent: autoPct,
-  });
+  },
+  autoApplied.byMarket
+);
 }
 
 if (mineSug && mineApplied.total > 0) {
-  saveHistoryStats(date, "mine", {
+  saveHistoryStats(
+  date,
+  "mine",
+  {
     correct: mineApplied.correct,
     total: mineApplied.total,
     percent: minePct,
-  });
+  },
+  mineApplied.byMarket
+);
 }
           next[i] = {
             date,
