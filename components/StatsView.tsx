@@ -695,7 +695,7 @@ if (autoStats && mineStats) {
 
           const autoPct = autoSug && autoApplied.total > 0 ? (autoApplied.correct / autoApplied.total) * 100 : null;
           const minePct = mineSug && mineApplied.total > 0 ? (mineApplied.correct / mineApplied.total) * 100 : null;
-if (autoSug && autoApplied.total > 0) {
+if (autoSug) {
  saveHistoryStats(
   date,
   "auto",
@@ -708,7 +708,7 @@ if (autoSug && autoApplied.total > 0) {
 );
 }
 
-if (mineSug && mineApplied.total > 0) {
+if (mineSug) {
   saveHistoryStats(
   date,
   "mine",
