@@ -23,8 +23,24 @@ type ApiResultsResponse = {
 
 type HistoryItem = {
   date: string;
-  auto: null | { savedAt: number; suggestions: Suggestions };
-  mine: null | { savedAt: number; suggestions: Suggestions };
+  auto: null | {
+    savedAt: number;
+    suggestions: Suggestions;
+    stats?: {
+      correct: number;
+      total: number;
+      percent: number | null;
+    };
+  };
+  mine: null | {
+    savedAt: number;
+    suggestions: Suggestions;
+    stats?: {
+      correct: number;
+      total: number;
+      percent: number | null;
+    };
+  };
 };
 
 // ----------------- TEAM NAME -> ABBR -----------------
@@ -215,7 +231,32 @@ async function clearManual(date: string) {
     cache: "no-store",
   });
 }
-
+async function saveHistoryStats(
+  date: string,
+  side: "auto" | "mine",
+  stats: {
+    correct: number;
+    total: number;
+    percent: number | null;
+  }
+) {
+  try {
+    await fetch(`/api/history?t=${Date.now()}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+      body: JSON.stringify({
+        date,
+        side,
+        stats,
+      }),
+    });
+  } catch {
+    // ignorar erro
+  }
+}
 function getManualValue(store: ManualStore | null, side: ManualSide, market: string, label: string): ManualValue | undefined {
   if (!store) return undefined;
   const byMarket = store[side] || {};
@@ -600,7 +641,30 @@ const dates = useMemo(() => historyItems.map((x) => x.date), [historyItems]);
         const history = historyItems.find((x) => x.date === date) || null;
         const autoSug: Suggestions | null = history?.auto?.suggestions ?? null;
         const mineSug: Suggestions | null = history?.mine?.suggestions ?? null;
+        const autoStats = history?.auto?.stats ?? null;
+        const mineStats = history?.mine?.stats ?? null;
+// se já existem stats guardados não precisamos recalcular
+if (autoStats || mineStats) {
+  next.push({
+    date,
+    auto: {
+      percent: autoStats?.percent ?? null,
+      correct: autoStats?.correct ?? 0,
+      total: autoStats?.total ?? 0,
+      byMarket: {},
+    },
+    mine: {
+      percent: mineStats?.percent ?? null,
+      correct: mineStats?.correct ?? 0,
+      total: mineStats?.total ?? 0,
+      byMarket: {},
+    },
+    resultsStatus: "ready",
+    hasManual: false,
+  });
 
+  continue;
+}
         try {
         const [rRes, manualStore] = await Promise.all([
   fetch(`/api/results?date=${date}&t=${Date.now()}`, {
@@ -624,7 +688,21 @@ const dates = useMemo(() => historyItems.map((x) => x.date), [historyItems]);
 
           const autoPct = autoSug && autoApplied.total > 0 ? (autoApplied.correct / autoApplied.total) * 100 : null;
           const minePct = mineSug && mineApplied.total > 0 ? (mineApplied.correct / mineApplied.total) * 100 : null;
+if (autoSug && autoApplied.total > 0) {
+  saveHistoryStats(date, "auto", {
+    correct: autoApplied.correct,
+    total: autoApplied.total,
+    percent: autoPct,
+  });
+}
 
+if (mineSug && mineApplied.total > 0) {
+  saveHistoryStats(date, "mine", {
+    correct: mineApplied.correct,
+    total: mineApplied.total,
+    percent: minePct,
+  });
+}
           next.push({
             date,
             auto: { percent: autoPct, correct: autoApplied.correct, total: autoApplied.total, byMarket: autoApplied.byMarket },
