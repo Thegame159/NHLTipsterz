@@ -674,11 +674,14 @@ const dates = useMemo(
   return m;
 }, [historyItems]);
 
-  useEffect(() => {
-    if (!dates.length) {
-      setReports([]);
-      return;
-    }
+ useEffect(() => {
+
+  if (editDate) return;
+
+  if (!dates.length) {
+    setReports([]);
+    return;
+  }
 
     let cancelled = false;
 
@@ -825,7 +828,7 @@ const rRes = await fetch(`/api/results?date=${date}&t=${Date.now()}`, {
     return () => {
       cancelled = true;
     };
-  }, [dates, historyItems]);
+  }, [dates, historyItems, editDate]);
 
   const totals = useMemo(() => {
     let aC = 0,
