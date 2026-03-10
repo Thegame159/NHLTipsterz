@@ -685,12 +685,10 @@ for (let start = 0; start < dates.length; start += BATCH_SIZE) {
 
   const batch = dates.slice(start, start + BATCH_SIZE);
 
-  await Promise.all(
-    batch.map(async (date) => {
+await Promise.all(
+  batch.map(async (date, i) => {
 
-batch.map(async (date, i) => {
-
-  const index = start + i;
+    const index = start + i;
       const history = historyMap[date] ?? null;
 
       const autoSug: Suggestions | null = history?.auto?.suggestions ?? null;
@@ -705,33 +703,43 @@ batch.map(async (date, i) => {
 
   const manualStore = manualByDate[date] ?? null;
 
-  if (!cancelled) {
-    setManualByDate((prev) => ({ ...prev, [date]: manualStore }));
-  }
 
-  next[index] = {
-    date,
-    auto: autoReady
-      ? {
-          percent: autoStats?.percent ?? null,
-          correct: autoStats?.correct ?? 0,
-          total: autoStats?.total ?? 0,
-          byMarket: history?.auto?.markets ?? {},
-        }
-      : { percent: null, correct: 0, total: 0, byMarket: {} },
 
-    mine: mineReady
-      ? {
-          percent: mineStats?.percent ?? null,
-          correct: mineStats?.correct ?? 0,
-          total: mineStats?.total ?? 0,
-          byMarket: history?.mine?.markets ?? {},
-        }
-      : { percent: null, correct: 0, total: 0, byMarket: {} },
+  const autoApplied = applyManualOverridesToByMarket(
+  manualStore,
+  "auto",
+  history?.auto?.markets ?? {}
+);
 
-    resultsStatus: "ready",
-    hasManual: !!manualStore,
-  };
+const mineApplied = applyManualOverridesToByMarket(
+  manualStore,
+  "mine",
+  history?.mine?.markets ?? {}
+);
+
+next[index] = {
+  date,
+  auto: autoReady
+    ? {
+        percent: autoStats?.percent ?? null,
+        correct: autoApplied.correct,
+        total: autoApplied.total,
+        byMarket: autoApplied.byMarket,
+      }
+    : { percent: null, correct: 0, total: 0, byMarket: {} },
+
+  mine: mineReady
+    ? {
+        percent: mineStats?.percent ?? null,
+        correct: mineApplied.correct,
+        total: mineApplied.total,
+        byMarket: mineApplied.byMarket,
+      }
+    : { percent: null, correct: 0, total: 0, byMarket: {} },
+
+  resultsStatus: "ready",
+  hasManual: autoApplied.hasManual || mineApplied.hasManual,
+};
 
   return;
 }
@@ -748,10 +756,7 @@ const rRes = await fetch(`/api/results?date=${date}&t=${Date.now()}`, {
 
         const results = (await rRes.json()) as ApiResultsResponse;
 
-        if (!cancelled) {
-          setManualByDate((prev) => ({ ...prev, [date]: manualStore }));
-        }
-
+    
         const autoByMarketBase = autoSug ? evalMarkets(autoSug, results) : {};
         const mineByMarketBase = mineSug ? evalMarkets(mineSug, results) : {};
 
@@ -792,7 +797,7 @@ const rRes = await fetch(`/api/results?date=${date}&t=${Date.now()}`, {
     return () => {
       cancelled = true;
     };
-  }, [dates, historyItems]);
+  }, [dates, historyItems, manualByDate]);
 
   const totals = useMemo(() => {
     let aC = 0,
