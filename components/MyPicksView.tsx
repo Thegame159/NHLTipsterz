@@ -506,6 +506,15 @@ const tripleWinOptions = useMemo(() => {
       }),
     [gamesOfDay]
   );
+  const combinadaGameOptions = useMemo(() => {
+
+const used = new Set(
+(picks.combinadaFlex || []).map((p:any)=>p.game)
+)
+
+return gameOptionsAll.filter(o => !used.has(o.value))
+
+}, [gameOptionsAll, picks.combinadaFlex])
   const combinadaOptions: Option[] = useMemo(() => {
   const usedGames = new Set(
     ((picks.combinadaFlex || []) as CombinadaPick[]).map((p) => p.game)
@@ -800,7 +809,7 @@ Escolhe jogos com Vitória ou Dupla Chance (1X / X2). (máx. 6)
 <div className="flex gap-2 mb-6 max-w-[420px]">
 <IconDropdown
 placeholder="Seleciona jogo..."
-options={gameOptionsAll}
+options={combinadaGameOptions}
 value={comboGame || ""}
 onChange={(v)=>setComboGame(v)}
 />
@@ -887,19 +896,6 @@ className="w-6 h-6 bg-slate-800 rounded-full p-0.5 border border-slate-700"
 
 </div>
 
-<div className="flex gap-2">
-
-<button className="px-3 py-1 rounded text-xs font-bold bg-green-500 text-white">
-WIN
-</button>
-
-<button className="px-3 py-1 rounded text-xs font-bold bg-blue-500 text-white">
-1X
-</button>
-
-<button className="px-3 py-1 rounded text-xs font-bold bg-purple-500 text-white">
-X2
-</button>
 
 <button
 onClick={()=>{
