@@ -578,7 +578,26 @@ const StatsView: React.FC = () => {
   const [editDate, setEditDate] = useState<string>("");
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
   const [manualByDate, setManualByDate] = useState<Record<string, ManualStore | null>>({});
+async function loadAllManual() {
 
+  try {
+
+    const r = await fetch(`/api/manual-all?t=${Date.now()}`, {
+      cache: "no-store"
+    });
+
+    if (!r.ok) return;
+
+    const data = await r.json().catch(()=>null);
+
+    if (!data?.items) return;
+
+    setManualByDate(data.items);
+
+  } catch {}
+
+}
+  
  // carrega histórico global
 const loadHistory = async () => {
   try {
@@ -603,7 +622,9 @@ const loadHistory = async () => {
 };
 
 useEffect(() => {
+
   loadHistory();
+  loadAllManual();
 
   const handler = () => loadHistory();
   window.addEventListener("history-updated", handler);
@@ -667,7 +688,9 @@ for (let start = 0; start < dates.length; start += BATCH_SIZE) {
   await Promise.all(
     batch.map(async (date) => {
 
-      const index = start + batch.indexOf(date);
+batch.map(async (date, i) => {
+
+  const index = start + i;
       const history = historyMap[date] ?? null;
 
       const autoSug: Suggestions | null = history?.auto?.suggestions ?? null;
@@ -680,7 +703,7 @@ for (let start = 0; start < dates.length; start += BATCH_SIZE) {
 
     if (autoReady || mineReady) {
 
-  const manualStore = await fetchManual(date);
+  const manualStore = manualByDate[date] ?? null;
 
   if (!cancelled) {
     setManualByDate((prev) => ({ ...prev, [date]: manualStore }));
@@ -715,10 +738,11 @@ for (let start = 0; start < dates.length; start += BATCH_SIZE) {
 
       try {
 
-        const [rRes, manualStore] = await Promise.all([
-          fetch(`/api/results?date=${date}&t=${Date.now()}`, { cache: "no-store" }),
-          fetchManual(date),
-        ]);
+     const manualStore = manualByDate[date] ?? null;
+
+const rRes = await fetch(`/api/results?date=${date}&t=${Date.now()}`, {
+  cache: "no-store",
+});
 
         if (!rRes.ok) throw new Error(`results HTTP ${rRes.status}`);
 
