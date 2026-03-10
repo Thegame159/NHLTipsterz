@@ -646,7 +646,7 @@ const interval = setInterval(() => {
     clearInterval(interval);
   };
 
-}, []);
+}, [editDate]);
 // 👇 COLA A FUNÇÃO AQUI
 async function forceRefresh() {
   try {
@@ -825,7 +825,7 @@ const rRes = await fetch(`/api/results?date=${date}&t=${Date.now()}`, {
     return () => {
       cancelled = true;
     };
-  }, [dates, historyItems, manualByDate]);
+  }, [dates, historyItems]);
 
   const totals = useMemo(() => {
     let aC = 0,
@@ -907,16 +907,7 @@ for (const [m, picks] of Object.entries(byMarket)) {
 
   const percent = total > 0 ? (correct / total) * 100 : null;
 
-saveHistoryStats(
-  date,
-  side,
-  {
-    correct,
-    total,
-    percent
-  },
-  newMarkets
-);
+
 
     if (side === "auto") {
       return {
