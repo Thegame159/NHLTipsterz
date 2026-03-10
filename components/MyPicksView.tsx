@@ -816,7 +816,7 @@ Sem seleções ainda — adiciona acima.
 </p>
 
 )}
-
+</div>
 </div>
 
 </div>
@@ -972,7 +972,7 @@ Sem seleções ainda — adiciona acima.
         />
       </div>
     </div>
-      </div>
+      
   );
 };
 
