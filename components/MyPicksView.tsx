@@ -515,7 +515,7 @@ const combinadaGameOptions = useMemo(() => {
   return gameOptionsAll.filter(o => !used.has(o.value));
 
 }, [gameOptionsAll, picks.combinadaFlex]);
-}, [gameOptionsAll, picks.combinadaFlex])
+
 
 
   const tripleOverSet = useMemo(
