@@ -657,115 +657,104 @@ const dates = useMemo(
           hasManual: false,
         }))
       );
+const next: any[] = new Array(dates.length);
+const BATCH_SIZE = 5;
 
-     const next: any[] = new Array(dates.length);
+for (let start = 0; start < dates.length; start += BATCH_SIZE) {
 
-      for (let i = 0; i < dates.length; i++) {
-        const date = dates[i];
-        const history = historyMap[date] ?? null;
-        const autoSug: Suggestions | null = history?.auto?.suggestions ?? null;
-        const mineSug: Suggestions | null = history?.mine?.suggestions ?? null;
-        const autoStats = history?.auto?.stats ?? null;
-        const mineStats = history?.mine?.stats ?? null;
+  const batch = dates.slice(start, start + BATCH_SIZE);
 
-// se já existem stats guardados e markets guardados não precisamos recalcular
-const autoReady = autoStats && history?.auto?.markets;
-const mineReady = mineStats && history?.mine?.markets;
+  await Promise.all(
+    batch.map(async (date) => {
 
-if (autoReady || mineReady) {
-  next[i] = {
-    date,
-    auto: autoReady
-      ? {
-          percent: autoStats?.percent ?? null,
-          correct: autoStats?.correct ?? 0,
-          total: autoStats?.total ?? 0,
-          byMarket: history?.auto?.markets ?? {},
-        }
-      : { percent: null, correct: 0, total: 0, byMarket: {} },
+      const index = start + batch.indexOf(date);
+      const history = historyMap[date] ?? null;
 
-    mine: mineReady
-      ? {
-          percent: mineStats?.percent ?? null,
-          correct: mineStats?.correct ?? 0,
-          total: mineStats?.total ?? 0,
-          byMarket: history?.mine?.markets ?? {},
-        }
-      : { percent: null, correct: 0, total: 0, byMarket: {} },
+      const autoSug: Suggestions | null = history?.auto?.suggestions ?? null;
+      const mineSug: Suggestions | null = history?.mine?.suggestions ?? null;
+      const autoStats = history?.auto?.stats ?? null;
+      const mineStats = history?.mine?.stats ?? null;
 
-    resultsStatus: "ready",
-    hasManual: false,
-  };
+      const autoReady = autoStats && history?.auto?.markets;
+      const mineReady = mineStats && history?.mine?.markets;
 
-  continue;
-}
-        try {
-        const [rRes, manualStore] = await Promise.all([
-  fetch(`/api/results?date=${date}&t=${Date.now()}`, {
-    cache: "no-store",
-  }),
-  fetchManual(date),
-]);
+      if (autoReady || mineReady) {
+        next[index] = {
+          date,
+          auto: autoReady
+            ? {
+                percent: autoStats?.percent ?? null,
+                correct: autoStats?.correct ?? 0,
+                total: autoStats?.total ?? 0,
+                byMarket: history?.auto?.markets ?? {},
+              }
+            : { percent: null, correct: 0, total: 0, byMarket: {} },
 
-          if (!rRes.ok) throw new Error(`results HTTP ${rRes.status}`);
-          const results = (await rRes.json()) as ApiResultsResponse;
+          mine: mineReady
+            ? {
+                percent: mineStats?.percent ?? null,
+                correct: mineStats?.correct ?? 0,
+                total: mineStats?.total ?? 0,
+                byMarket: history?.mine?.markets ?? {},
+              }
+            : { percent: null, correct: 0, total: 0, byMarket: {} },
 
-          if (!cancelled) {
-            setManualByDate((prev) => ({ ...prev, [date]: manualStore }));
-          }
+          resultsStatus: "ready",
+          hasManual: false,
+        };
 
-          const autoByMarketBase = autoSug ? evalMarkets(autoSug, results) : {};
-          const mineByMarketBase = mineSug ? evalMarkets(mineSug, results) : {};
-
-          const autoApplied = applyManualOverridesToByMarket(manualStore, "auto", autoByMarketBase as any);
-          const mineApplied = applyManualOverridesToByMarket(manualStore, "mine", mineByMarketBase as any);
-
-          const autoPct = autoSug && autoApplied.total > 0 ? (autoApplied.correct / autoApplied.total) * 100 : null;
-          const minePct = mineSug && mineApplied.total > 0 ? (mineApplied.correct / mineApplied.total) * 100 : null;
-if (autoSug) {
- saveHistoryStats(
-  date,
-  "auto",
-  {
-    correct: autoApplied.correct,
-    total: autoApplied.total,
-    percent: autoPct,
-  },
-  autoApplied.byMarket
-);
-}
-
-if (mineSug) {
-  saveHistoryStats(
-  date,
-  "mine",
-  {
-    correct: mineApplied.correct,
-    total: mineApplied.total,
-    percent: minePct,
-  },
-  mineApplied.byMarket
-);
-}
-          next[i] = {
-            date,
-            auto: { percent: autoPct, correct: autoApplied.correct, total: autoApplied.total, byMarket: autoApplied.byMarket },
-            mine: { percent: minePct, correct: mineApplied.correct, total: mineApplied.total, byMarket: mineApplied.byMarket },
-            resultsStatus: "ready",
-            hasManual: autoApplied.hasManual || mineApplied.hasManual,
-          };
-        } catch (e: any) {
-          next[i] = {
-            date,
-            auto: { percent: null, correct: 0, total: 0, byMarket: {} },
-            mine: { percent: null, correct: 0, total: 0, byMarket: {} },
-            resultsStatus: "error",
-            error: String(e?.message ?? e),
-            hasManual: false,
-          };
-        }
+        return;
       }
 
+      try {
+
+        const [rRes, manualStore] = await Promise.all([
+          fetch(`/api/results?date=${date}&t=${Date.now()}`, { cache: "no-store" }),
+          fetchManual(date),
+        ]);
+
+        if (!rRes.ok) throw new Error(`results HTTP ${rRes.status}`);
+
+        const results = (await rRes.json()) as ApiResultsResponse;
+
+        if (!cancelled) {
+          setManualByDate((prev) => ({ ...prev, [date]: manualStore }));
+        }
+
+        const autoByMarketBase = autoSug ? evalMarkets(autoSug, results) : {};
+        const mineByMarketBase = mineSug ? evalMarkets(mineSug, results) : {};
+
+        const autoApplied = applyManualOverridesToByMarket(manualStore, "auto", autoByMarketBase as any);
+        const mineApplied = applyManualOverridesToByMarket(manualStore, "mine", mineByMarketBase as any);
+
+        const autoPct = autoSug && autoApplied.total > 0 ? (autoApplied.correct / autoApplied.total) * 100 : null;
+        const minePct = mineSug && mineApplied.total > 0 ? (mineApplied.correct / mineApplied.total) * 100 : null;
+
+        next[index] = {
+          date,
+          auto: { percent: autoPct, correct: autoApplied.correct, total: autoApplied.total, byMarket: autoApplied.byMarket },
+          mine: { percent: minePct, correct: mineApplied.correct, total: mineApplied.total, byMarket: mineApplied.byMarket },
+          resultsStatus: "ready",
+          hasManual: autoApplied.hasManual || mineApplied.hasManual,
+        };
+
+      } catch (e: any) {
+
+        next[index] = {
+          date,
+          auto: { percent: null, correct: 0, total: 0, byMarket: {} },
+          mine: { percent: null, correct: 0, total: 0, byMarket: {} },
+          resultsStatus: "error",
+          error: String(e?.message ?? e),
+          hasManual: false,
+        };
+
+      }
+
+    })
+  );
+
+}
       if (!cancelled) setReports(next);
     })();
 
