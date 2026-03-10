@@ -506,57 +506,17 @@ const tripleWinOptions = useMemo(() => {
       }),
     [gamesOfDay]
   );
-  const combinadaGameOptions = useMemo(() => {
+const combinadaGameOptions = useMemo(() => {
 
-const used = new Set(
-(picks.combinadaFlex || []).map((p:any)=>p.game)
-)
-
-return gameOptionsAll.filter(o => !used.has(o.value))
-
-}, [gameOptionsAll, picks.combinadaFlex])
-  const combinadaOptions: Option[] = useMemo(() => {
-  const usedGames = new Set(
-    ((picks.combinadaFlex || []) as CombinadaPick[]).map((p) => p.game)
+  const used = new Set(
+    (picks.combinadaFlex || []).map((p:any)=>p.game)
   );
 
-  const out: Option[] = [];
+  return gameOptionsAll.filter(o => !used.has(o.value));
 
-  for (const game of gamesOfDay) {
-    if (usedGames.has(game)) continue;
+}, [gameOptionsAll, picks.combinadaFlex]);
+}, [gameOptionsAll, picks.combinadaFlex])
 
-    const teams = parseTeamsFromText(game);
-    if (teams.length < 2) continue;
-
-    const [home, away] = teams;
-
-    out.push({
-      value: `${game}|HOME`,
-      label: `${home} win`,
-      teams: [home, away],
-    });
-
-    out.push({
-      value: `${game}|AWAY`,
-      label: `${away} win`,
-      teams: [home, away],
-    });
-
-    out.push({
-      value: `${game}|1X`,
-      label: `1X (${home} ou empate)`,
-      teams: [home, away],
-    });
-
-    out.push({
-      value: `${game}|X2`,
-      label: `X2 (${away} ou empate)`,
-      teams: [home, away],
-    });
-  }
-
-  return out;
-}, [gamesOfDay, picks.combinadaFlex]);
 
   const tripleOverSet = useMemo(
     () => new Set((picks.tripleOver15P1 || []).map(normalizeGameText)),
@@ -869,16 +829,14 @@ className="flex items-center justify-between bg-slate-900/60 p-3 rounded-xl bord
 
 <div className="flex items-center gap-3">
 
-<div className="flex -space-x-2">
-{teams.map((abbr,i)=>(
 <img
-key={i}
-src={getLogoUrl(abbr)}
-className="w-6 h-6 bg-slate-800 rounded-full p-0.5 border border-slate-700"
+src={getLogoUrl(
+item.type === "HOME" || item.type === "1X"
+? teams[0]
+: teams[1]
+)}
+className="w-7 h-7 bg-slate-800 rounded-full p-0.5 border border-slate-700"
 />
-))}
-</div>
-
 <div className="flex flex-col">
 
 <span className="text-slate-200 font-semibold">
@@ -886,10 +844,12 @@ className="w-6 h-6 bg-slate-800 rounded-full p-0.5 border border-slate-700"
 </span>
 
 <span className="text-xs text-yellow-400 font-bold">
-{item.type === "HOME" && "HOME WIN"}
-{item.type === "AWAY" && "AWAY WIN"}
-{item.type === "1X" && "1X"}
-{item.type === "X2" && "X2"}
+
+{item.type === "HOME" && `${teams[0]} WIN`}
+{item.type === "AWAY" && `${teams[1]} WIN`}
+{item.type === "1X" && `${teams[0]} 1X`}
+{item.type === "X2" && `${teams[1]} 2X`}
+
 </span>
 
 </div>
