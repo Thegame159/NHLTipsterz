@@ -14,6 +14,7 @@ const defaultSuggestions = (): Suggestions => ({
   drawSuggestions: [],
   quadrupleOver45: [],
   over55Suggestions: [],
+  combinadaFlex: [],
 });
 
 const storageKey = (date: string) => `my_picks_${date}`;
@@ -626,7 +627,21 @@ const tripleWinOptions = useMemo(() => {
       return { ...prev, drawSuggestions: [...cur, { game: g, explanation: "" }] as any };
     });
   };
+const addToCombinada = (gameValue: string) => {
+  const g = normalizeGameText(gameValue);
 
+  setPicks(prev => {
+    const cur = prev.combinadaFlex || [];
+
+    if (cur.includes(g)) return prev;
+    if (cur.length >= 6) return prev;
+
+    return {
+      ...prev,
+      combinadaFlex: [...cur, g]
+    };
+  });
+};
   const savePicks = async () => {
   try {
     if (typeof window !== "undefined") {
@@ -695,6 +710,26 @@ const tripleWinOptions = useMemo(() => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="col-span-full">
+  <PickCard
+    title="Combinada"
+    icon="fa-layer-group"
+    gradient="bg-gradient-to-br from-yellow-500 to-amber-700"
+    badgeColor="bg-yellow-500"
+    description="Escolhe jogos com Vitória ou Dupla Chance (1X / X2)."
+    max={6}
+    options={teamOptions}
+    placeholder="Seleciona equipa..."
+    selectedItems={picks.combinadaFlex || []}
+onAdd={addToCombinada}
+onRemove={(idx) =>
+  setPicks(p => ({
+    ...p,
+    combinadaFlex: (p.combinadaFlex || []).filter((_, i) => i !== idx)
+  }))
+}
+  />
+</div>
         <PickCard
           title="Triplete de Vitórias"
           icon="fa-award"
