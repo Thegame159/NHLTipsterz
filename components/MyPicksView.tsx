@@ -869,7 +869,7 @@ className="px-2 py-1 bg-red-500/20 text-red-400 rounded"
 </div>
 
 
-})
+)
 
 ):(
 
