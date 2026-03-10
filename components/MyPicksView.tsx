@@ -831,13 +831,13 @@ className="flex items-center justify-between bg-slate-900/60 p-3 rounded-xl bord
 
 <img
 src={getLogoUrl(
-(item.pick === "HOME" || item.pick === "1X"
+item.pick === "HOME" || item.pick === "1X"
 ? teams[0]
-: teams[1]) || ""
-)
-}
+: teams[1]
+)}
 className="w-8 h-8 bg-slate-800 rounded-full p-1 border border-slate-700 shadow"
 />
+
 <div>
 
 <span className="text-slate-200 font-bold text-sm">
@@ -848,6 +848,7 @@ className="w-8 h-8 bg-slate-800 rounded-full p-1 border border-slate-700 shadow"
 {item.pick === "X2" && `${teams[1]} 2X`}
 
 </span>
+
 </div>
 
 </div>
