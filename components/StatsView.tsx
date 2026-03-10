@@ -851,9 +851,10 @@ setReports((prev) =>
     if (r.date !== date) return r;
     if (r.resultsStatus !== "ready") return r;
 
-    const byMarket =
-      side === "auto" ? r.auto.byMarket : r.mine.byMarket;
-
+   const byMarket =
+  side === "auto"
+    ? historyMap[date]?.auto?.markets ?? r.auto.byMarket
+    : historyMap[date]?.mine?.markets ?? r.mine.byMarket;
    const newMarkets: Record<string, PickEval[]> = {};
 
 for (const [m, picks] of Object.entries(byMarket)) {
@@ -889,7 +890,18 @@ for (const [m, picks] of Object.entries(byMarket)) {
       }
     }
 
-    const percent = total > 0 ? (correct / total) * 100 : null;
+  const percent = total > 0 ? (correct / total) * 100 : null;
+
+saveHistoryStats(
+  date,
+  side,
+  {
+    correct,
+    total,
+    percent
+  },
+  newMarkets
+);
 
     if (side === "auto") {
       return {
