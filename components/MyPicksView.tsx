@@ -639,11 +639,11 @@ const tripleWinOptions = useMemo(() => {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
-    date: selectedDate,
-    mine: {
-      suggestions: picks
-    }
-  }),
+  date: selectedDate,
+  side: "mine",
+  suggestions: picks
+})
+  
 });
 
     const data = await res.json().catch(() => null);
