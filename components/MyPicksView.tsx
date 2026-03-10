@@ -817,7 +817,7 @@ X2
 
 picks.combinadaFlex.map((item,idx)=>{
 
-const teams=parseTeamsFromText(item.game)
+const teams = parseTeamsFromText(item.game) || [];
 
 
 return(
@@ -831,27 +831,23 @@ className="flex items-center justify-between bg-slate-900/60 p-3 rounded-xl bord
 
 <img
 src={getLogoUrl(
-item.type === "HOME" || item.type === "1X"
+(item.pick === "HOME" || item.pick === "1X"
 ? teams[0]
-: teams[1]
-)}
-className="w-7 h-7 bg-slate-800 rounded-full p-0.5 border border-slate-700"
+: teams[1]) || ""
+)
+}
+className="w-8 h-8 bg-slate-800 rounded-full p-1 border border-slate-700 shadow"
 />
-<div className="flex flex-col">
+<div>
 
-<span className="text-slate-200 font-semibold">
-{item.game.replace(" VS "," vs ")}
-</span>
+<span className="text-slate-200 font-bold text-sm">
 
-<span className="text-xs text-yellow-400 font-bold">
-
-{item.type === "HOME" && `${teams[0]} WIN`}
-{item.type === "AWAY" && `${teams[1]} WIN`}
-{item.type === "1X" && `${teams[0]} 1X`}
-{item.type === "X2" && `${teams[1]} 2X`}
+{item.pick === "HOME" && `${teams[0]} WIN`}
+{item.pick === "AWAY" && `${teams[1]} WIN`}
+{item.pick === "1X" && `${teams[0]} 1X`}
+{item.pick === "X2" && `${teams[1]} 2X`}
 
 </span>
-
 </div>
 
 </div>
