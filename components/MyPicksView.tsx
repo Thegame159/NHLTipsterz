@@ -2,10 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { GamePrediction, Suggestions } from "../types";
 
-type ComboPick = {
-  game: string
-  type: "WIN" | "1X" | "X2"
-}
 interface Props {
   predictions: GamePrediction[];
   selectedDate: string;
@@ -106,7 +102,8 @@ const isEmptyPicks = (p: Suggestions) =>
   p.doubleOver15P1.length === 0 &&
   p.quadrupleOver45.length === 0 &&
   p.over55Suggestions.length === 0 &&
-  p.drawSuggestions.length === 0;
+  p.drawSuggestions.length === 0 &&
+(p.combinadaFlex?.length || 0) === 0;
 
 /* -------------------- PORTAL DROPDOWN -------------------- */
 
@@ -445,6 +442,7 @@ const PickCard: React.FC<{
 
 const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
   const [picks, setPicks] = useState<Suggestions>(defaultSuggestions());
+  const [comboGame, setComboGame] = useState<string | null>(null)
 
   useEffect(() => {
     try {
@@ -677,23 +675,32 @@ const tripleWinOptions = useMemo(() => {
       return { ...prev, drawSuggestions: [...cur, { game: g, explanation: "" }] as any };
     });
   };
-const addToCombinada = (value: string) => {
-  const [gameRaw, pickRaw] = value.split("|");
-  const game = normalizeGameText(gameRaw);
-  const pick = pickRaw as "HOME" | "AWAY" | "1X" | "X2";
+const addComboPick = (type: "HOME" | "AWAY" | "1X" | "X2") => {
 
-  setPicks((prev) => {
-    const cur = (prev.combinadaFlex || []) as CombinadaPick[];
+  if(!comboGame) return
 
-    if (cur.find((p) => p.game === game)) return prev;
-    if (cur.length >= 6) return prev;
+  const game = normalizeGameText(comboGame)
 
-    return {
+  setPicks(prev => {
+
+    const cur = prev.combinadaFlex ?? []
+
+    if(cur.find((p:any)=>p.game === game)) return prev
+    if(cur.length >= 6) return prev
+
+    return{
       ...prev,
-      combinadaFlex: [...cur, { game, pick }],
-    };
-  });
-};
+      combinadaFlex:[
+        ...cur,
+        {game,type}
+      ]
+    }
+
+  })
+
+  setComboGame(null)
+
+}
   const savePicks = async () => {
   try {
     if (typeof window !== "undefined") {
@@ -791,13 +798,47 @@ Escolhe jogos com Vitória ou Dupla Chance (1X / X2). (máx. 6)
 </p>
 
 <div className="flex gap-2 mb-6 max-w-[420px]">
-
 <IconDropdown
 placeholder="Seleciona jogo..."
 options={gameOptionsAll}
-value=""
-onChange={(v)=>addToCombinada(v)}
+value={comboGame || ""}
+onChange={(v)=>setComboGame(v)}
 />
+  {comboGame && (
+
+<div className="flex gap-2 mb-6">
+
+<button
+onClick={()=>addComboPick("HOME")}
+className="px-3 py-1 rounded text-xs font-bold bg-green-500 text-white"
+>
+HOME
+</button>
+
+<button
+onClick={()=>addComboPick("AWAY")}
+className="px-3 py-1 rounded text-xs font-bold bg-emerald-600 text-white"
+>
+AWAY
+</button>
+
+<button
+onClick={()=>addComboPick("1X")}
+className="px-3 py-1 rounded text-xs font-bold bg-blue-500 text-white"
+>
+1X
+</button>
+
+<button
+onClick={()=>addComboPick("X2")}
+className="px-3 py-1 rounded text-xs font-bold bg-purple-500 text-white"
+>
+X2
+</button>
+
+</div>
+
+)}
 
 </div>
 
@@ -805,9 +846,10 @@ onChange={(v)=>addToCombinada(v)}
 
 {(picks.combinadaFlex||[]).length>0 ? (
 
-picks.combinadaFlex.map((game,idx)=>{
+picks.combinadaFlex.map((item,idx)=>{
 
-const teams=parseTeamsFromText(game)
+const teams=parseTeamsFromText(item.game)
+
 
 return(
 
@@ -828,9 +870,20 @@ className="w-6 h-6 bg-slate-800 rounded-full p-0.5 border border-slate-700"
 ))}
 </div>
 
+<div className="flex flex-col">
+
 <span className="text-slate-200 font-semibold">
-{game.replace(" VS "," vs ")}
+{item.game.replace(" VS "," vs ")}
 </span>
+
+<span className="text-xs text-yellow-400 font-bold">
+{item.type === "HOME" && "HOME WIN"}
+{item.type === "AWAY" && "AWAY WIN"}
+{item.type === "1X" && "1X"}
+{item.type === "X2" && "X2"}
+</span>
+
+</div>
 
 </div>
 
