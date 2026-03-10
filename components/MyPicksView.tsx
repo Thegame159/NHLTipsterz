@@ -813,71 +813,67 @@ X2
 
 <div className="space-y-3">
 
-{(picks.combinadaFlex||[]).length>0 ? (
+{(picks.combinadaFlex || []).length > 0 ? (
 
-picks.combinadaFlex.map((item,idx)=>{
+  picks.combinadaFlex.map((item, idx) => {
 
-const teams = parseTeamsFromText(item.game) || [];
+    const teams = parseTeamsFromText(item.game) || [];
 
+    return (
 
-return(
+      <div
+        key={idx}
+        className="flex items-center justify-between bg-slate-900/60 p-3 rounded-xl border border-slate-700"
+      >
 
-<div
-key={idx}
-className="flex items-center justify-between bg-slate-900/60 p-3 rounded-xl border border-slate-700"
->
+        <div className="flex items-center gap-3">
 
-<div className="flex items-center gap-3">
+          <img
+            src={getLogoUrl(
+              item.pick === "HOME" || item.pick === "1X"
+                ? teams[0]
+                : teams[1]
+            )}
+            className="w-8 h-8 bg-slate-800 rounded-full p-1 border border-slate-700 shadow"
+          />
 
-<img
-src={getLogoUrl(
-item.pick === "HOME" || item.pick === "1X"
-? teams[0]
-: teams[1]
-)}
-className="w-8 h-8 bg-slate-800 rounded-full p-1 border border-slate-700 shadow"
-/>
+          <div>
+            <span className="text-slate-200 font-bold text-sm">
+              {item.pick === "HOME" && `${teams[0]} WIN`}
+              {item.pick === "AWAY" && `${teams[1]} WIN`}
+              {item.pick === "1X" && `${teams[0]} 1X`}
+              {item.pick === "X2" && `${teams[1]} 2X`}
+            </span>
+          </div>
 
-<div>
+        </div>
 
-<span className="text-slate-200 font-bold text-sm">
+        <button
+          onClick={()=>{
+            setPicks(prev=>({
+              ...prev,
+              combinadaFlex:(prev.combinadaFlex||[]).filter((_,i)=>i!==idx)
+            }))
+          }}
+          className="px-2 py-1 bg-red-500/20 text-red-400 rounded"
+        >
+          ✕
+        </button>
 
-{item.pick === "HOME" && `${teams[0]} WIN`}
-{item.pick === "AWAY" && `${teams[1]} WIN`}
-{item.pick === "1X" && `${teams[0]} 1X`}
-{item.pick === "X2" && `${teams[1]} 2X`}
+      </div>
 
-</span>
+    );
 
-</div>
-
-</div>
-
-
-<button
-onClick={()=>{
-setPicks(prev=>({
-...prev,
-combinadaFlex:(prev.combinadaFlex||[]).filter((_,i)=>i!==idx)
-}))
-}}
-className="px-2 py-1 bg-red-500/20 text-red-400 rounded"
->
-✕
-</button>
-
-</div>
-
-
-
+  })
 
 ) : (
 
-<p className="text-slate-500 italic text-sm">
-Sem seleções ainda — adiciona acima.
-</p>
+  <p className="text-slate-500 italic text-sm">
+    Sem seleções ainda — adiciona acima.
+  </p>
 
-)})
+)}
+
 </div>
 </div>
 
