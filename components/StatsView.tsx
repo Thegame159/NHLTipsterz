@@ -721,7 +721,10 @@ next[index] = {
   date,
   auto: autoReady
     ? {
-        percent: autoStats?.percent ?? null,
+       percent:
+  autoApplied.total > 0
+    ? (autoApplied.correct / autoApplied.total) * 100
+    : null,
         correct: autoApplied.correct,
         total: autoApplied.total,
         byMarket: autoApplied.byMarket,
@@ -730,7 +733,10 @@ next[index] = {
 
   mine: mineReady
     ? {
-        percent: mineStats?.percent ?? null,
+       percent:
+  mineApplied.total > 0
+    ? (mineApplied.correct / mineApplied.total) * 100
+    : null,
         correct: mineApplied.correct,
         total: mineApplied.total,
         byMarket: mineApplied.byMarket,
@@ -833,27 +839,77 @@ const rRes = await fetch(`/api/results?date=${date}&t=${Date.now()}`, {
     }
 
     // re-run only this date UI by forcing full refresh of reports from current state
-    setReports((prev) =>
-      prev.map((r) => {
-        if (r.date !== date) return r;
-        if (r.resultsStatus !== "ready") return r;
+setReports((prev) =>
+  prev.map((r) => {
+    if (r.date !== date) return r;
+    if (r.resultsStatus !== "ready") return r;
 
-        const autoApplied = applyManualOverridesToByMarket(next, "auto", r.auto.byMarket);
-        const mineApplied = applyManualOverridesToByMarket(next, "mine", r.mine.byMarket);
+    const byMarket =
+      side === "auto" ? r.auto.byMarket : r.mine.byMarket;
 
-        const autoPct = autoApplied.total > 0 ? (autoApplied.correct / autoApplied.total) * 100 : r.auto.percent;
-        const minePct = mineApplied.total > 0 ? (mineApplied.correct / mineApplied.total) * 100 : r.mine.percent;
+   const newMarkets: Record<string, PickEval[]> = {};
 
-        return {
-          ...r,
-          auto: { ...r.auto, correct: autoApplied.correct, total: autoApplied.total, percent: autoPct, byMarket: autoApplied.byMarket },
-          mine: { ...r.mine, correct: mineApplied.correct, total: mineApplied.total, percent: minePct, byMarket: mineApplied.byMarket },
-          hasManual: autoApplied.hasManual || mineApplied.hasManual,
-        };
-      })
-    );
-  }
+for (const [m, picks] of Object.entries(byMarket)) {
+  newMarkets[m] = [...picks];
+}
 
+    for (const [m, picks] of Object.entries(newMarkets)) {
+      newMarkets[m] = picks.map((p) =>
+        p.label === label
+          ? {
+              ...p,
+              ok: value,
+              manual: true,
+              reason:
+                value === null
+                  ? "Marcado como pendente (manual)."
+                  : value
+                  ? "Marcado como certo (manual)."
+                  : "Marcado como errado (manual).",
+            }
+          : p
+      );
+    }
+
+    let correct = 0;
+    let total = 0;
+
+    for (const picks of Object.values(newMarkets)) {
+      for (const p of picks) {
+        if (p.ok === null) continue;
+        total++;
+        if (p.ok) correct++;
+      }
+    }
+
+    const percent = total > 0 ? (correct / total) * 100 : null;
+
+    if (side === "auto") {
+      return {
+        ...r,
+        auto: {
+          ...r.auto,
+          correct,
+          total,
+          percent,
+          byMarket: newMarkets,
+        },
+      };
+    }
+
+    return {
+      ...r,
+      mine: {
+        ...r.mine,
+        correct,
+        total,
+        percent,
+        byMarket: newMarkets,
+      },
+    };
+  })
+);
+}
   async function clearManualForDate(date: string) {
     try {
       await clearManual(date);
