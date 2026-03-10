@@ -696,15 +696,8 @@ await Promise.all(
       const autoStats = history?.auto?.stats ?? null;
       const mineStats = history?.mine?.stats ?? null;
 
-   const autoReady =
-  autoStats &&
-  history?.auto?.markets &&
-  autoStats.total > 0;
-
-const mineReady =
-  mineStats &&
-  history?.mine?.markets &&
-  mineStats.total > 0;
+const autoReady = !!history?.auto?.markets;
+const mineReady = !!history?.mine?.markets;
 
     if (autoReady || mineReady) {
 
