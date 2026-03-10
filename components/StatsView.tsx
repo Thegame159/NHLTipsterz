@@ -604,6 +604,13 @@ const loadHistory = async () => {
 
 useEffect(() => {
   loadHistory();
+
+  const handler = () => loadHistory();
+  window.addEventListener("history-updated", handler);
+
+  return () => {
+    window.removeEventListener("history-updated", handler);
+  };
 }, []);
 // 👇 COLA A FUNÇÃO AQUI
 async function forceRefresh() {
@@ -620,7 +627,17 @@ async function forceRefresh() {
   }
 }
 
-const dates = useMemo(() => historyItems.map((x) => x.date), [historyItems]);
+const dates = useMemo(
+  () => historyItems.map((x) => x.date).sort((a, b) => (a < b ? 1 : -1)),
+  [historyItems]
+);
+  const historyMap = useMemo(() => {
+  const m: Record<string, HistoryItem> = {};
+  for (const h of historyItems) {
+    m[h.date] = h;
+  }
+  return m;
+}, [historyItems]);
 
   useEffect(() => {
     if (!dates.length) {
@@ -645,7 +662,7 @@ const dates = useMemo(() => historyItems.map((x) => x.date), [historyItems]);
 
       for (let i = 0; i < dates.length; i++) {
         const date = dates[i];
-        const history = historyItems.find((x) => x.date === date) || null;
+        const history = historyMap[date] ?? null;
         const autoSug: Suggestions | null = history?.auto?.suggestions ?? null;
         const mineSug: Suggestions | null = history?.mine?.suggestions ?? null;
         const autoStats = history?.auto?.stats ?? null;
