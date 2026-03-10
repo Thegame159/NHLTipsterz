@@ -652,26 +652,30 @@ const dates = useMemo(() => historyItems.map((x) => x.date), [historyItems]);
         const mineStats = history?.mine?.stats ?? null;
 
 // se já existem stats guardados e markets guardados não precisamos recalcular
-if (
-  autoStats &&
-  mineStats &&
-  history?.auto?.markets &&
-  history?.mine?.markets
-) {
+const autoReady = autoStats && history?.auto?.markets;
+const mineReady = mineStats && history?.mine?.markets;
+
+if (autoReady || mineReady) {
   next[i] = {
     date,
-    auto: {
-      percent: autoStats?.percent ?? null,
-      correct: autoStats?.correct ?? 0,
-      total: autoStats?.total ?? 0,
-      byMarket: history?.auto?.markets ?? {},
-    },
-    mine: {
-      percent: mineStats?.percent ?? null,
-      correct: mineStats?.correct ?? 0,
-      total: mineStats?.total ?? 0,
-      byMarket: history?.mine?.markets ?? {},
-    },
+    auto: autoReady
+      ? {
+          percent: autoStats?.percent ?? null,
+          correct: autoStats?.correct ?? 0,
+          total: autoStats?.total ?? 0,
+          byMarket: history?.auto?.markets ?? {},
+        }
+      : { percent: null, correct: 0, total: 0, byMarket: {} },
+
+    mine: mineReady
+      ? {
+          percent: mineStats?.percent ?? null,
+          correct: mineStats?.correct ?? 0,
+          total: mineStats?.total ?? 0,
+          byMarket: history?.mine?.markets ?? {},
+        }
+      : { percent: null, correct: 0, total: 0, byMarket: {} },
+
     resultsStatus: "ready",
     hasManual: false,
   };
