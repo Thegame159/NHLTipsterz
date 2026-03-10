@@ -635,15 +635,16 @@ const tripleWinOptions = useMemo(() => {
   } catch {}
 
   try {
-    const res = await fetch("/api/history", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        date: selectedDate,
-        side: "mine",
-        suggestions: picks,
-      }),
-    });
+ const res = await fetch("/api/history", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    date: selectedDate,
+    mine: {
+      suggestions: picks
+    }
+  }),
+});
 
     const data = await res.json().catch(() => null);
 
