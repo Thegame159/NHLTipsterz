@@ -691,13 +691,21 @@ await Promise.all(
     const index = start + i;
       const history = historyMap[date] ?? null;
 
-      const autoSug: Suggestions | null = history?.auto?.suggestions ?? null;
-      const mineSug: Suggestions | null = history?.mine?.suggestions ?? null;
+      const autoSug: Suggestions | null =
+  history?.auto?.suggestions ?? history?.autoSuggestions ?? null;
+
+const mineSug: Suggestions | null =
+  history?.mine?.suggestions ?? history?.mineSuggestions ?? null;
       const autoStats = history?.auto?.stats ?? null;
       const mineStats = history?.mine?.stats ?? null;
 
-const autoReady = !!history?.auto?.markets;
-const mineReady = !!history?.mine?.markets;
+const autoReady =
+  history?.auto?.markets &&
+  Object.keys(history.auto.markets).length > 0;
+
+const mineReady =
+  history?.mine?.markets &&
+  Object.keys(history.mine.markets).length > 0;
 
     if (autoReady || mineReady) {
 
