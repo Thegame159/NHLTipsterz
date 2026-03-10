@@ -111,6 +111,10 @@ const isEmptyPicks = (p: Suggestions) =>
 /* -------------------- PORTAL DROPDOWN -------------------- */
 
 type Option = { value: string; label: string; teams?: string[] };
+type CombinadaPick = {
+  game: string;
+  pick: "HOME" | "AWAY" | "1X" | "X2";
+};
 
 const PortalMenu: React.FC<{
   open: boolean;
@@ -504,6 +508,48 @@ const tripleWinOptions = useMemo(() => {
       }),
     [gamesOfDay]
   );
+  const combinadaOptions: Option[] = useMemo(() => {
+  const usedGames = new Set(
+    ((picks.combinadaFlex || []) as CombinadaPick[]).map((p) => p.game)
+  );
+
+  const out: Option[] = [];
+
+  for (const game of gamesOfDay) {
+    if (usedGames.has(game)) continue;
+
+    const teams = parseTeamsFromText(game);
+    if (teams.length < 2) continue;
+
+    const [home, away] = teams;
+
+    out.push({
+      value: `${game}|HOME`,
+      label: `${home} win`,
+      teams: [home, away],
+    });
+
+    out.push({
+      value: `${game}|AWAY`,
+      label: `${away} win`,
+      teams: [home, away],
+    });
+
+    out.push({
+      value: `${game}|1X`,
+      label: `1X (${home} ou empate)`,
+      teams: [home, away],
+    });
+
+    out.push({
+      value: `${game}|X2`,
+      label: `X2 (${away} ou empate)`,
+      teams: [home, away],
+    });
+  }
+
+  return out;
+}, [gamesOfDay, picks.combinadaFlex]);
 
   const tripleOverSet = useMemo(
     () => new Set((picks.tripleOver15P1 || []).map(normalizeGameText)),
@@ -631,18 +677,20 @@ const tripleWinOptions = useMemo(() => {
       return { ...prev, drawSuggestions: [...cur, { game: g, explanation: "" }] as any };
     });
   };
-const addToCombinada = (gameValue: string) => {
-  const g = normalizeGameText(gameValue);
+const addToCombinada = (value: string) => {
+  const [gameRaw, pickRaw] = value.split("|");
+  const game = normalizeGameText(gameRaw);
+  const pick = pickRaw as "HOME" | "AWAY" | "1X" | "X2";
 
-  setPicks(prev => {
-    const cur = prev.combinadaFlex ?? [];
+  setPicks((prev) => {
+    const cur = (prev.combinadaFlex || []) as CombinadaPick[];
 
-if (cur.includes(g)) return prev;
+    if (cur.find((p) => p.game === game)) return prev;
     if (cur.length >= 6) return prev;
 
     return {
       ...prev,
-      combinadaFlex: [...cur, g]
+      combinadaFlex: [...cur, { game, pick }],
     };
   });
 };
@@ -684,6 +732,16 @@ if (cur.includes(g)) return prev;
   }
 };
 
+  /* 👇 COLA AQUI */
+const formatCombinadaPick = (item: CombinadaPick) => {
+  const teams = parseTeamsFromText(item.game);
+  const [home, away] = teams;
+
+  if (item.pick === "HOME") return `${home} win`;
+  if (item.pick === "AWAY") return `${away} win`;
+  if (item.pick === "1X") return `1X (${home} ou empate)`;
+  return `X2 (${away} ou empate)`;
+};
   return (
     <div className="space-y-8 pb-24">
       <div className="bg-gradient-to-r from-blue-900/40 to-slate-900/40 border border-blue-500/20 rounded-2xl p-6 sm:p-8 flex flex-col sm:flex-row items-center gap-6">
