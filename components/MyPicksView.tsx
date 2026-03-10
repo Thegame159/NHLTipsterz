@@ -972,6 +972,7 @@ Sem seleções ainda — adiciona acima.
         />
       </div>
     </div>
+      </div>
   );
 };
 
