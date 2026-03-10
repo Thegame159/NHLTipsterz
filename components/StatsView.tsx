@@ -1171,7 +1171,7 @@ saveHistoryStats(
                           </div>
                         </div>
 
-                        {Object.keys(r.mine.byMarket).length ? (
+                       {r.mine.total > 0 || Object.keys(r.mine.byMarket || {}).length > 0 ? (
                           <div className="space-y-6">
                             {Object.entries(r.mine.byMarket).map(([k, v]: any) => (
                               <MarketBlock
