@@ -657,11 +657,11 @@ const addComboPick = (type: "HOME" | "AWAY" | "1X" | "X2") => {
     if(cur.find((p:any)=>p.game === game)) return prev
     if(cur.length >= 6) return prev
 
-    return{
-      ...prev,
-      combinadaFlex:[
-        ...cur,
-        {game,type}
+   return{
+  ...prev,
+  combinadaFlex:[
+    ...cur,
+    {game,pick:type}
       ]
     }
 
