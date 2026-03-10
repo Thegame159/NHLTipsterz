@@ -869,10 +869,10 @@ setReports((prev) =>
     if (r.date !== date) return r;
     if (r.resultsStatus !== "ready") return r;
 
-   const byMarket =
+  const byMarket =
   side === "auto"
-    ? historyMap[date]?.auto?.markets ?? r.auto.byMarket
-    : historyMap[date]?.mine?.markets ?? r.mine.byMarket;
+    ? r.auto.byMarket
+    : r.mine.byMarket;
    const newMarkets: Record<string, PickEval[]> = {};
 
 for (const [m, picks] of Object.entries(byMarket)) {
