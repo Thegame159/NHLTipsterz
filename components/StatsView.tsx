@@ -626,13 +626,19 @@ useEffect(() => {
   loadHistory();
   loadAllManual();
 
-  const handler = () => loadHistory();
+ const handler = () => {
+  if (!editDate) {
+    loadHistory();
+  }
+};
   window.addEventListener("history-updated", handler);
 
   // 🔁 auto refresh resultados
 const interval = setInterval(() => {
-  loadHistory();
-  loadAllManual();
+  if (!editDate) {
+    loadHistory();
+    loadAllManual();
+  }
 }, 60000); // 1 minutos
 
   return () => {
@@ -1117,7 +1123,15 @@ saveHistoryStats(
 
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={() => setEditDate(isEditingThisDate ? "" : r.date)}
+                        onClick={() => {
+  const closing = isEditingThisDate;
+  setEditDate(closing ? "" : r.date);
+
+  if (closing) {
+    loadHistory();
+    loadAllManual();
+  }
+}}
                         className={`px-3 py-2 rounded-lg border text-[10px] font-black uppercase tracking-widest transition ${
                           isEditingThisDate
                             ? "bg-indigo-500/15 border-indigo-500/30 text-indigo-200"
