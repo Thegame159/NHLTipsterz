@@ -678,33 +678,40 @@ for (let start = 0; start < dates.length; start += BATCH_SIZE) {
       const autoReady = autoStats && history?.auto?.markets;
       const mineReady = mineStats && history?.mine?.markets;
 
-      if (autoReady || mineReady) {
-        next[index] = {
-          date,
-          auto: autoReady
-            ? {
-                percent: autoStats?.percent ?? null,
-                correct: autoStats?.correct ?? 0,
-                total: autoStats?.total ?? 0,
-                byMarket: history?.auto?.markets ?? {},
-              }
-            : { percent: null, correct: 0, total: 0, byMarket: {} },
+    if (autoReady || mineReady) {
 
-          mine: mineReady
-            ? {
-                percent: mineStats?.percent ?? null,
-                correct: mineStats?.correct ?? 0,
-                total: mineStats?.total ?? 0,
-                byMarket: history?.mine?.markets ?? {},
-              }
-            : { percent: null, correct: 0, total: 0, byMarket: {} },
+  const manualStore = await fetchManual(date);
 
-          resultsStatus: "ready",
-          hasManual: false,
-        };
+  if (!cancelled) {
+    setManualByDate((prev) => ({ ...prev, [date]: manualStore }));
+  }
 
-        return;
-      }
+  next[index] = {
+    date,
+    auto: autoReady
+      ? {
+          percent: autoStats?.percent ?? null,
+          correct: autoStats?.correct ?? 0,
+          total: autoStats?.total ?? 0,
+          byMarket: history?.auto?.markets ?? {},
+        }
+      : { percent: null, correct: 0, total: 0, byMarket: {} },
+
+    mine: mineReady
+      ? {
+          percent: mineStats?.percent ?? null,
+          correct: mineStats?.correct ?? 0,
+          total: mineStats?.total ?? 0,
+          byMarket: history?.mine?.markets ?? {},
+        }
+      : { percent: null, correct: 0, total: 0, byMarket: {} },
+
+    resultsStatus: "ready",
+    hasManual: !!manualStore,
+  };
+
+  return;
+}
 
       try {
 
