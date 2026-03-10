@@ -629,25 +629,33 @@ useEffect(() => {
   const handler = () => loadHistory();
   window.addEventListener("history-updated", handler);
 
+  // 🔁 auto refresh resultados
+const interval = setInterval(() => {
+  loadHistory();
+  loadAllManual();
+}, 60000); // 1 minutos
+
   return () => {
     window.removeEventListener("history-updated", handler);
+    clearInterval(interval);
   };
+
 }, []);
 // 👇 COLA A FUNÇÃO AQUI
 async function forceRefresh() {
   try {
     setRefreshing(true);
 
-    // NÃO limpar reports
-    // Apenas recarregar history (que vai disparar o useEffect)
-
     await loadHistory();
+    await loadAllManual();
+
+    // força recalculo
+    setReports([]);
 
   } finally {
     setRefreshing(false);
   }
 }
-
 const dates = useMemo(
   () => historyItems.map((x) => x.date).sort((a, b) => (a < b ? 1 : -1)),
   [historyItems]
