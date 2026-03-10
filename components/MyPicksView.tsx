@@ -871,7 +871,7 @@ className="px-2 py-1 bg-red-500/20 text-red-400 rounded"
 
 
 
-);(
+) : (
 
 <p className="text-slate-500 italic text-sm">
 Sem seleções ainda — adiciona acima.
