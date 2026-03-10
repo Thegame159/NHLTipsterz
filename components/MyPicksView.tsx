@@ -2,6 +2,10 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { GamePrediction, Suggestions } from "../types";
 
+type ComboPick = {
+  game: string
+  type: "WIN" | "1X" | "X2"
+}
 interface Props {
   predictions: GamePrediction[];
   selectedDate: string;
@@ -631,9 +635,9 @@ const addToCombinada = (gameValue: string) => {
   const g = normalizeGameText(gameValue);
 
   setPicks(prev => {
-    const cur = prev.combinadaFlex || [];
+    const cur = prev.combinadaFlex ?? [];
 
-    if (cur.includes(g)) return prev;
+if (cur.includes(g)) return prev;
     if (cur.length >= 6) return prev;
 
     return {
@@ -709,26 +713,112 @@ const addToCombinada = (gameValue: string) => {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
         <div className="col-span-full">
-  <PickCard
-    title="Combinada"
-    icon="fa-layer-group"
-    gradient="bg-gradient-to-br from-yellow-500 to-amber-700"
-    badgeColor="bg-yellow-500"
-    description="Escolhe jogos com Vitória ou Dupla Chance (1X / X2)."
-    max={6}
-    options={teamOptions}
-    placeholder="Seleciona equipa..."
-    selectedItems={picks.combinadaFlex || []}
-onAdd={addToCombinada}
-onRemove={(idx) =>
-  setPicks(p => ({
-    ...p,
-    combinadaFlex: (p.combinadaFlex || []).filter((_, i) => i !== idx)
-  }))
-}
-  />
+ <div className="col-span-full bg-slate-800/40 border border-slate-700 rounded-2xl p-6">
+
+<div className="flex items-center justify-between mb-4">
+<h3 className="text-xl font-bold text-white flex items-center gap-2">
+<i className="fas fa-layer-group text-yellow-400"/>
+Combinada
+</h3>
+
+<span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+As minhas picks
+</span>
+</div>
+
+<p className="text-xs text-slate-400 mb-5">
+Escolhe jogos com Vitória ou Dupla Chance (1X / X2). (máx. 6)
+</p>
+
+<div className="flex gap-2 mb-6 max-w-[420px]">
+
+<IconDropdown
+placeholder="Seleciona jogo..."
+options={gameOptionsAll}
+value=""
+onChange={(v)=>addToCombinada(v)}
+/>
+
+</div>
+
+<div className="space-y-3">
+
+{(picks.combinadaFlex||[]).length>0 ? (
+
+picks.combinadaFlex.map((game,idx)=>{
+
+const teams=parseTeamsFromText(game)
+
+return(
+
+<div
+key={idx}
+className="flex items-center justify-between bg-slate-900/60 p-3 rounded-xl border border-slate-700"
+>
+
+<div className="flex items-center gap-3">
+
+<div className="flex -space-x-2">
+{teams.map((abbr,i)=>(
+<img
+key={i}
+src={getLogoUrl(abbr)}
+className="w-6 h-6 bg-slate-800 rounded-full p-0.5 border border-slate-700"
+/>
+))}
+</div>
+
+<span className="text-slate-200 font-semibold">
+{game.replace(" VS "," vs ")}
+</span>
+
+</div>
+
+<div className="flex gap-2">
+
+<button className="px-3 py-1 rounded text-xs font-bold bg-green-500 text-white">
+WIN
+</button>
+
+<button className="px-3 py-1 rounded text-xs font-bold bg-blue-500 text-white">
+1X
+</button>
+
+<button className="px-3 py-1 rounded text-xs font-bold bg-purple-500 text-white">
+X2
+</button>
+
+<button
+onClick={()=>{
+setPicks(prev=>({
+...prev,
+combinadaFlex:(prev.combinadaFlex||[]).filter((_,i)=>i!==idx)
+}))
+}}
+className="px-2 py-1 bg-red-500/20 text-red-400 rounded"
+>
+✕
+</button>
+
+</div>
+
+</div>
+)
+
+})
+
+):(
+
+<p className="text-slate-500 italic text-sm">
+Sem seleções ainda — adiciona acima.
+</p>
+
+)}
+
+</div>
+
 </div>
         <PickCard
           title="Triplete de Vitórias"
