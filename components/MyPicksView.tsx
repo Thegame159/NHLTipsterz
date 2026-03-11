@@ -760,137 +760,140 @@ const formatCombinadaPick = (item: CombinadaPick) => {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-        <div className="col-span-full">
- <div className="col-span-full bg-slate-800/40 border border-slate-700 rounded-2xl p-6">
 
-<div className="flex items-center justify-between mb-4">
-<h3 className="text-xl font-bold text-white flex items-center gap-2">
-<i className="fas fa-layer-group text-yellow-400"/>
-Combinada
-</h3>
 
-<span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
-As minhas picks
-</span>
-</div>
+      // -- combo
+  <div className="col-span-full">
+  <div className="relative overflow-visible bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 shadow-xl">
+    <div className="absolute top-0 right-0 w-40 h-40 -mr-10 -mt-10 opacity-10 rounded-full blur-3xl bg-gradient-to-br from-yellow-400 to-orange-500" />
 
-<p className="text-xs text-slate-400 mb-5">
-Escolhe jogos com Vitória ou Dupla Chance (1X / X2). (máx. 6)
-</p>
-
-<div className="flex gap-2 mb-6 max-w-[420px]">
-<IconDropdown
-placeholder="Seleciona jogo..."
-options={combinadaGameOptions}
-value={comboGame || ""}
-onChange={(v)=>setComboGame(v)}
-/>
-  {comboGame && (
-
-<div className="flex gap-2 mb-6">
-
-<button
-onClick={()=>addComboPick("HOME")}
-className="px-3 py-1 rounded text-xs font-bold bg-green-500 text-white"
->
-HOME
-</button>
-
-<button
-onClick={()=>addComboPick("AWAY")}
-className="px-3 py-1 rounded text-xs font-bold bg-emerald-600 text-white"
->
-AWAY
-</button>
-
-<button
-onClick={()=>addComboPick("1X")}
-className="px-3 py-1 rounded text-xs font-bold bg-blue-500 text-white"
->
-1X
-</button>
-
-<button
-onClick={()=>addComboPick("X2")}
-className="px-3 py-1 rounded text-xs font-bold bg-purple-500 text-white"
->
-X2
-</button>
-
-</div>
-
-)}
-
-</div>
-
-<div className="space-y-3">
-
-{(picks.combinadaFlex || []).length > 0 ? (
-
-  picks.combinadaFlex.map((item, idx) => {
-
-    const teams = parseTeamsFromText(item.game) || [];
-
-    return (
-
-      <div
-        key={idx}
-        className="flex items-center justify-between bg-slate-900/60 p-3 rounded-xl border border-slate-700"
-      >
-
+    <div className="relative z-10">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-3">
-
-          <img
-            src={getLogoUrl(
-              item.pick === "HOME" || item.pick === "1X"
-                ? teams[0]
-                : teams[1]
-            )}
-            className="w-8 h-8 bg-slate-800 rounded-full p-1 border border-slate-700 shadow"
-          />
-
-          <div>
-            <span className="text-slate-200 font-bold text-sm">
-              {item.pick === "HOME" && `${teams[0]} WIN`}
-              {item.pick === "AWAY" && `${teams[1]} WIN`}
-              {item.pick === "1X" && `${teams[0]} 1X`}
-              {item.pick === "X2" && `${teams[1]} 2X`}
-            </span>
+          <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-gradient-to-br from-yellow-400 to-orange-500 shadow-lg shadow-black/20">
+            <i className="fas fa-layer-group text-white text-xl" />
           </div>
-
+          <div>
+            <h3 className="text-xl font-bold text-white">Combinada</h3>
+            <p className="text-xs text-slate-400">
+              Vitória ou Dupla Chance (1X / X2) · máx. 6 seleções
+            </p>
+          </div>
         </div>
-
-        <button
-          onClick={()=>{
-            setPicks(prev=>({
-              ...prev,
-              combinadaFlex:(prev.combinadaFlex||[]).filter((_,i)=>i!==idx)
-            }))
-          }}
-          className="px-2 py-1 bg-red-500/20 text-red-400 rounded"
-        >
-          ✕
-        </button>
-
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+            As minhas picks
+          </span>
+          {(picks.combinadaFlex || []).length > 0 && (
+            <span className="bg-yellow-500/20 border border-yellow-500/30 text-yellow-300 text-[10px] font-black px-2 py-0.5 rounded-full">
+              {(picks.combinadaFlex || []).length}/6
+            </span>
+          )}
+        </div>
       </div>
 
-    );
+      <div className="border-t border-slate-700/50 my-4" />
 
-  })
+      {/* Selector */}
+      <div className="flex gap-2 mb-4 max-w-[480px]">
+        <IconDropdown
+          placeholder="Seleciona jogo..."
+          options={combinadaGameOptions}
+          value={comboGame || ""}
+          onChange={(v) => setComboGame(v)}
+        />
+      </div>
 
-) : (
+      {comboGame && (
+        <div className="flex gap-2 mb-5 flex-wrap">
+          {[
+            { type: "HOME" as const, label: "🏠 Home Win", color: "bg-green-500/20 border-green-500/30 text-green-300 hover:bg-green-500/30" },
+            { type: "AWAY" as const, label: "✈️ Away Win", color: "bg-emerald-500/20 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30" },
+            { type: "1X" as const, label: "1X Home/Draw", color: "bg-blue-500/20 border-blue-500/30 text-blue-300 hover:bg-blue-500/30" },
+            { type: "X2" as const, label: "X2 Away/Draw", color: "bg-purple-500/20 border-purple-500/30 text-purple-300 hover:bg-purple-500/30" },
+          ].map(({ type, label, color }) => (
+            <button
+              key={type}
+              onClick={() => addComboPick(type)}
+              className={`px-4 py-2 rounded-xl border text-xs font-black uppercase tracking-widest transition ${color}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
 
-  <p className="text-slate-500 italic text-sm">
-    Sem seleções ainda — adiciona acima.
-  </p>
-
-)}
-
+      {/* Picks list */}
+      {(picks.combinadaFlex || []).length > 0 ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+          {picks.combinadaFlex.map((item: any, idx: number) => {
+            const teams = parseTeamsFromText(item.game) || [];
+            const [home, away] = teams;
+            const isHome = item.pick === "HOME" || item.pick === "1X";
+            const logo = getLogoUrl(isHome ? home : away);
+            const pickColors: Record<string, string> = {
+              HOME: "bg-green-500/20 border-green-500/30 text-green-300",
+              AWAY: "bg-emerald-500/20 border-emerald-500/30 text-emerald-300",
+              "1X": "bg-blue-500/20 border-blue-500/30 text-blue-300",
+              X2: "bg-purple-500/20 border-purple-500/30 text-purple-300",
+            };
+            const label: Record<string, string> = {
+              HOME: `${home} WIN`,
+              AWAY: `${away} WIN`,
+              "1X": `${home} 1X`,
+              X2: `${away} X2`,
+            };
+            return (
+              <div
+                key={idx}
+                className="flex items-center justify-between bg-slate-900/60 p-3 rounded-xl border border-slate-700/50 hover:border-slate-600 transition group"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="w-6 h-6 rounded-full bg-slate-700 flex items-center justify-center text-[10px] font-black text-slate-300 shrink-0">
+                    {idx + 1}
+                  </span>
+                  <img
+                    src={logo}
+                    className="w-8 h-8 bg-slate-800 rounded-full p-1 border border-slate-700 shadow"
+                    onError={(e) => (e.currentTarget.style.display = "none")}
+                  />
+                  <div>
+                    <span className="text-slate-200 font-bold text-sm">{label[item.pick]}</span>
+                    <p className="text-[10px] text-slate-500 truncate max-w-[140px]">{item.game.replace(" VS ", " vs ")}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${pickColors[item.pick]}`}>
+                    {item.pick}
+                  </span>
+                  <button
+                    onClick={() =>
+                      setPicks((prev: any) => ({
+                        ...prev,
+                        combinadaFlex: (prev.combinadaFlex || []).filter((_: any, i: number) => i !== idx),
+                      }))
+                    }
+                    className="w-7 h-7 flex items-center justify-center rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition"
+                  >
+                    <i className="fas fa-times text-[10px]" />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="text-center py-8 text-slate-500">
+          <i className="fas fa-layer-group text-3xl mb-2 block opacity-20" />
+          <p className="italic text-sm">Sem seleções ainda — escolhe um jogo acima.</p>
+        </div>
+      )}
+    </div>
+  </div>
 </div>
-</div>
 
-</div>
+        
         <PickCard
           title="Triplete de Vitórias"
           icon="fa-award"
