@@ -444,20 +444,33 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
   const [picks, setPicks] = useState<Suggestions>(defaultSuggestions());
   const [comboGame, setComboGame] = useState<string | null>(null)
 
-  useEffect(() => {
+ useEffect(() => {
+  const load = async () => {
+    try {
+      const res = await fetch(`/api/history?date=${selectedDate}&side=mine`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.suggestions) {
+          setPicks({ ...defaultSuggestions(), ...data.suggestions });
+          return;
+        }
+      }
+    } catch {}
+
+    // Fallback: localStorage
     try {
       if (typeof window === "undefined") return;
       const raw = window.localStorage.getItem(storageKey(selectedDate));
-      if (!raw) {
-        setPicks(defaultSuggestions());
-        return;
-      }
+      if (!raw) { setPicks(defaultSuggestions()); return; }
       const parsed = JSON.parse(raw);
       setPicks({ ...defaultSuggestions(), ...(parsed || {}) });
     } catch {
       setPicks(defaultSuggestions());
     }
-  }, [selectedDate]);
+  };
+
+  load();
+}, [selectedDate]);
 
   const predictionsOfDay = useMemo(() => predictions || [], [predictions]);
 
