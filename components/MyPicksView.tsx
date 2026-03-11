@@ -859,11 +859,11 @@ const formatCombinadaPick = (item: CombinadaPick) => {
               "1X": "bg-blue-500/20 border-blue-500/30 text-blue-300",
               X2: "bg-purple-500/20 border-purple-500/30 text-purple-300",
             };
-      const label: Record<string, string> = {
-  HOME: teamLabel(teams[0]),
-  AWAY: teamLabel(teams[1]),
-  "1X": `${teamLabel(teams[0])} 1X`,
-  X2: `${teamLabel(teams[1])} X2`,
+const label: Record<string, string> = {
+  HOME: teamLabel(home),
+  AWAY: teamLabel(away),
+  "1X": `${teamLabel(home)} 1X`,
+  X2: `${teamLabel(away)} X2`,
 };
             return (
               <div
