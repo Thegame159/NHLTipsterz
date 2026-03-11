@@ -173,9 +173,9 @@ const teamLabel = (abbr: string) => TEAM_SHORT_NAMES[(abbr || "").toUpperCase()]
 
 // ─── ALTERAÇÃO 2: formatPickLabel ─────────────────────────────────────────────
 // Converte abreviaturas no label para nomes curtos legíveis.
-// Ex: "BUF (Home Win)" → "Sabres (Home Win)"
+// Ex: "BUF (Win)" → "Sabres (Win)"
 // Ex: "BUF VS TOR" → "Sabres vs Leafs"
-// Ex: "Sabres (Home Win)" → mantém (já é nome curto)
+// Ex: "Sabres (1X)" → mantém (já é nome curto)
 const formatPickLabel = (label: string): string => {
   if (!label) return label;
 
@@ -327,10 +327,10 @@ function evalMarkets(sug: Suggestions, results: ApiResultsResponse): Record<stri
       const pick: "HOME" | "AWAY" | "1X" | "X2" = item.pick;
 
       const labelText =
-        pick === "HOME" ? `${teamLabel(home)} (Home Win)`
-        : pick === "AWAY" ? `${teamLabel(away)} (Away Win)`
-        : pick === "1X" ? `${teamLabel(home)} 1X`
-        : `${teamLabel(away)} X2`;
+        pick === "HOME" ? `${teamLabel(home)} (Win)`
+        : pick === "AWAY" ? `${teamLabel(away)} (Win)`
+        : pick === "1X" ? `${teamLabel(home)} (1X)`
+        : `${teamLabel(away)} (X2)`;
 
       if (!home || !away) return { label: labelText, ok: null, reason: "Não consegui ler as equipas." };
 
