@@ -762,7 +762,7 @@ const formatCombinadaPick = (item: CombinadaPick) => {
 
 
 
-      // -- combo
+      {/* -- combo */}
   <div className="col-span-full">
   <div className="relative overflow-visible bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 shadow-xl">
     <div className="absolute top-0 right-0 w-40 h-40 -mr-10 -mt-10 opacity-10 rounded-full blur-3xl bg-gradient-to-br from-yellow-400 to-orange-500" />
