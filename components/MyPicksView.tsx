@@ -880,11 +880,8 @@ const label: Record<string, string> = {
                     onError={(e) => (e.currentTarget.style.display = "none")}
                   />
                   <div>
-                    <span className="text-slate-200 font-bold text-sm">
-  {item.pick === "HOME" && `${teamLabel(teams[0])} WIN`}
-  {item.pick === "AWAY" && `${teamLabel(teams[1])} WIN`}
-  {item.pick === "1X" && `${teamLabel(teams[0])} 1X`}
-  {item.pick === "X2" && `${teamLabel(teams[1])} X2`}
+<span className="text-slate-200 font-bold text-sm">
+  {label[item.pick]}
 </span>
 <p className="text-[10px] text-slate-500 truncate max-w-[140px]">
   {teams.length === 2 ? `${teams[0]} vs ${teams[1]}` : item.game.replace(" VS ", " vs ")}
