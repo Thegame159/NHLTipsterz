@@ -19,6 +19,20 @@ const defaultSuggestions = (): Suggestions => ({
 
 const storageKey = (date: string) => `my_picks_${date}`;
 
+const TEAM_SHORT_NAMES: Record<string, string> = {
+  ANA: "Ducks", BOS: "Bruins", BUF: "Sabres", CAR: "Hurricanes",
+  CBJ: "Blue Jackets", CGY: "Flames", CHI: "Blackhawks", COL: "Avalanche",
+  DAL: "Stars", DET: "Red Wings", EDM: "Oilers", FLA: "Panthers",
+  LAK: "Kings", MIN: "Wild", MTL: "Canadiens", NJD: "Devils",
+  NSH: "Predators", NYI: "Islanders", NYR: "Rangers", OTT: "Senators",
+  PHI: "Flyers", PIT: "Penguins", SEA: "Kraken", SJS: "Sharks",
+  STL: "Blues", TBL: "Lightning", TOR: "Leafs", UTA: "Utah",
+  VAN: "Canucks", VGK: "Vegas", WPG: "Jets", WSH: "Capitals",
+};
+
+const teamLabel = (abbr: string) =>
+  TEAM_SHORT_NAMES[abbr?.toUpperCase()] || abbr;
+
 const getLogoUrl = (abbr: string) => {
   const map: Record<string, string> = {
     TBL: "tb",
@@ -324,7 +338,16 @@ const PickLine: React.FC<{
             ))}
           </div>
         )}
-        <span className="text-sm font-semibold text-slate-200 group-hover:text-white truncate">{text}</span>
+      <div className="flex flex-col min-w-0">
+  <span className="text-sm font-semibold text-slate-200 group-hover:text-white truncate">
+    {teams.length === 1 ? teamLabel(teams[0]) : teams.length === 2 ? `${teamLabel(teams[0])} vs ${teamLabel(teams[1])}` : text}
+  </span>
+  {teams.length > 0 && (
+    <span className="text-[10px] text-slate-500 truncate">
+      {teams.join(teams.length === 2 ? " vs " : "")}
+    </span>
+  )}
+</div>
       </div>
 
       {onRemove && (
@@ -857,8 +880,15 @@ const formatCombinadaPick = (item: CombinadaPick) => {
                     onError={(e) => (e.currentTarget.style.display = "none")}
                   />
                   <div>
-                    <span className="text-slate-200 font-bold text-sm">{label[item.pick]}</span>
-                    <p className="text-[10px] text-slate-500 truncate max-w-[140px]">{item.game.replace(" VS ", " vs ")}</p>
+                    <span className="text-slate-200 font-bold text-sm">
+  {item.pick === "HOME" && `${teamLabel(teams[0])} WIN`}
+  {item.pick === "AWAY" && `${teamLabel(teams[1])} WIN`}
+  {item.pick === "1X" && `${teamLabel(teams[0])} 1X`}
+  {item.pick === "X2" && `${teamLabel(teams[1])} X2`}
+</span>
+<p className="text-[10px] text-slate-500 truncate max-w-[140px]">
+  {teams.length === 2 ? `${teams[0]} vs ${teams[1]}` : item.game.replace(" VS ", " vs ")}
+</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
