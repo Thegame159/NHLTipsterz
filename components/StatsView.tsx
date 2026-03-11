@@ -179,16 +179,22 @@ const teamLabel = (abbr: string) => TEAM_SHORT_NAMES[(abbr || "").toUpperCase()]
 const formatPickLabel = (label: string): string => {
   if (!label) return label;
 
-  // Tenta substituir abreviaturas NHL no início do label (ex: "BUF (Home Win)")
-  // Padrão: ABBR seguido de espaço ou parêntesis ou fim
-  const replaced = label.replace(/\b([A-Z]{2,4})\b/g, (match) => {
+  // Normalizar labels antigos do histórico (Redis cache)
+  let result = label
+    .replace(/\(Home Win\)/gi, "(Win)")
+    .replace(/\(Away Win\)/gi, "(Win)")
+    .replace(/\s+1X$/i, " (1X)")
+    .replace(/\s+X2$/i, " (X2)");
+
+  // Substituir abreviaturas NHL por nomes curtos
+  result = result.replace(/\b([A-Z]{2,4})\b/g, (match) => {
     if (NHL_ABBRS.has(match) && !["OT", "VS", "V"].includes(match)) {
       return teamLabel(match);
     }
     return match;
   });
 
-  return replaced;
+  return result;
 };
 
 const getLogoUrl = (abbr: string) => {
