@@ -124,13 +124,29 @@ existing[side] = {
 
       return res.status(200).json({ ok: true, item: existing });
     }
-// =========================
-// GET
-// =========================
-// =========================
+
 // GET
 // =========================
 if (req.method === "GET") {
+  const dateParam = String(req.query.date || "").trim();
+  const sideParam = String(req.query.side || "").trim();
+
+  // ── Busca específica: ?date=YYYY-MM-DD&side=mine|auto ──
+  if (dateParam && isDate(dateParam) && (sideParam === "mine" || sideParam === "auto")) {
+    const raw = await redis.get(keyForDate(dateParam));
+    const parsed = safeJsonParse(raw);
+
+    if (!parsed || !parsed[sideParam]) {
+      return res.status(200).json({ ok: true, suggestions: null });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      suggestions: parsed[sideParam].suggestions ?? null,
+    });
+  }
+
+  // ── Listagem geral (sem date/side) ──
   const limitRaw = String(req.query.limit || "30");
   const limit = Math.min(parseInt(limitRaw, 10) || 30, 200);
 
@@ -139,15 +155,11 @@ if (req.method === "GET") {
 
   do {
     const result = await redis.scan(cursor, `${KEY_PREFIX}*`, 100);
-
     if (!result) break;
-
     const nextCursor = result[0];
     const foundKeys = Array.isArray(result[1]) ? result[1] : [];
-
     keys.push(...foundKeys);
     cursor = nextCursor;
-
   } while (cursor !== "0");
 
   const dates = keys
@@ -157,7 +169,6 @@ if (req.method === "GET") {
     .slice(0, limit);
 
   const items: StoreItem[] = [];
-
   for (const date of dates) {
     try {
       const raw = await redis.get(keyForDate(date));
@@ -166,11 +177,9 @@ if (req.method === "GET") {
     } catch {}
   }
 
-  return res.status(200).json({
-    ok: true,
-    items,
-  });
+  return res.status(200).json({ ok: true, items });
 }
+    
     res.setHeader("Allow", "GET, POST, DELETE");
     return res.status(405).json({ message: "Method not allowed" });
 
