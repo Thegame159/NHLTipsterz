@@ -1064,63 +1064,143 @@ const StatsView: React.FC = () => {
                     </div>
                   )}
 
-                  {r.resultsStatus === "ready" && (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                      {/* Auto */}
-                      <div className="space-y-5">
-                        <div className="flex items-end justify-between border-b border-slate-700/50 pb-3">
-                          <h3 className="text-lg font-black text-amber-200 flex items-center gap-2">
-                            <i className="fas fa-bolt text-amber-400/50" /> Auto
-                          </h3>
-                          <div className="text-right">
-                            <div className="text-lg font-black text-amber-300">
-                              {r.auto.percent === null ? "--" : `${r.auto.percent.toFixed(1)}%`}
-                            </div>
-                            <div className="text-[10px] text-slate-500">{r.auto.correct}/{r.auto.total} certas</div>
-                          </div>
-                        </div>
-                        {Object.keys(r.auto.byMarket).length ? (
-                          <div className="space-y-6">
-                            {Object.entries(r.auto.byMarket).map(([k, v]) => (
-                              <MarketBlock
-                                key={`a-${k}`} title={k} picks={v} editable={isEditing}
-                                onSetPick={isEditing ? (label, val) => setManual(r.date, "auto", k, label, val) : undefined}
-                              />
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="text-[11px] text-slate-600 italic py-4 text-center">Sem snapshot Auto para esta data.</div>
-                        )}
-                      </div>
+                  {r.resultsStatus === "ready" && (() => {
+                    // Separar Combinada dos restantes mercados para renderizar full-width
+                    const autoCombinadaPicks = r.auto.byMarket["Combinada"] ?? [];
+                    const mineCombinadaPicks = r.mine.byMarket["Combinada"] ?? [];
+                    const hasCombinada = autoCombinadaPicks.length > 0 || mineCombinadaPicks.length > 0;
 
-                      {/* Mine */}
-                      <div className="space-y-5">
-                        <div className="flex items-end justify-between border-b border-slate-700/50 pb-3">
-                          <h3 className="text-lg font-black text-blue-200 flex items-center gap-2">
-                            <i className="fas fa-user text-blue-400/50" /> Minhas
-                          </h3>
-                          <div className="text-right">
-                            <div className="text-lg font-black text-blue-300">
-                              {r.mine.percent === null ? "--" : `${r.mine.percent.toFixed(1)}%`}
+                    const autoMarketsNoCombinada = Object.entries(r.auto.byMarket).filter(([k]) => k !== "Combinada");
+                    const mineMarketsNoCombinada = Object.entries(r.mine.byMarket).filter(([k]) => k !== "Combinada");
+
+                    return (
+                      <div className="space-y-6">
+                        {/* ── Combinada full-width ── */}
+                        {hasCombinada && (
+                          <div className="bg-slate-900/40 border border-yellow-500/20 rounded-2xl p-4">
+                            <div className="flex items-center justify-between mb-3">
+                              <h4 className="text-xs font-black uppercase tracking-widest text-yellow-400/80 flex items-center gap-2">
+                                <i className="fas fa-layer-group text-yellow-500/60" />
+                                Combinada
+                              </h4>
+                              <div className="flex items-center gap-4 text-[10px] font-black text-slate-500">
+                                {autoCombinadaPicks.length > 0 && (
+                                  <span className="text-amber-400/70">
+                                    Auto: {autoCombinadaPicks.filter(p => p.ok === true).length}/{autoCombinadaPicks.filter(p => p.ok !== null).length} certas
+                                  </span>
+                                )}
+                                {mineCombinadaPicks.length > 0 && (
+                                  <span className="text-blue-400/70">
+                                    Minhas: {mineCombinadaPicks.filter(p => p.ok === true).length}/{mineCombinadaPicks.filter(p => p.ok !== null).length} certas
+                                  </span>
+                                )}
+                              </div>
                             </div>
-                            <div className="text-[10px] text-slate-500">{r.mine.correct}/{r.mine.total} certas</div>
+
+                            {/* Se ambos têm combinada, mostrar lado a lado com label; se só um, mostrar direto */}
+                            {autoCombinadaPicks.length > 0 && mineCombinadaPicks.length > 0 ? (
+                              <div className="space-y-3">
+                                {/* Auto combinada */}
+                                <div>
+                                  <div className="text-[10px] font-black uppercase tracking-widest text-amber-400/50 mb-2">Auto</div>
+                                  <div className="flex flex-wrap gap-2">
+                                    {autoCombinadaPicks.map((p, idx) => (
+                                      <div key={`ac-${idx}`} className="w-full sm:w-[calc(50%-4px)] lg:w-[calc(33.333%-6px)]">
+                                        <PickLine p={p} editable={isEditing} marketTitle="Combinada"
+                                          onSet={isEditing ? (val) => setManual(r.date, "auto", "Combinada", p.label, val) : undefined} />
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                                {/* Mine combinada */}
+                                <div>
+                                  <div className="text-[10px] font-black uppercase tracking-widest text-blue-400/50 mb-2">Minhas</div>
+                                  <div className="flex flex-wrap gap-2">
+                                    {mineCombinadaPicks.map((p, idx) => (
+                                      <div key={`mc-${idx}`} className="w-full sm:w-[calc(50%-4px)] lg:w-[calc(33.333%-6px)]">
+                                        <PickLine p={p} editable={isEditing} marketTitle="Combinada"
+                                          onSet={isEditing ? (val) => setManual(r.date, "mine", "Combinada", p.label, val) : undefined} />
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+                            ) : (
+                              // Só um lado tem combinada
+                              <div className="flex flex-wrap gap-2">
+                                {(autoCombinadaPicks.length > 0 ? autoCombinadaPicks : mineCombinadaPicks).map((p, idx) => {
+                                  const side = autoCombinadaPicks.length > 0 ? "auto" : "mine";
+                                  return (
+                                    <div key={`c-${idx}`} className="w-full sm:w-[calc(50%-4px)] lg:w-[calc(33.333%-6px)]">
+                                      <PickLine p={p} editable={isEditing} marketTitle="Combinada"
+                                        onSet={isEditing ? (val) => setManual(r.date, side, "Combinada", p.label, val) : undefined} />
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* ── Grid Auto / Mine (sem Combinada) ── */}
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                          {/* Auto */}
+                          <div className="space-y-5">
+                            <div className="flex items-end justify-between border-b border-slate-700/50 pb-3">
+                              <h3 className="text-lg font-black text-amber-200 flex items-center gap-2">
+                                <i className="fas fa-bolt text-amber-400/50" /> Auto
+                              </h3>
+                              <div className="text-right">
+                                <div className="text-lg font-black text-amber-300">
+                                  {r.auto.percent === null ? "--" : `${r.auto.percent.toFixed(1)}%`}
+                                </div>
+                                <div className="text-[10px] text-slate-500">{r.auto.correct}/{r.auto.total} certas</div>
+                              </div>
+                            </div>
+                            {autoMarketsNoCombinada.length ? (
+                              <div className="space-y-6">
+                                {autoMarketsNoCombinada.map(([k, v]) => (
+                                  <MarketBlock
+                                    key={`a-${k}`} title={k} picks={v} editable={isEditing}
+                                    onSetPick={isEditing ? (label, val) => setManual(r.date, "auto", k, label, val) : undefined}
+                                  />
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="text-[11px] text-slate-600 italic py-4 text-center">Sem snapshot Auto para esta data.</div>
+                            )}
+                          </div>
+
+                          {/* Mine */}
+                          <div className="space-y-5">
+                            <div className="flex items-end justify-between border-b border-slate-700/50 pb-3">
+                              <h3 className="text-lg font-black text-blue-200 flex items-center gap-2">
+                                <i className="fas fa-user text-blue-400/50" /> Minhas
+                              </h3>
+                              <div className="text-right">
+                                <div className="text-lg font-black text-blue-300">
+                                  {r.mine.percent === null ? "--" : `${r.mine.percent.toFixed(1)}%`}
+                                </div>
+                                <div className="text-[10px] text-slate-500">{r.mine.correct}/{r.mine.total} certas</div>
+                              </div>
+                            </div>
+                            {mineMarketsNoCombinada.length > 0 ? (
+                              <div className="space-y-6">
+                                {mineMarketsNoCombinada.map(([k, v]) => (
+                                  <MarketBlock
+                                    key={`m-${k}`} title={k} picks={v} editable={isEditing}
+                                    onSetPick={isEditing ? (label, val) => setManual(r.date, "mine", k, label, val) : undefined}
+                                  />
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="text-[11px] text-slate-600 italic py-4 text-center">Sem picks guardadas para esta data.</div>
+                            )}
                           </div>
                         </div>
-                        {r.mine.total > 0 || Object.keys(r.mine.byMarket || {}).length > 0 ? (
-                          <div className="space-y-6">
-                            {Object.entries(r.mine.byMarket).map(([k, v]) => (
-                              <MarketBlock
-                                key={`m-${k}`} title={k} picks={v} editable={isEditing}
-                                onSetPick={isEditing ? (label, val) => setManual(r.date, "mine", k, label, val) : undefined}
-                              />
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="text-[11px] text-slate-600 italic py-4 text-center">Sem picks guardadas para esta data.</div>
-                        )}
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
                 </div>
               )}
             </div>
