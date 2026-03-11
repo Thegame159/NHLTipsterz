@@ -171,6 +171,26 @@ const parseTeamSingle = (text: string): string | null => {
 
 const teamLabel = (abbr: string) => TEAM_SHORT_NAMES[(abbr || "").toUpperCase()] || abbr;
 
+// ─── ALTERAÇÃO 2: formatPickLabel ─────────────────────────────────────────────
+// Converte abreviaturas no label para nomes curtos legíveis.
+// Ex: "BUF (Home Win)" → "Sabres (Home Win)"
+// Ex: "BUF VS TOR" → "Sabres vs Leafs"
+// Ex: "Sabres (Home Win)" → mantém (já é nome curto)
+const formatPickLabel = (label: string): string => {
+  if (!label) return label;
+
+  // Tenta substituir abreviaturas NHL no início do label (ex: "BUF (Home Win)")
+  // Padrão: ABBR seguido de espaço ou parêntesis ou fim
+  const replaced = label.replace(/\b([A-Z]{2,4})\b/g, (match) => {
+    if (NHL_ABBRS.has(match) && !["OT", "VS", "V"].includes(match)) {
+      return teamLabel(match);
+    }
+    return match;
+  });
+
+  return replaced;
+};
+
 const getLogoUrl = (abbr: string) => {
   const map: Record<string, string> = {
     TBL: "tb", SJS: "sj", LAK: "la", VGK: "vgs", UTA: "utah",
@@ -472,8 +492,9 @@ const StatRow: React.FC<{
 const PickLine: React.FC<{
   p: PickEval;
   editable: boolean;
+  marketTitle?: string;
   onSet?: (val: ManualValue) => void;
-}> = ({ p, editable, onSet }) => {
+}> = ({ p, editable, marketTitle, onSet }) => {
   const icon = p.ok === true ? "fa-check" : p.ok === false ? "fa-times" : "fa-clock";
   const color =
     p.ok === true ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
@@ -489,6 +510,60 @@ const PickLine: React.FC<{
     if (s) teams = [s];
   }
 
+  // ALTERAÇÃO 2: usar formatPickLabel para mostrar nomes legíveis
+  const displayLabel = formatPickLabel(p.label);
+
+  // ALTERAÇÃO 1: layout compacto horizontal para Combinada
+  const isCombinada = marketTitle === "Combinada";
+
+  if (isCombinada) {
+    return (
+      <div className={`bg-slate-900/50 border rounded-xl p-3 transition hover:border-slate-600/60 ${
+        p.ok === true ? "border-emerald-500/30" : p.ok === false ? "border-rose-500/30" : "border-slate-700/40"
+      }`}>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            {teams.length > 0 && (
+              <div className="flex -space-x-2 shrink-0">
+                {teams.map((abbr, i) => (
+                  <TeamLogo key={`${abbr}-${i}`} abbr={abbr} />
+                ))}
+              </div>
+            )}
+            <span className="text-sm font-bold text-slate-100 truncate">{displayLabel}</span>
+            {p.manual && (
+              <span className="shrink-0 text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border border-indigo-500/30 bg-indigo-500/10 text-indigo-300">
+                M
+              </span>
+            )}
+          </div>
+          <div className={`shrink-0 px-2.5 py-1 rounded-lg border text-[11px] font-black flex items-center gap-1.5 ${color}`}>
+            <i className={`fas ${icon}`} />
+          </div>
+        </div>
+        {p.reason && <div className="text-[10px] text-slate-500 mt-1 truncate">{p.reason}</div>}
+
+        {editable && onSet && (
+          <div className="mt-2 flex flex-wrap justify-end gap-1.5">
+            {[
+              { val: true, label: "✓", cls: "bg-emerald-500/10 border-emerald-500/20 text-emerald-300 hover:bg-emerald-500/20" },
+              { val: false, label: "✕", cls: "bg-rose-500/10 border-rose-500/20 text-rose-300 hover:bg-rose-500/20" },
+              { val: null, label: "⏳", cls: "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10" },
+            ].map(({ val, label, cls }) => (
+              <button
+                key={String(val)}
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); onSet(val as ManualValue); }}
+                className={`px-2.5 py-1 rounded-lg border text-[10px] font-black transition ${cls}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="bg-slate-900/50 border border-slate-700/40 rounded-xl p-3 transition hover:border-slate-600/60">
       <div className="flex items-start justify-between gap-3">
@@ -502,7 +577,7 @@ const PickLine: React.FC<{
           )}
           <div className="min-w-0">
             <div className="text-sm font-bold text-slate-100 truncate flex items-center gap-2">
-              <span className="truncate">{p.label}</span>
+              <span className="truncate">{displayLabel}</span>
               {p.manual && (
                 <span className="shrink-0 text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border border-indigo-500/30 bg-indigo-500/10 text-indigo-300">
                   Manual
@@ -559,6 +634,8 @@ const MarketBlock: React.FC<{
     "Combinada": "fa-layer-group",
   };
 
+  const isCombinada = title === "Combinada";
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -571,16 +648,33 @@ const MarketBlock: React.FC<{
         </span>
       </div>
       {picks.length ? (
-        <div className="space-y-2">
-          {picks.map((p, idx) => (
-            <PickLine
-              key={`${title}-${idx}`}
-              p={p}
-              editable={editable}
-              onSet={editable && onSetPick ? (val) => onSetPick(p.label, val) : undefined}
-            />
-          ))}
-        </div>
+        // ALTERAÇÃO 1: Combinada usa flex wrap horizontal, outros mercados usam lista vertical
+        isCombinada ? (
+          <div className="flex flex-wrap gap-2">
+            {picks.map((p, idx) => (
+              <div key={`${title}-${idx}`} className="w-full sm:w-[calc(50%-4px)] lg:w-[calc(33.333%-6px)]">
+                <PickLine
+                  p={p}
+                  editable={editable}
+                  marketTitle={title}
+                  onSet={editable && onSetPick ? (val) => onSetPick(p.label, val) : undefined}
+                />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {picks.map((p, idx) => (
+              <PickLine
+                key={`${title}-${idx}`}
+                p={p}
+                editable={editable}
+                marketTitle={title}
+                onSet={editable && onSetPick ? (val) => onSetPick(p.label, val) : undefined}
+              />
+            ))}
+          </div>
+        )
       ) : (
         <div className="text-[11px] text-slate-600 italic">Sem picks.</div>
       )}
