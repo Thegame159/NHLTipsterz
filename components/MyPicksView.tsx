@@ -859,21 +859,21 @@ const formatCombinadaPick = (item: CombinadaPick) => {
               "1X": "bg-blue-500/20 border-blue-500/30 text-blue-300",
               X2: "bg-purple-500/20 border-purple-500/30 text-purple-300",
             };
-            const label: Record<string, string> = {
-              HOME: `${home} WIN`,
-              AWAY: `${away} WIN`,
-              "1X": `${home} 1X`,
-              X2: `${away} X2`,
-            };
+      const label: Record<string, string> = {
+  HOME: teamLabel(teams[0]),
+  AWAY: teamLabel(teams[1]),
+  "1X": `${teamLabel(teams[0])} 1X`,
+  X2: `${teamLabel(teams[1])} X2`,
+};
             return (
               <div
                 key={idx}
                 className="flex items-center justify-between bg-slate-900/60 p-3 rounded-xl border border-slate-700/50 hover:border-slate-600 transition group"
               >
                 <div className="flex items-center gap-3">
-                  <span className="w-6 h-6 rounded-full bg-slate-700 flex items-center justify-center text-[10px] font-black text-slate-300 shrink-0">
-                    {idx + 1}
-                  </span>
+              <span className="w-6 h-6 rounded-full bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center text-[10px] font-black text-white shrink-0 shadow-sm">
+  {idx + 1}
+</span>
                   <img
                     src={logo}
                     className="w-8 h-8 bg-slate-800 rounded-full p-1 border border-slate-700 shadow"
