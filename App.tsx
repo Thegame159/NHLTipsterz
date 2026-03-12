@@ -1,200 +1,133 @@
-import React, { useState, useEffect, useRef } from 'react';
+// src/App.tsx
+
+import React, { useState, useRef } from 'react';
 import { fetchNHLAnalysis } from './services/geminiService';
 import { NHLAnalysisData } from './types';
 import GameTable from './components/GameTable';
 import SuggestionsView from './components/SuggestionsView';
 import MyPicksView from './components/MyPicksView';
 import StatsView from './components/StatsView';
+import BrandLogo from './components/BrandLogo';
+import { isWithinPortugalNightWindow } from './utils/nhlUtils';
 
-const BrandLogo: React.FC<{ size?: 'sm' | 'lg' }> = ({ size = 'sm' }) => {
-  const isLarge = size === 'lg';
+// ─── Constantes ──────────────────────────────────────────────────────────────
 
-  return (
-    <div
-      className={`relative flex flex-col items-center justify-center select-none ${
-        isLarge ? 'p-6 scale-90 sm:scale-100' : 'p-1 scale-[0.5] sm:scale-[0.65]'
-      } overflow-visible`}
-    >
-      <div className={`absolute left-[-20%] w-[140%] pointer-events-none ${isLarge ? 'top-[45%]' : 'top-[42%]'}`}>
-        <svg viewBox="0 0 400 50" className="w-full h-auto opacity-100 drop-shadow-[0_0_5px_rgba(249,115,22,0.5)]">
-          <path d="M 0 25 Q 200 35 400 22" stroke="#f97316" strokeWidth="1.2" fill="transparent" />
-          <path d="M 10 32 Q 205 42 390 30" stroke="#f97316" strokeWidth="1.8" fill="transparent" />
-          <path d="M 20 38 Q 210 48 380 36" stroke="#f97316" strokeWidth="2.2" fill="transparent" />
-          <path d="M 35 44 Q 215 54 365 44" stroke="#f97316" strokeWidth="1.0" fill="transparent" opacity="0.6" />
-        </svg>
-      </div>
-
-      <div className="relative flex items-center">
-        <h1
-          className={`${
-            isLarge ? 'text-[100px] sm:text-[160px]' : 'text-[80px] sm:text-[100px]'
-          } font-nhl-block text-white relative z-10 leading-none tracking-tight`}
-        >
-          NHL
-        </h1>
-
-        <div
-          className={`absolute z-30 transform rotate-[-12deg] ${
-            isLarge ? 'right-[-45px] sm:right-[-60px] top-[10px] sm:top-[15px]' : 'right-[-35px] top-[8px]'
-          }`}
-        >
-          <div
-            className={`${
-              isLarge ? 'w-36 h-20 sm:w-44 sm:h-28' : 'w-24 h-14'
-            } bg-[#1a1a1a] rounded-full shadow-[0_10px_20px_rgba(0,0,0,0.8),inset_0_2px_4px_rgba(255,255,255,0.1)] border-b-[6px] border-black relative overflow-hidden flex items-center justify-center`}
-          >
-            <div className={`${isLarge ? 'w-16 h-16 sm:w-20 sm:h-20' : 'w-12 h-12'} relative flex flex-col items-center justify-center`}>
-              <svg viewBox="0 0 100 100" className="w-full h-full p-2">
-                <path d="M 50 20 L 25 75 L 38 75 L 50 55 L 62 75 L 75 75 Z" fill="white" />
-                <rect x="60" y="65" width="22" height="8" fill="#ea580c" rx="1" />
-              </svg>
-            </div>
-
-            <div className="absolute top-0 left-0 w-full h-1/2 bg-gradient-to-b from-white/5 to-transparent"></div>
-          </div>
-        </div>
-      </div>
-
-      <div className={`z-40 ${isLarge ? 'mt-[-40px] sm:mt-[-55px] ml-16 sm:ml-24' : 'mt-[-35px] ml-14'}`}>
-        <span
-          className={`${isLarge ? 'text-[65px] sm:text-[90px]' : 'text-[55px] sm:text-[65px]'} font-tipsterz text-white drop-shadow-[0_3px_6px_rgba(0,0,0,1)]`}
-        >
-          Tipsterz
-        </span>
-      </div>
-    </div>
-  );
-};
-
-const loadingMessages = [
-  "Sincronizando estatísticas...",
-  "Jogadores em aquecimento...",
-  "Analisando o gelo...",
-  "Estudando os últimos 10 jogos...",
-  "Verificando boletim clínico...",
-  "Processando fator casa vs fora...",
-  "Refinando odds táticas...",
-  "Preparando face-off..."
+const LOADING_MESSAGES = [
+  'Sincronizando estatísticas...',
+  'Jogadores em aquecimento...',
+  'Analisando o gelo...',
+  'Estudando os últimos 10 jogos...',
+  'Verificando boletim clínico...',
+  'Processando fator casa vs fora...',
+  'Refinando odds táticas...',
+  'Preparando face-off...',
 ];
 
-const toDateStringLocal = (d: Date) => {
+type Tab = 'schedule' | 'suggestions' | 'mypicks' | 'stats';
+
+// ─── Helpers de data ─────────────────────────────────────────────────────────
+
+const toDateStringLocal = (d: Date): string => {
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
   return `${yyyy}-${mm}-${dd}`;
 };
 
-const getYesterdayString = () => {
+const getYesterdayString = (): string => {
   const d = new Date();
   d.setDate(d.getDate() - 1);
   return toDateStringLocal(d);
 };
-const isWithinPortugalNightWindow = (dateTime: string) => {
-  const d = new Date(dateTime);
 
-  const ptString = d.toLocaleString("en-US", {
-    timeZone: "Europe/Lisbon",
-    hour12: false,
-  });
+// ─── App ─────────────────────────────────────────────────────────────────────
 
-  const ptDate = new Date(ptString);
-  const hour = ptDate.getHours();
-
-  return hour >= 23 || hour < 5;
-};
 const App: React.FC = () => {
-  const [data, setData] = useState<NHLAnalysisData | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [progress, setProgress] = useState(0);
+  const [data, setData]               = useState<NHLAnalysisData | null>(null);
+  const [loading, setLoading]         = useState(false);
+  const [progress, setProgress]       = useState(0);
   const [loadingMsgIdx, setLoadingMsgIdx] = useState(0);
-  const [error, setError] = useState<string | null>(null);
-
-  const [activeTab, setActiveTab] = useState<'schedule' | 'suggestions' | 'mypicks' | 'stats'>('schedule');
-
+  const [error, setError]             = useState<string | null>(null);
+  const [activeTab, setActiveTab]     = useState<Tab>('schedule');
   const [selectedDate, setSelectedDate] = useState<string>(getYesterdayString());
-  const [loadedDate, setLoadedDate] = useState<string>(''); // ultima data analisada
+  const [loadedDate, setLoadedDate]   = useState<string>('');
+
   const requestIdRef = useRef(0);
 
-  const minDate = new Date(Date.now() - 30 * 86400000).toISOString().split("T")[0];
-  const maxDate = new Date(Date.now() + 20 * 86400000).toISOString().split("T")[0]; // ✅ 20 dias
+  const minDate = toDateStringLocal(new Date(Date.now() - 30 * 86400000));
+  // Máximo 5 dias no futuro — a API não tem jogos além disso
+  const maxDate = toDateStringLocal(new Date(Date.now() + 5 * 86400000));
 
-
+  // ─── Carregar dados ─────────────────────────────────────────────────────────
 
   const loadData = async (date: string) => {
     const reqId = ++requestIdRef.current;
 
     let progressInterval: ReturnType<typeof setInterval> | null = null;
-    let msgInterval: ReturnType<typeof setInterval> | null = null;
+    let msgInterval:      ReturnType<typeof setInterval> | null = null;
+
+    setLoading(true);
+    setProgress(0);
+    setError(null);
 
     try {
-      setLoading(true);
-      setProgress(0);
-      setError(null);
-
       progressInterval = setInterval(() => {
         setProgress(prev => {
           if (prev >= 99) return prev;
           const diff = 100 - prev;
-          const increment = diff > 50 ? 3 : (diff > 10 ? 0.8 : 0.05);
+          const increment = diff > 50 ? 3 : diff > 10 ? 0.8 : 0.05;
           return prev + increment;
         });
       }, 100);
 
       msgInterval = setInterval(() => {
-        setLoadingMsgIdx(prev => (prev + 1) % loadingMessages.length);
+        setLoadingMsgIdx(prev => (prev + 1) % LOADING_MESSAGES.length);
       }, 1800);
 
       const analysis = await fetchNHLAnalysis(date);
-      // ✅ FILTRO GLOBAL 23:00–05:00 PT
-const filteredPredictions = analysis.predictions.filter(
-  (p) => p.dateTime && isWithinPortugalNightWindow(p.dateTime)
-);
 
       if (reqId !== requestIdRef.current) return;
+
+      // Filtro: apenas jogos no horário de madrugada PT
+      const filteredPredictions = analysis.predictions.filter(
+        p => p.dateTime && isWithinPortugalNightWindow(p.dateTime)
+      );
 
       setProgress(100);
-     setData({...analysis,predictions: filteredPredictions,});
+      setData({ ...analysis, predictions: filteredPredictions });
       setLoadedDate(date);
 
-// ✅ Guarda snapshot AUTO no histórico global (Redis)
-try {
-  const res = await fetch("/api/history", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      date,
-      side: "auto",
-      suggestions: analysis.suggestions,
-    }),
-  });
-
-  if (res.ok) {
-    window.dispatchEvent(new Event("history-updated"));
-  }
-} catch {
-  // ignore
-}
-     
-
-      setLoading(false);
+      // Guarda snapshot automático no histórico (Redis)
+      try {
+        const res = await fetch('/api/history', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            date,
+            side: 'auto',
+            suggestions: analysis.suggestions,
+          }),
+        });
+        if (res.ok) {
+          window.dispatchEvent(new Event('history-updated'));
+        }
+      } catch {
+        // Falha silenciosa — histórico não é crítico
+      }
     } catch (err: any) {
       if (reqId !== requestIdRef.current) return;
-      const msg = err?.message || "Erro ao carregar dados. Tente novamente.";
-      setError(msg);
-      setLoading(false);
+      setError(err?.message || 'Erro ao carregar dados. Tente novamente.');
     } finally {
       if (progressInterval) clearInterval(progressInterval);
-      if (msgInterval) clearInterval(msgInterval);
+      if (msgInterval)      clearInterval(msgInterval);
+      // setLoading aqui garante que sempre é chamado, mesmo em caso de erro
+      if (reqId === requestIdRef.current) setLoading(false);
     }
   };
 
-  useEffect(() => {
-    // não auto-load
-  }, []);
+  const handleAnalyzeClick = () => loadData(selectedDate);
 
-  const handleAnalyzeClick = () => {
-    loadData(selectedDate);
-  };
+  // ─── Loading screen ─────────────────────────────────────────────────────────
 
   if (loading) {
     return (
@@ -210,13 +143,13 @@ try {
                 className="h-full bg-orange-600 transition-all duration-300 shadow-[0_0_15px_rgba(249,115,22,0.6)]"
                 style={{ width: `${progress}%` }}
               >
-                <div className="absolute top-0 right-0 h-full w-12 bg-white/20 blur-md animate-[pulse_1s_infinite]"></div>
+                <div className="absolute top-0 right-0 h-full w-12 bg-white/20 blur-md animate-[pulse_1s_infinite]" />
               </div>
             </div>
 
             <div className="flex flex-col items-center gap-1.5">
               <p className="text-[10px] font-black text-slate-400 tracking-[0.2em] uppercase italic animate-pulse">
-                {loadingMessages[loadingMsgIdx]}
+                {LOADING_MESSAGES[loadingMsgIdx]}
               </p>
               <span className="text-[9px] font-black text-slate-600 tracking-[0.5em] uppercase">
                 {Math.round(progress)}%
@@ -228,10 +161,14 @@ try {
     );
   }
 
+  // ─── Render principal ────────────────────────────────────────────────────────
+
   const predictionsCount = data?.predictions?.length ?? 0;
 
   return (
     <div className="max-w-7xl mx-auto p-4 sm:p-6 pb-20">
+
+      {/* Header */}
       <header className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4 border-b border-white/5 pb-4">
         <div className="flex items-center">
           <div className="origin-left transform -ml-4 sm:-ml-2">
@@ -246,7 +183,7 @@ try {
               value={selectedDate}
               min={minDate}
               max={maxDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
+              onChange={e => setSelectedDate(e.target.value)}
               className="bg-transparent text-white text-[11px] font-black p-2 outline-none cursor-pointer [color-scheme:dark] w-full"
             />
           </div>
@@ -260,26 +197,24 @@ try {
           </button>
 
           <div className="bg-orange-600/5 px-3 py-1.5 rounded-lg border border-orange-600/10 flex items-center gap-2">
-            <div className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse"></div>
+            <div className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse" />
             <span className="text-[9px] font-black text-slate-400">LIVE</span>
           </div>
         </div>
       </header>
 
+      {/* Erro */}
       {error ? (
         <div className="bg-red-500/5 border border-red-500/20 rounded-2xl p-12 text-center my-10 backdrop-blur-xl">
-          <i className="fas fa-exclamation-circle text-2xl text-red-600 mb-4"></i>
-
+          <i className="fas fa-exclamation-circle text-2xl text-red-600 mb-4" />
           <h2 className="text-lg font-black text-white mb-3 uppercase tracking-widest">
-            ERRO
+            Erro
           </h2>
-
           <p className="text-slate-300 text-xs font-bold max-w-xl mx-auto mb-6">
             {error}
           </p>
-
           <button
-            onClick={() => loadData(loadedDate || selectedDate)}
+            onClick={() => loadData(selectedDate)}
             className="bg-white text-black font-black py-2.5 px-8 rounded-lg text-xs uppercase"
           >
             Repetir
@@ -287,87 +222,78 @@ try {
         </div>
       ) : (
         <>
-          {/* ✅ 4 tabs */}
+          {/* Tabs */}
           <div className="bg-[#020617]/80 backdrop-blur-3xl p-1 rounded-xl border border-white/5 mb-8 flex gap-1 shadow-xl max-w-[520px] mx-auto">
-            <button
-              onClick={() => setActiveTab('schedule')}
-              className={`flex-1 py-2.5 rounded-lg font-black text-[9px] uppercase tracking-wider transition-all ${
-                activeTab === 'schedule' ? 'bg-orange-600 text-white' : 'text-slate-500 hover:text-slate-300'
-              }`}
-            >
-              Jogos
-            </button>
-            <button
-              onClick={() => setActiveTab('suggestions')}
-              className={`flex-1 py-2.5 rounded-lg font-black text-[9px] uppercase tracking-wider transition-all ${
-                activeTab === 'suggestions' ? 'bg-orange-600 text-white' : 'text-slate-500 hover:text-slate-300'
-              }`}
-            >
-              Dicas
-            </button>
-            <button
-              onClick={() => setActiveTab('mypicks')}
-              className={`flex-1 py-2.5 rounded-lg font-black text-[9px] uppercase tracking-wider transition-all ${
-                activeTab === 'mypicks' ? 'bg-orange-600 text-white' : 'text-slate-500 hover:text-slate-300'
-              }`}
-            >
-              Minhas Picks
-            </button>
-            <button
-              onClick={() => setActiveTab('stats')}
-              className={`flex-1 py-2.5 rounded-lg font-black text-[9px] uppercase tracking-wider transition-all ${
-                activeTab === 'stats' ? 'bg-orange-600 text-white' : 'text-slate-500 hover:text-slate-300'
-              }`}
-            >
-              Stats
-            </button>
+            {(
+              [
+                { key: 'schedule',    label: 'Jogos'        },
+                { key: 'suggestions', label: 'Dicas'        },
+                { key: 'mypicks',     label: 'Minhas Picks' },
+                { key: 'stats',       label: 'Stats'        },
+              ] as { key: Tab; label: string }[]
+            ).map(tab => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`flex-1 py-2.5 rounded-lg font-black text-[9px] uppercase tracking-wider transition-all ${
+                  activeTab === tab.key
+                    ? 'bg-orange-600 text-white'
+                    : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
 
+          {/* Conteúdo */}
           <main className="animate-in fade-in duration-500">
-            {activeTab === 'schedule' ? (
+            {activeTab === 'schedule' && (
               <div className="space-y-6">
-                {loadedDate && data && <GameTable predictions={data.predictions} />}
+                {loadedDate && data && (
+                  <GameTable predictions={data.predictions} />
+                )}
                 {(!loadedDate || predictionsCount === 0) && (
                   <div className="py-24 text-center text-slate-600 text-[10px] font-black uppercase tracking-widest">
-                    {loadedDate ? 'Sem jogos' : 'Escolhe uma data e clica em Analisar'}
+                    {loadedDate ? 'Sem jogos neste intervalo horário' : 'Escolhe uma data e clica em Analisar'}
                   </div>
                 )}
               </div>
-            ) : activeTab === 'suggestions' ? (
-              <>
-                {loadedDate && data ? (
-                  <SuggestionsView 
-  suggestions={data.suggestions} 
-  predictions={data.predictions}
-/>
-                ) : (
-                  <div className="py-24 text-center text-slate-600 text-[10px] font-black uppercase tracking-widest">
-                    Escolhe uma data e clica em Analisar
-                  </div>
-                )}
-              </>
-            ) : activeTab === 'mypicks' ? (
-              <>
-                {loadedDate && data ? (
-                  // ✅ FIX: passar suggestions também (mesma fonte das DICAS)
-                  <MyPicksView
-                    predictions={data.predictions}
-                    suggestions={data.suggestions}
-                    selectedDate={loadedDate}
-                  />
-                ) : (
-                  <div className="py-24 text-center text-slate-600 text-[10px] font-black uppercase tracking-widest">
-                    Escolhe uma data e clica em Analisar
-                  </div>
-                )}
-              </>
-            ) : (
-              <StatsView />
             )}
+
+            {activeTab === 'suggestions' && (
+              loadedDate && data ? (
+                <SuggestionsView
+                  suggestions={data.suggestions}
+                  predictions={data.predictions}
+                />
+              ) : (
+                <div className="py-24 text-center text-slate-600 text-[10px] font-black uppercase tracking-widest">
+                  Escolhe uma data e clica em Analisar
+                </div>
+              )
+            )}
+
+            {activeTab === 'mypicks' && (
+              loadedDate && data ? (
+                <MyPicksView
+                  predictions={data.predictions}
+                  suggestions={data.suggestions}
+                  selectedDate={loadedDate}
+                />
+              ) : (
+                <div className="py-24 text-center text-slate-600 text-[10px] font-black uppercase tracking-widest">
+                  Escolhe uma data e clica em Analisar
+                </div>
+              )
+            )}
+
+            {activeTab === 'stats' && <StatsView />}
           </main>
         </>
       )}
 
+      {/* Footer fixo */}
       <footer className="fixed bottom-0 left-0 right-0 bg-black/80 backdrop-blur-md border-t border-white/5 p-4 text-center z-40">
         <p className="text-[8px] text-slate-500 uppercase tracking-[0.4em] font-black">
           NHL Tipsterz &copy; {new Date().getFullYear()}
