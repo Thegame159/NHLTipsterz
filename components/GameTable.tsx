@@ -127,7 +127,12 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
 
             <div className="w-full h-1 bg-slate-800 rounded-full mt-2 max-w-[100px] overflow-hidden">
               <div
-                className={`h-full transition-all duration-700 ${isHomeFav ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                className={`h-full transition-all duration-700 ${
+                  maxProb <= 30 ? 'bg-rose-500' :
+                  maxProb <= 49 ? 'bg-amber-500' :
+                  maxProb <= 69 ? 'bg-green-500' :
+                  'bg-emerald-500'
+                }`}
                 style={{ width: `${maxProb}%` }}
               />
             </div>
