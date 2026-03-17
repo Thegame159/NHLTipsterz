@@ -41,43 +41,35 @@ function safeJsonParse(input: any) {
   }
 }
 
-
-
 export default async function handler(
   req: VercelRequest,
   res: VercelResponse
 ) {
   try {
 
-// =========================
-// DELETE
-// =========================
-if (req.method === "DELETE") {
-  const date = String(req.query.date || "").trim();
+    // =========================
+    // DELETE
+    // =========================
+    if (req.method === "DELETE") {
+      const date = String(req.query.date || "").trim();
 
-  if (!date || !isDate(date)) {
-    return res.status(400).json({ message: "Invalid date" });
-  }
+      if (!date || !isDate(date)) {
+        return res.status(400).json({ message: "Invalid date" });
+      }
 
-  try {
-    // apagar histórico principal
-    await redis.del(keyForDate(date));
+      try {
+        await redis.del(keyForDate(date));
+        await redis.del(`nhl:manual:${date}`);
+      } catch (e: any) {
+        return res.status(500).json({
+          message: "History fatal",
+          details: String(e?.message || e),
+        });
+      }
 
-    // apagar validações manuais
-    await redis.del(`nhl:manual:${date}`);
+      return res.status(200).json({ ok: true, deleted: date });
+    }
 
-  } catch (e: any) {
-    return res.status(500).json({
-      message: "History fatal",
-      details: String(e?.message || e),
-    });
-  }
-
-  return res.status(200).json({
-    ok: true,
-    deleted: date,
-  });
-}
     // =========================
     // POST
     // =========================
@@ -93,93 +85,106 @@ if (req.method === "DELETE") {
       }
 
       const side: HistorySide | undefined =
-        (body as any)?.side === "auto" ||
-        (body as any)?.side === "mine"
+        (body as any)?.side === "auto" || (body as any)?.side === "mine"
           ? (body as any).side
           : undefined;
 
-      let existing: StoreItem = { date, auto: null, mine: null };
+      if (!side) {
+        return res.status(400).json({ message: "Missing side" });
+      }
 
+      let existing: StoreItem = { date, auto: null, mine: null };
       const raw = await redis.get(keyForDate(date));
       const parsed = safeJsonParse(raw);
       if (parsed) existing = parsed;
 
-const incomingSuggestions = (body as any)?.suggestions;
-const incomingStats = (body as any)?.stats;
-const incomingMarkets = (body as any)?.markets;
+      const incomingSuggestions = (body as any)?.suggestions;
+      const incomingStats       = (body as any)?.stats;
+      const incomingMarkets     = (body as any)?.markets;
 
-if (!side) {
-  return res.status(400).json({ message: "Missing side" });
-}
+      const currentSide = existing[side] ?? null;
 
-const currentSide = existing[side] ?? null;
-existing[side] = {
-  savedAt: currentSide?.savedAt ?? Date.now(),
-  suggestions: incomingSuggestions ?? currentSide?.suggestions ?? null,
-  stats: incomingStats ?? currentSide?.stats,
-  markets: incomingMarkets ?? currentSide?.markets,
-};
+      // ── Quando chegam novas suggestions (guardado pelo utilizador via MyPicksView),
+      //    invalida sempre markets e stats cached — já não correspondem às picks novas.
+      //    Só preserva markets/stats se NÃO vieram suggestions novas (caso do StatsView
+      //    que persiste apenas stats+markets sem alterar as picks).
+      const suggestionsChanged = incomingSuggestions !== undefined;
+
+      existing[side] = {
+        // Preserva o savedAt original se já existia; só regista novo timestamp
+        // quando são as suggestions que mudam (acção do utilizador).
+        savedAt: suggestionsChanged ? Date.now() : (currentSide?.savedAt ?? Date.now()),
+
+        suggestions: incomingSuggestions ?? currentSide?.suggestions ?? null,
+
+        // Se vieram novas suggestions → apaga markets e stats para forçar recálculo.
+        // Se NÃO vieram suggestions → aceita os novos stats/markets vindos do StatsView
+        //   ou mantém os existentes.
+        stats:   suggestionsChanged ? undefined : (incomingStats   ?? currentSide?.stats),
+        markets: suggestionsChanged ? undefined : (incomingMarkets ?? currentSide?.markets),
+      };
+
       await redis.set(keyForDate(date), JSON.stringify(existing));
-     
 
       return res.status(200).json({ ok: true, item: existing });
     }
 
-// GET
-// =========================
-if (req.method === "GET") {
-  const dateParam = String(req.query.date || "").trim();
-  const sideParam = String(req.query.side || "").trim();
+    // =========================
+    // GET
+    // =========================
+    if (req.method === "GET") {
+      const dateParam = String(req.query.date || "").trim();
+      const sideParam = String(req.query.side || "").trim();
 
-  // ── Busca específica: ?date=YYYY-MM-DD&side=mine|auto ──
-  if (dateParam && isDate(dateParam) && (sideParam === "mine" || sideParam === "auto")) {
-    const raw = await redis.get(keyForDate(dateParam));
-    const parsed = safeJsonParse(raw);
+      // Busca específica: ?date=YYYY-MM-DD&side=mine|auto
+      if (dateParam && isDate(dateParam) && (sideParam === "mine" || sideParam === "auto")) {
+        const raw = await redis.get(keyForDate(dateParam));
+        const parsed = safeJsonParse(raw);
 
-    if (!parsed || !parsed[sideParam]) {
-      return res.status(200).json({ ok: true, suggestions: null });
+        if (!parsed || !parsed[sideParam]) {
+          return res.status(200).json({ ok: true, suggestions: null });
+        }
+
+        return res.status(200).json({
+          ok: true,
+          suggestions: parsed[sideParam].suggestions ?? null,
+        });
+      }
+
+      // Listagem geral
+      const limitRaw = String(req.query.limit || "30");
+      const limit = Math.min(parseInt(limitRaw, 10) || 30, 200);
+
+      let cursor = "0";
+      const keys: string[] = [];
+
+      do {
+        const result = await redis.scan(cursor, `${KEY_PREFIX}*`, 100);
+        if (!result) break;
+        const nextCursor = result[0];
+        const foundKeys = Array.isArray(result[1]) ? result[1] : [];
+        keys.push(...foundKeys);
+        cursor = nextCursor;
+      } while (cursor !== "0");
+
+      const dates = keys
+        .map((k) => k.replace(KEY_PREFIX, ""))
+        .filter(isDate)
+        .sort((a, b) => (a < b ? 1 : -1))
+        .slice(0, limit);
+
+      const items: StoreItem[] = [];
+      for (const date of dates) {
+        try {
+          const raw = await redis.get(keyForDate(date));
+          const parsed = safeJsonParse(raw);
+          if (parsed) items.push(parsed);
+        } catch {}
+      }
+
+      return res.status(200).json({ ok: true, items });
     }
 
-    return res.status(200).json({
-      ok: true,
-      suggestions: parsed[sideParam].suggestions ?? null,
-    });
-  }
-
-  // ── Listagem geral (sem date/side) ──
-  const limitRaw = String(req.query.limit || "30");
-  const limit = Math.min(parseInt(limitRaw, 10) || 30, 200);
-
-  let cursor = "0";
-  const keys: string[] = [];
-
-  do {
-    const result = await redis.scan(cursor, `${KEY_PREFIX}*`, 100);
-    if (!result) break;
-    const nextCursor = result[0];
-    const foundKeys = Array.isArray(result[1]) ? result[1] : [];
-    keys.push(...foundKeys);
-    cursor = nextCursor;
-  } while (cursor !== "0");
-
-  const dates = keys
-    .map((k) => k.replace(KEY_PREFIX, ""))
-    .filter(isDate)
-    .sort((a, b) => (a < b ? 1 : -1))
-    .slice(0, limit);
-
-  const items: StoreItem[] = [];
-  for (const date of dates) {
-    try {
-      const raw = await redis.get(keyForDate(date));
-      const parsed = safeJsonParse(raw);
-      if (parsed) items.push(parsed);
-    } catch {}
-  }
-
-  return res.status(200).json({ ok: true, items });
-}
-    
     res.setHeader("Allow", "GET, POST, DELETE");
     return res.status(405).json({ message: "Method not allowed" });
 
