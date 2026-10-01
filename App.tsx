@@ -54,7 +54,6 @@ const App: React.FC = () => {
   const requestIdRef = useRef(0);
 
   const minDate = toDateStringLocal(new Date(Date.now() - 30 * 86400000));
-  // Máximo 5 dias no futuro — a API não tem jogos além disso
   const maxDate = toDateStringLocal(new Date(Date.now() + 5 * 86400000));
 
   // ─── Carregar dados ─────────────────────────────────────────────────────────
@@ -83,18 +82,31 @@ const App: React.FC = () => {
         setLoadingMsgIdx(prev => (prev + 1) % LOADING_MESSAGES.length);
       }, 1800);
 
-      const analysis = await fetchNHLAnalysis(date);
+      const rawAnalysis = await fetchNHLAnalysis(date);
 
       if (reqId !== requestIdRef.current) return;
 
-      // Passa diretamente todos os jogos retornados pela API sem nenhum filtro local
-      const filteredPredictions = analysis.predictions || [];
+      // Extrai os dados quer venham na raiz quer venham dentro da propriedade .data
+      const analysisData = (rawAnalysis as any)?.predictions
+        ? rawAnalysis
+        : (rawAnalysis as any)?.data || rawAnalysis;
+
+      const predictionsList = analysisData?.predictions || [];
+      const suggestionsList = analysisData?.suggestions || {
+        tripleWin: [],
+        tripleOver15P1: [],
+        doubleOver15P1: [],
+      };
 
       setProgress(100);
-      setData({ ...analysis, predictions: filteredPredictions });
+      setData({
+        predictions: predictionsList,
+        suggestions: suggestionsList,
+        lastUpdated: analysisData?.lastUpdated || new Date().toISOString(),
+      });
       setLoadedDate(date);
 
-      // Guarda snapshot automático no histórico (Redis)
+      // Guarda snapshot automático no histórico
       try {
         const res = await fetch('/api/history', {
           method: 'POST',
@@ -102,14 +114,14 @@ const App: React.FC = () => {
           body: JSON.stringify({
             date,
             side: 'auto',
-            suggestions: analysis.suggestions,
+            suggestions: suggestionsList,
           }),
         });
         if (res.ok) {
           window.dispatchEvent(new Event('history-updated'));
         }
       } catch {
-        // Falha silenciosa — histórico não é crítico
+        // Falha silenciosa
       }
     } catch (err: any) {
       if (reqId !== requestIdRef.current) return;
