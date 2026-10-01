@@ -146,12 +146,26 @@ export default async function handler(
 
       let keys: string[] = [];
       try {
-        // Uso de casting para evitar erro de tipo no TypeScript do Vercel
-        const resultKeys = await (redis as any).keys(`${KEY_PREFIX}*`);
-        console.log(`[HISTORY GET] Found keys:`, resultKeys);
-        if (Array.isArray(resultKeys)) {
-          keys = resultKeys;
+        let cursor: any = 0;
+        do {
+          const scanResult = await (redis as any).scan(cursor, { match: `${KEY_PREFIX}*`, count: 100 });
+          if (!scanResult) break;
+          cursor = scanResult[0];
+          const foundKeys = scanResult[1];
+          if (Array.isArray(foundKeys)) {
+            keys.push(...foundKeys);
+          }
+          if (cursor === 0 || cursor === "0" || !cursor) break;
+        } while (cursor);
+
+        if (keys.length === 0) {
+          const resultKeys = await (redis as any).keys(`${KEY_PREFIX}*`);
+          if (Array.isArray(resultKeys)) {
+            keys = resultKeys;
+          }
         }
+        
+        console.log(`[HISTORY GET] Resolved keys:`, keys);
       } catch (err) {
         console.error(`[HISTORY GET] Error fetching keys:`, err);
       }
