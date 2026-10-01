@@ -8,7 +8,6 @@ import SuggestionsView from './components/SuggestionsView';
 import MyPicksView from './components/MyPicksView';
 import StatsView from './components/StatsView';
 import BrandLogo from './components/BrandLogo';
-import { isWithinPortugalNightWindow } from './utils/nhlUtils';
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
 
@@ -19,7 +18,7 @@ const LOADING_MESSAGES = [
   'Estudando os últimos 10 jogos...',
   'Verificando boletim clínico...',
   'Processando fator casa vs fora...',
-  'Refinando odds táticas...',
+  'Refining odds táticas...',
   'Preparando face-off...',
 ];
 
@@ -88,10 +87,21 @@ const App: React.FC = () => {
 
       if (reqId !== requestIdRef.current) return;
 
-      // Filtro: apenas jogos no horário de madrugada PT
-      const filteredPredictions = analysis.predictions.filter(
-        p => p.dateTime && isWithinPortugalNightWindow(p.dateTime)
-      );
+      // Filtro corrigido: preserva os jogos associados à jornada da data selecionada (fuso ET / UTC)
+      const filteredPredictions = (analysis.predictions || []).filter(p => {
+        if (!p) return false;
+        if (!p.dateTime) return true; // Se não houver data explícita, mantém por segurança
+
+        // Extrai a data ISO UTC original fornecida pela API da NHL (YYYY-MM-DD)
+        const gameDateUTC = new Date(p.dateTime).toISOString().split('T')[0];
+
+        // Ajuste de fuso horário: subtrai 5 horas para alinhar a madrugada em Portugal à jornada de origem (ET)
+        const adjustedDate = new Date(new Date(p.dateTime).getTime() - 5 * 60 * 60 * 1000);
+        const gameJornadaDate = adjustedDate.toISOString().split('T')[0];
+
+        // Aceita o jogo se a data corresponder à data selecionada em UTC ou na jornada ajustada
+        return gameDateUTC === date || gameJornadaDate === date;
+      });
 
       setProgress(100);
       setData({ ...analysis, predictions: filteredPredictions });
@@ -120,7 +130,6 @@ const App: React.FC = () => {
     } finally {
       if (progressInterval) clearInterval(progressInterval);
       if (msgInterval)      clearInterval(msgInterval);
-      // setLoading aqui garante que sempre é chamado, mesmo em caso de erro
       if (reqId === requestIdRef.current) setLoading(false);
     }
   };
