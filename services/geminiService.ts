@@ -40,7 +40,27 @@ function defaultSuggestions(): Suggestions {
 
 // Normaliza e garante o formato que a UI espera (NHLAnalysisData)
 function normalizeToUiShape(raw: any): NHLAnalysisData {
-  if (!raw || typeof raw !== "object") {
+  let parsedRaw = raw;
+
+  // Se a resposta do backend vier envolvida em 'text' ou 'result' (resposta da IA em string JSON)
+  if (typeof raw?.text === "string") {
+    try {
+      // Clean up de blocos markdown ```json ... ``` se a IA responder formatada
+      const cleanJson = raw.text.replace(/```json/g, "").replace(/```/g, "").trim();
+      parsedRaw = JSON.parse(cleanJson);
+    } catch (e) {
+      console.error("Erro ao fazer parse do JSON da IA:", e);
+    }
+  } else if (typeof raw?.result === "string") {
+    try {
+      const cleanJson = raw.result.replace(/```json/g, "").replace(/```/g, "").trim();
+      parsedRaw = JSON.parse(cleanJson);
+    } catch (e) {
+      console.error("Erro ao fazer parse do JSON da IA:", e);
+    }
+  }
+
+  if (!parsedRaw || typeof parsedRaw !== "object") {
     return {
       predictions: [],
       suggestions: defaultSuggestions(),
@@ -48,11 +68,21 @@ function normalizeToUiShape(raw: any): NHLAnalysisData {
     };
   }
 
-  const predictions = Array.isArray(raw.predictions) ? raw.predictions : [];
-  const suggestions =
-    raw.suggestions && typeof raw.suggestions === "object" ? (raw.suggestions as Suggestions) : defaultSuggestions();
+  const predictions = Array.isArray(parsedRaw.predictions)
+    ? parsedRaw.predictions
+    : Array.isArray(parsedRaw.games)
+    ? parsedRaw.games
+    : [];
 
-  const lastUpdated = typeof raw.lastUpdated === "string" && raw.lastUpdated.trim() ? raw.lastUpdated : new Date().toISOString();
+  const suggestions =
+    parsedRaw.suggestions && typeof parsedRaw.suggestions === "object"
+      ? (parsedRaw.suggestions as Suggestions)
+      : defaultSuggestions();
+
+  const lastUpdated =
+    typeof parsedRaw.lastUpdated === "string" && parsedRaw.lastUpdated.trim()
+      ? parsedRaw.lastUpdated
+      : new Date().toISOString();
 
   return {
     predictions,
