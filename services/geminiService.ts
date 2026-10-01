@@ -38,49 +38,52 @@ function defaultSuggestions(): Suggestions {
   };
 }
 
+// Descodifica de forma robusta strings JSON vindas da Groq/OpenAI
+function parseModelJson(rawContent: any): any {
+  if (!rawContent) return null;
+  if (typeof rawContent === "object") return rawContent;
+
+  if (typeof rawContent === "string") {
+    try {
+      // Limpa delimitadores de código markdown se existirem (```json ... ```)
+      let cleaned = rawContent.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
+      return JSON.parse(cleaned);
+    } catch (e) {
+      console.error("Falha ao efetuar parse direto do JSON:", e);
+    }
+  }
+  return null;
+}
+
 // Normaliza e garante o formato que a UI espera (NHLAnalysisData)
 function normalizeToUiShape(raw: any): NHLAnalysisData {
   let parsedRaw = raw;
 
-  // Se a resposta do backend vier envolvida em 'text' ou 'result' (resposta da IA em string JSON)
-  if (typeof raw?.text === "string") {
-    try {
-      // Clean up de blocos markdown ```json ... ``` se a IA responder formatada
-      const cleanJson = raw.text.replace(/```json/g, "").replace(/```/g, "").trim();
-      parsedRaw = JSON.parse(cleanJson);
-    } catch (e) {
-      console.error("Erro ao fazer parse do JSON da IA:", e);
-    }
-  } else if (typeof raw?.result === "string") {
-    try {
-      const cleanJson = raw.result.replace(/```json/g, "").replace(/```/g, "").trim();
-      parsedRaw = JSON.parse(cleanJson);
-    } catch (e) {
-      console.error("Erro ao fazer parse do JSON da IA:", e);
-    }
+  // Se os dados vierem em 'text' ou 'result' (string codificada vinda do modelo)
+  if (raw?.text) {
+    parsedRaw = parseModelJson(raw.text) || parsedRaw;
+  } else if (raw?.result) {
+    parsedRaw = parseModelJson(raw.result) || parsedRaw;
   }
 
-  if (!parsedRaw || typeof parsedRaw !== "object") {
-    return {
-      predictions: [],
-      suggestions: defaultSuggestions(),
-      lastUpdated: new Date().toISOString(),
-    };
+  // Se o objeto ainda contiver 'text' interiorizadamente
+  if (typeof parsedRaw === "string") {
+    parsedRaw = parseModelJson(parsedRaw) || {};
   }
 
-  const predictions = Array.isArray(parsedRaw.predictions)
+  const predictions = Array.isArray(parsedRaw?.predictions)
     ? parsedRaw.predictions
-    : Array.isArray(parsedRaw.games)
+    : Array.isArray(parsedRaw?.games)
     ? parsedRaw.games
     : [];
 
   const suggestions =
-    parsedRaw.suggestions && typeof parsedRaw.suggestions === "object"
+    parsedRaw?.suggestions && typeof parsedRaw.suggestions === "object"
       ? (parsedRaw.suggestions as Suggestions)
       : defaultSuggestions();
 
   const lastUpdated =
-    typeof parsedRaw.lastUpdated === "string" && parsedRaw.lastUpdated.trim()
+    typeof parsedRaw?.lastUpdated === "string" && parsedRaw.lastUpdated.trim()
       ? parsedRaw.lastUpdated
       : new Date().toISOString();
 
