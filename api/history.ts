@@ -145,26 +145,25 @@ export default async function handler(
       const limit = Math.min(parseInt(limitRaw, 10) || 30, 200);
 
       const keys: string[] = [];
-      let cursor: number | string = 0;
+      let cursor: string | number = "0";
 
       do {
-        // No @upstash/redis, o scan retorna [cursor, keysArray]
         const resScan = (await redis.scan(cursor, {
           match: `${KEY_PREFIX}*`,
           count: 100,
-        })) as [string | number, string[]];
+        })) as [string, string[]];
 
         if (!resScan) break;
 
-        cursor = resScan[0];
+        const nextCursor = resScan[0];
         const found = resScan[1];
+
         if (Array.isArray(found)) {
           keys.push(...found);
         }
 
-        // Converter cursor para número para verificar a condição de paragem
-        cursor = typeof cursor === "string" ? parseInt(cursor, 10) : cursor;
-      } while (cursor !== 0 && !isNaN(Number(cursor)));
+        cursor = String(nextCursor);
+      } while (cursor !== "0");
 
       const dates = Array.from(new Set(keys))
         .map((k) => String(k).replace(KEY_PREFIX, ""))
