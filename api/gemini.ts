@@ -1,5 +1,5 @@
 // api/gemini.ts
-// Análise estatística de NHL via Groq API (Llama 3.3 70B)
+// Análise estatística de NHL via Groq API (GPT OSS 120B)
 
 type GroqChatResponse = {
   choices?: Array<{
@@ -16,7 +16,7 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
 
-    // Aceita qualquer formato de payload enviado pelo frontend (prompt, contents, payload, etc.)
+    // Aceita qualquer formato de payload enviado pelo frontend
     let promptText = "";
 
     if (typeof body === "string") {
@@ -47,7 +47,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // Chamada à API da Groq com o modelo Llama 3.3 70B Versatile
+    // Chamada à API da Groq com o modelo em produção GPT OSS 120B
     const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -55,7 +55,7 @@ export async function POST(req: Request) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-       model: "llama3-70b-8192",
+        model: "openai/gpt-oss-120b",
         messages: [
           {
             role: "system",
@@ -69,7 +69,7 @@ export async function POST(req: Request) {
             content: promptText,
           },
         ],
-        temperature: 0.2, // Temperatura baixa para garantir rigor e consistência estatística
+        temperature: 0.2,
       }),
     });
 
@@ -85,7 +85,6 @@ export async function POST(req: Request) {
 
     const outputText = data.choices?.[0]?.message?.content || "";
 
-    // Retorna a resposta no formato esperado pelo frontend
     return new Response(JSON.stringify({ text: outputText, result: outputText }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
