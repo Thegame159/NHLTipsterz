@@ -94,7 +94,8 @@ export default async function handler(
       }
 
       let existing: StoreItem = { date, auto: null, mine: null };
-      const raw = await redis.get(keyForDate(date));
+      const targetKey = keyForDate(date);
+      const raw = await redis.get(targetKey);
       const parsed = safeJsonParse(raw);
       if (parsed) existing = parsed;
 
@@ -113,7 +114,8 @@ export default async function handler(
         markets: suggestionsChanged ? undefined : (incomingMarkets ?? currentSide?.markets),
       };
 
-      await redis.set(keyForDate(date), JSON.stringify(existing));
+      console.log(`[HISTORY POST] Saving to key: ${targetKey}`);
+      await redis.set(targetKey, JSON.stringify(existing));
 
       return res.status(200).json({ ok: true, item: existing });
     }
@@ -125,7 +127,6 @@ export default async function handler(
       const dateParam = String(req.query.date || "").trim();
       const sideParam = String(req.query.side || "").trim();
 
-      // Busca específica: ?date=YYYY-MM-DD&side=mine|auto
       if (dateParam && isDate(dateParam) && (sideParam === "mine" || sideParam === "auto")) {
         const raw = await redis.get(keyForDate(dateParam));
         const parsed = safeJsonParse(raw);
@@ -140,19 +141,19 @@ export default async function handler(
         });
       }
 
-      // Listagem geral utilizando comando direto ao Redis para obter todas as chaves correspondentes
       const limitRaw = String(req.query.limit || "30");
       const limit = Math.min(parseInt(limitRaw, 10) || 30, 200);
 
       let keys: string[] = [];
       try {
-        // Tenta o comando KEYS diretamente via REST/Redis client
-        const resultKeys = await redis.keys(`${KEY_PREFIX}*`);
+        // Uso de casting para evitar erro de tipo no TypeScript do Vercel
+        const resultKeys = await (redis as any).keys(`${KEY_PREFIX}*`);
+        console.log(`[HISTORY GET] Found keys:`, resultKeys);
         if (Array.isArray(resultKeys)) {
           keys = resultKeys;
         }
-      } catch {
-        // Fallback caso o método keys direto falhe
+      } catch (err) {
+        console.error(`[HISTORY GET] Error fetching keys:`, err);
       }
 
       const dates = Array.from(new Set(keys))
@@ -177,6 +178,7 @@ export default async function handler(
     return res.status(405).json({ message: "Method not allowed" });
 
   } catch (e: any) {
+    console.error(`[HISTORY FATAL]`, e);
     return res.status(500).json({
       message: "History fatal",
       details: String(e?.message || e),
