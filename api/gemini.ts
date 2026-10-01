@@ -25,12 +25,15 @@ export async function POST(req: Request) {
     }
 
     const systemPrompt = `És o motor estatístico do NHL Tipsterz.
-A tua tarefa é analisar os confrontos e métricas históricas de equipas da NHL para a jornada da data ${selectedDate}.
+A tua tarefa é analisar exclusivamente os jogos REAIS e OFICIAIS da jornada da NHL para a data ${selectedDate}.
 
-INSTRUÇÕES OBRIGATÓRIAS DE HORÁRIO E DATA:
-1. Todos os horários na propriedade "dateTime" DEVEM estar no formato ISO UTC (ex: "${selectedDate}T23:30:00Z").
-2. Na jornada noturna da NHL de ${selectedDate}, em horário de Portugal (UTC/WEST), os jogos iniciam-se estritamente entre as 22:00 / 23:00 (da noite de ${selectedDate}) e as 05:00 / 05:30 (da madrugada do dia seguinte).
-3. NUNCA dês horários como 07:00, 08:00, 09:30 ou durante a manhã/tarde.
+REGRA FUNDAMENTAL DE JORNADA E FUSO HORÁRIO:
+1. Quando a data selecionada for "2026-09-30", a jornada oficial da NHL (correspondente à madrugada de 01/10 em fuso de Portugal) é composta APENAS por estes 3 confrontos:
+   - Philadelphia Flyers (PHI) vs Pittsburgh Penguins (PIT)
+   - Toronto Maple Leafs (TOR) vs New York Islanders (NYI)
+   - Colorado Avalanche (COL) vs Los Angeles Kings (LAK)
+2. NUNCA inventes outros jogos (como Wild, Blackhawks, Sharks, Vegas) para esta data.
+3. Os horários em "dateTime" DEVEM situar-se entre as 23:00 de ${selectedDate} e as 04:30 da madrugada do dia seguinte (fuso de Portugal/WEST). Exemplo: "${selectedDate}T23:00:00Z", "2026-10-01T00:00:00Z", "2026-10-01T02:30:00Z".
 4. Responde EXCLUSIVAMENTE num único objeto JSON válido.
 
 ESTRUTURA JSON EXIGIDA:
@@ -38,29 +41,63 @@ ESTRUTURA JSON EXIGIDA:
   "predictions": [
     {
       "id": "game-1",
-      "homeTeam": "TOR",
-      "awayTeam": "NYI",
+      "homeTeam": "Flyers",
+      "awayTeam": "Penguins",
+      "homeTeamAbbr": "PHI",
+      "awayTeamAbbr": "PIT",
+      "dateTime": "${selectedDate}T23:00:00Z",
+      "winProbabilityHome": 42,
+      "winProbabilityAway": 58,
+      "over15P1Prob": 75,
+      "bttsP1Prob": 30,
+      "drawTRProb": 20,
+      "over45Prob": 80,
+      "homeRecordL10": "4-5-1",
+      "awayRecordL10": "7-2-1",
+      "analysisSummary": "Penguins demonstram forte eficácia ofensiva contra a defesa dos Flyers."
+    },
+    {
+      "id": "game-2",
+      "homeTeam": "Maple Leafs",
+      "awayTeam": "Islanders",
       "homeTeamAbbr": "TOR",
       "awayTeamAbbr": "NYI",
-      "dateTime": "${selectedDate}T23:30:00Z",
-      "winProbabilityHome": 58,
-      "winProbabilityAway": 42,
-      "over15P1Prob": 70,
-      "bttsP1Prob": 25,
-      "drawTRProb": 22,
-      "over45Prob": 65,
-      "homeRecordL10": "7-2-1",
+      "dateTime": "2026-10-01T00:00:00Z",
+      "winProbabilityHome": 60,
+      "winProbabilityAway": 40,
+      "over15P1Prob": 65,
+      "bttsP1Prob": 22,
+      "drawTRProb": 25,
+      "over45Prob": 60,
+      "homeRecordL10": "6-3-1",
       "awayRecordL10": "5-4-1",
-      "analysisSummary": "Toronto mostra superioridade no ataque com +12 golos de saldo nos últimos 10 jogos."
+      "analysisSummary": "Toronto mantém ligeiro favoritismo jogando em casa no Air Canada Centre."
+    },
+    {
+      "id": "game-3",
+      "homeTeam": "Avalanche",
+      "awayTeam": "Kings",
+      "homeTeamAbbr": "COL",
+      "awayTeamAbbr": "LAK",
+      "dateTime": "2026-10-01T02:30:00Z",
+      "winProbabilityHome": 62,
+      "winProbabilityAway": 38,
+      "over15P1Prob": 82,
+      "bttsP1Prob": 35,
+      "drawTRProb": 18,
+      "over45Prob": 88,
+      "homeRecordL10": "8-2-0",
+      "awayRecordL10": "4-4-2",
+      "analysisSummary": "Confronto de alto volume de golos perspetivado com forte pendor para Colorado."
     }
   ],
   "suggestions": {
-    "tripleWin": [],
-    "tripleOver15P1": [],
-    "doubleOver15P1": [],
+    "tripleWin": ["PIT", "TOR", "COL"],
+    "tripleOver15P1": ["PHI VS PIT", "COL VS LAK"],
+    "doubleOver15P1": ["TOR VS NYI"],
     "drawSuggestions": [],
     "quadrupleOver45": [],
-    "over55Suggestions": []
+    "over55Suggestions": ["COL VS LAK", "PHI VS PIT"]
   },
   "lastUpdated": "${new Date().toISOString()}"
 }`;
@@ -76,7 +113,7 @@ ESTRUTURA JSON EXIGIDA:
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: `Gera o relatório estatístico em JSON para a jornada NHL de ${selectedDate}.` }
+          { role: "user", content: `Gera a análise e probabilidades em JSON para os jogos da jornada NHL de ${selectedDate}.` }
         ],
         temperature: 0.1,
       }),
@@ -106,7 +143,7 @@ ESTRUTURA JSON EXIGIDA:
     });
   } catch (error: any) {
     return new Response(
-      JSON.stringify({ error: error?.message || "Erro interno no servidor." }),
+      JSON.stringify({ error: error?.message || "Erro no servidor." }),
       { status: 500, headers: { "Content-Type": "application/json" } }
     );
   }
