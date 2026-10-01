@@ -7,12 +7,17 @@ import {
   FALLBACK_LOGO,
   teamLabel,
   formatTime,
-  isMadrugadaGame,
 } from '../utils/nhlUtils';
 
 interface Props {
   predictions: GamePrediction[];
 }
+
+// ─── Helper de segurança numérica ──────────────────────────────────────────
+
+const safeNum = (v: any): number => {
+  return typeof v === 'number' && !isNaN(v) ? v : 0;
+};
 
 // ─── Célula de probabilidade ────────────────────────────────────────────────
 
@@ -30,27 +35,41 @@ const getBarColor = (v: number) => {
   return 'bg-gradient-to-r from-emerald-500 to-green-600';
 };
 
-const ProbabilityCell: React.FC<{ value: number }> = ({ value }) => (
-  <div className="flex flex-col items-center justify-center min-w-[80px]">
-    <div className={`px-4 py-1.5 rounded-lg border font-black text-sm mb-1.5 ${getColorClass(value)}`}>
-      {Math.round(value)}%
+const ProbabilityCell: React.FC<{ value?: number }> = ({ value }) => {
+  const val = safeNum(value);
+  return (
+    <div className="flex flex-col items-center justify-center min-w-[80px]">
+      <div className={`px-4 py-1.5 rounded-lg border font-black text-sm mb-1.5 ${getColorClass(val)}`}>
+        {Math.round(val)}%
+      </div>
+      <div className="w-full h-1 bg-slate-800 rounded-full overflow-hidden max-w-[60px]">
+        <div
+          className={`h-full ${getBarColor(val)} transition-all duration-700`}
+          style={{ width: `${val}%` }}
+        />
+      </div>
     </div>
-    <div className="w-full h-1 bg-slate-800 rounded-full overflow-hidden max-w-[60px]">
-      <div
-        className={`h-full ${getBarColor(value)} transition-all duration-700`}
-        style={{ width: `${value}%` }}
-      />
-    </div>
-  </div>
-);
+  );
+};
 
 // ─── Linha de jogo ───────────────────────────────────────────────────────────
 
 const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
-  const isHomeFav = game.winProbabilityHome >= game.winProbabilityAway;
-  const maxProb   = Math.max(game.winProbabilityHome, game.winProbabilityAway);
+  // Leitura segura de valores numéricos
+  const winHome = safeNum(game.winProbabilityHome ?? (game as any).homeWinProb);
+  const winAway = safeNum(game.winProbabilityAway ?? (game as any).awayWinProb);
+  const drawProb = safeNum(game.drawTRProb ?? (game as any).drawProb);
+  const over15P1 = safeNum(game.over15P1Prob);
+  const bttsP1 = safeNum(game.bttsP1Prob);
+  const over45 = safeNum(game.over45Prob ?? (game as any).over55Prob);
+
+  const isHomeFav = winHome >= winAway;
+  const maxProb = Math.max(winHome, winAway);
+
+  const homeTeam = game.homeTeamAbbr || game.homeTeam || '';
+  const awayTeam = game.awayTeamAbbr || game.awayTeam || '';
 
   return (
     <>
@@ -70,14 +89,14 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
               {/* CASA */}
               <div className="flex items-center gap-3">
                 <img
-                  src={getLogoUrl(game.homeTeamAbbr)}
+                  src={getLogoUrl(homeTeam)}
                   className="w-7 h-7 object-contain drop-shadow-sm"
-                  alt={game.homeTeamAbbr}
+                  alt={homeTeam}
                   onError={(e) => (e.currentTarget.src = FALLBACK_LOGO)}
                 />
                 <div className="flex items-center gap-2">
                   <span className={`font-black text-lg ${isHomeFav ? 'text-white' : 'text-slate-400'}`}>
-                    {teamLabel(game.homeTeamAbbr)}
+                    {teamLabel(homeTeam)}
                   </span>
                   <span className="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-bold uppercase">
                     {game.homeRecordL10 || '0-0-0'}
@@ -92,14 +111,14 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
               {/* VISITANTE */}
               <div className="flex items-center gap-3">
                 <img
-                  src={getLogoUrl(game.awayTeamAbbr)}
+                  src={getLogoUrl(awayTeam)}
                   className="w-7 h-7 object-contain drop-shadow-sm"
-                  alt={game.awayTeamAbbr}
+                  alt={awayTeam}
                   onError={(e) => (e.currentTarget.src = FALLBACK_LOGO)}
                 />
                 <div className="flex items-center gap-2">
                   <span className={`font-black text-lg ${!isHomeFav ? 'text-white' : 'text-slate-400'}`}>
-                    {teamLabel(game.awayTeamAbbr)}
+                    {teamLabel(awayTeam)}
                   </span>
                   <span className="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-bold uppercase">
                     {game.awayRecordL10 || '0-0-0'}
@@ -114,8 +133,8 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
         <td className="text-right py-6 pr-8">
           <div className="flex flex-col items-end gap-1">
             <div className="flex gap-4 text-[10px] font-bold text-slate-500 uppercase mb-2">
-              <span>Casa: {game.winProbabilityHome.toFixed(1)}%</span>
-              <span>Fora: {game.winProbabilityAway.toFixed(1)}%</span>
+              <span>Casa: {winHome.toFixed(1)}%</span>
+              <span>Fora: {winAway.toFixed(1)}%</span>
             </div>
 
             <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border font-black text-xs min-w-[100px] justify-center ${getColorClass(maxProb)}`}>
@@ -145,10 +164,10 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
         </td>
 
         {/* COLUNAS: Probabilidades */}
-        <td className="py-6 text-center"><ProbabilityCell value={game.drawTRProb} /></td>
-        <td className="py-6 text-center"><ProbabilityCell value={game.over15P1Prob} /></td>
-        <td className="py-6 text-center"><ProbabilityCell value={game.bttsP1Prob} /></td>
-        <td className="py-6 text-center pr-4"><ProbabilityCell value={game.over45Prob} /></td>
+        <td className="py-6 text-center"><ProbabilityCell value={drawProb} /></td>
+        <td className="py-6 text-center"><ProbabilityCell value={over15P1} /></td>
+        <td className="py-6 text-center"><ProbabilityCell value={bttsP1} /></td>
+        <td className="py-6 text-center pr-4"><ProbabilityCell value={over45} /></td>
       </tr>
 
       {/* PAINEL EXPANDIDO */}
@@ -159,14 +178,14 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
             {/* Resumo */}
             <div className="text-sm text-slate-300">
               <span className="text-blue-500 font-black uppercase mr-2">Resumo:</span>
-              <span className="italic text-slate-400">{game.analysisSummary}</span>
+              <span className="italic text-slate-400">{game.analysisSummary || (game as any).analysis || 'Sem resumo disponível.'}</span>
             </div>
 
-            {/* Lesões — sempre visível, mesmo que vazio */}
+            {/* Lesões */}
             <div className="grid grid-cols-2 gap-6 text-sm">
               <div>
                 <div className="text-rose-400 font-bold mb-2 text-[11px] uppercase tracking-wide">
-                  Lesões {teamLabel(game.homeTeamAbbr)}
+                  Lesões {teamLabel(homeTeam)}
                 </div>
                 {game.injuries?.home?.length > 0
                   ? <ul className="space-y-1 text-slate-400">
@@ -177,7 +196,7 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
               </div>
               <div>
                 <div className="text-rose-400 font-bold mb-2 text-[11px] uppercase tracking-wide">
-                  Lesões {teamLabel(game.awayTeamAbbr)}
+                  Lesões {teamLabel(awayTeam)}
                 </div>
                 {game.injuries?.away?.length > 0
                   ? <ul className="space-y-1 text-slate-400">
@@ -198,7 +217,7 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
 // ─── Tabela principal ────────────────────────────────────────────────────────
 
 const GameTable: React.FC<Props> = ({ predictions }) => {
-  const madrugadaGames = predictions.filter((g) => isMadrugadaGame(g.dateTime));
+  const gamesList = predictions || [];
 
   return (
     <div className="space-y-8 pb-8">
@@ -206,20 +225,17 @@ const GameTable: React.FC<Props> = ({ predictions }) => {
       {/* Cabeçalho de secção com contador */}
       <div className="flex items-center gap-3">
         <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-          Jogos da noite
-        </span>
-        <span className="text-[10px] bg-slate-800 text-slate-500 border border-slate-700 px-2 py-0.5 rounded-full font-bold">
-          23:00 – 05:00
+          Jogos Agendados
         </span>
         <span className="ml-auto text-[10px] text-slate-600 font-bold">
-          {madrugadaGames.length} {madrugadaGames.length === 1 ? 'jogo' : 'jogos'}
+          {gamesList.length} {gamesList.length === 1 ? 'jogo' : 'jogos'}
         </span>
       </div>
 
       {/* Estado vazio */}
-      {madrugadaGames.length === 0 ? (
+      {gamesList.length === 0 ? (
         <div className="w-full rounded-2xl border border-slate-800 bg-slate-800/20 py-16 text-center">
-          <p className="text-slate-500 text-sm">Sem jogos no intervalo 23:00 – 05:00.</p>
+          <p className="text-slate-500 text-sm">Sem jogos disponíveis para esta data.</p>
         </div>
       ) : (
         <div className="w-full overflow-x-auto rounded-2xl border border-slate-800 bg-slate-800/20 shadow-2xl backdrop-blur-sm">
@@ -247,7 +263,7 @@ const GameTable: React.FC<Props> = ({ predictions }) => {
               </tr>
             </thead>
             <tbody>
-              {madrugadaGames.map((game, idx) => (
+              {gamesList.map((game, idx) => (
                 <GameRow key={game.id ?? idx} game={game} />
               ))}
             </tbody>
