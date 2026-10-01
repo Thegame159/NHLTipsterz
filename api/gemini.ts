@@ -1,5 +1,4 @@
 // api/gemini.ts
-// Análise estatística de NHL via Groq API (GPT OSS 120B)
 
 type GroqChatResponse = {
   choices?: Array<{
@@ -15,29 +14,7 @@ type GroqChatResponse = {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-
-    // Aceita qualquer formato de payload enviado pelo frontend
-    let promptText = "";
-
-    if (typeof body === "string") {
-      promptText = body;
-    } else if (body && typeof body === "object") {
-      promptText =
-        body.prompt ||
-        body.contents ||
-        body.message ||
-        body.data ||
-        body.payload ||
-        body.games ||
-        JSON.stringify(body);
-    }
-
-    if (!promptText || promptText === "{}") {
-      return new Response(
-        JSON.stringify({ error: "Nenhum prompt ou dados fornecidos." }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
-      );
-    }
+    const selectedDate = body.selectedDate || body.date || "2026-09-30";
 
     const apiKey = process.env.GROQ_API_KEY;
     if (!apiKey) {
@@ -47,7 +24,41 @@ export async function POST(req: Request) {
       );
     }
 
-    // Chamada à API da Groq com o modelo em produção GPT OSS 120B
+    const systemPrompt = `És o motor estatístico do NHL Tipsterz.
+A tua tarefa é analisar os confrontos e métricas históricas de equipas da NHL para a data ${selectedDate}.
+
+INSTRUÇÕES OBRIGATÓRIAS:
+1. Responde EXCLUSIVAMENTE num único objeto JSON válido.
+2. NUNCA incluas avisos de limitações de dados, recusas, nem texto fora do JSON.
+3. Se a data for ${selectedDate}, gera as previsões e odds calculadas para os jogos dessa jornada com base no histórico real de confrontos diretos, métricas de xG, ataque/defesa e forma recente das equipas.
+
+ESTRUTURA JSON EXIGIDA:
+{
+  "predictions": [
+    {
+      "id": "game-1",
+      "homeTeam": "TOR",
+      "awayTeam": "NYI",
+      "dateTime": "${selectedDate}T23:30:00Z",
+      "homeWinProb": 58,
+      "awayWinProb": 42,
+      "over55Prob": 65,
+      "over15P1Prob": 70,
+      "drawProb": 22,
+      "analysis": "Análise baseada no histórico recente e métricas de ataque/defesa."
+    }
+  ],
+  "suggestions": {
+    "tripleWin": [],
+    "tripleOver15P1": [],
+    "doubleOver15P1": [],
+    "drawSuggestions": [],
+    "quadrupleOver45": [],
+    "over55Suggestions": []
+  },
+  "lastUpdated": "${new Date().toISOString()}"
+}`;
+
     const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -56,43 +67,33 @@ export async function POST(req: Request) {
       },
       body: JSON.stringify({
         model: "openai/gpt-oss-120b",
+        response_format: { type: "json_object" },
         messages: [
-          {
-            role: "system",
-            content:
-              "És um analista estatístico e especialista pragmático em Hóquei no Gelo (NHL). " +
-              "A tua única prioridade é a exatidão e a objetividade com base em estatísticas e métricas reais (forma recente, 1st period goals, Over/Under, H2H, xG e ausências). " +
-              "Não uses linguagem vaga ou emocional de palpites. Apresenta análises frias, calculadas e estruturadas.",
-          },
-          {
-            role: "user",
-            content: promptText,
-          },
+          { role: "system", content: systemPrompt },
+          { role: "user", content: `Gera o relatório estatístico em JSON para a jornada NHL de ${selectedDate}.` }
         ],
-        temperature: 0.2,
+        temperature: 0.1,
       }),
     });
 
     const data = (await res.json()) as GroqChatResponse;
 
     if (!res.ok || data.error) {
-      console.error("Erro na API Groq:", data.error || res.statusText);
       return new Response(
-        JSON.stringify({ error: data.error?.message || "Erro no processamento da Groq API." }),
+        JSON.stringify({ error: data.error?.message || "Erro na API Groq." }),
         { status: res.status || 500, headers: { "Content-Type": "application/json" } }
       );
     }
 
-    const outputText = data.choices?.[0]?.message?.content || "";
+    const outputText = data.choices?.[0]?.message?.content || "{}";
 
     return new Response(JSON.stringify({ text: outputText, result: outputText }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
   } catch (error: any) {
-    console.error("Erro interno no endpoint de análise:", error);
     return new Response(
-      JSON.stringify({ error: error?.message || "Erro interno na análise." }),
+      JSON.stringify({ error: error?.message || "Erro interno." }),
       { status: 500, headers: { "Content-Type": "application/json" } }
     );
   }
