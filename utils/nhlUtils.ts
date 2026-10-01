@@ -70,26 +70,17 @@ export const TEAM_SHORT_NAMES: Record<string, string> = {
 export const teamLabel = (abbr: string): string =>
   TEAM_SHORT_NAMES[abbr?.toUpperCase()] ?? abbr;
 
-/** Filtra jogos no intervalo de madrugada local: 23:00 → 05:00 */
+/** Desativado o corte por hora local para aceitar todos os jogos da jornada */
 export const isMadrugadaGame = (dateTime: string): boolean => {
-  if (!dateTime) return false;
-  const d = new Date(dateTime);
-  const total = d.getHours() * 60 + d.getMinutes();
-  return total >= 23 * 60 || total <= 5 * 60;
+  return Boolean(dateTime);
 };
 
 /**
- * Versão com fuso horário explícito (Europe/Lisbon).
- * Usada no App.tsx para o filtro global antes de guardar em state.
+ * Desativado a restrição rígida de hora (23h-05h) para permitir que
+ * jogos das madrugadas da jornada selecionada apareçam sem ser descartados.
  */
 export const isWithinPortugalNightWindow = (dateTime: string): boolean => {
-  if (!dateTime) return false;
-  const ptString = new Date(dateTime).toLocaleString('en-US', {
-    timeZone: 'Europe/Lisbon',
-    hour12: false,
-  });
-  const hour = new Date(ptString).getHours();
-  return hour >= 23 || hour < 5;
+  return Boolean(dateTime);
 };
 
 /** Formata hora a partir de uma string ISO */
