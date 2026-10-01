@@ -171,22 +171,15 @@ const parseTeamSingle = (text: string): string | null => {
 
 const teamLabel = (abbr: string) => TEAM_SHORT_NAMES[(abbr || "").toUpperCase()] || abbr;
 
-// ─── ALTERAÇÃO 2: formatPickLabel ─────────────────────────────────────────────
-// Converte abreviaturas no label para nomes curtos legíveis.
-// Ex: "BUF (Win)" → "Sabres (Win)"
-// Ex: "BUF VS TOR" → "Sabres vs Leafs"
-// Ex: "Sabres (1X)" → mantém (já é nome curto)
 const formatPickLabel = (label: string): string => {
   if (!label) return label;
 
-  // Normalizar labels antigos do histórico (Redis cache)
   let result = label
     .replace(/\(Home Win\)/gi, "(Win)")
     .replace(/\(Away Win\)/gi, "(Win)")
     .replace(/\s+1X$/i, " (1X)")
     .replace(/\s+X2$/i, " (X2)");
 
-  // Substituir abreviaturas NHL por nomes curtos
   result = result.replace(/\b([A-Z]{2,4})\b/g, (match) => {
     if (NHL_ABBRS.has(match) && !["OT", "VS", "V"].includes(match)) {
       return teamLabel(match);
@@ -291,7 +284,7 @@ function findGame(results: ApiResultsResponse, a: string, b: string): ApiResultG
   );
 }
 
-// ─── Eval markets (including Combinada) ───────────────────────────────────────
+// ─── Eval markets ─────────────────────────────────────────────────────────────
 
 function evalMarkets(sug: Suggestions, results: ApiResultsResponse): Record<string, PickEval[]> {
   const evalGamePick = (text: string, fn: (g: ApiResultGame) => boolean): PickEval => {
@@ -322,7 +315,6 @@ function evalMarkets(sug: Suggestions, results: ApiResultsResponse): Record<stri
     return { label: text, ok: game.winnerAbbr === team, teams: [team] };
   };
 
-  // ── Combinada ──
   const evalCombinada = (): PickEval[] => {
     const flex = (sug as any).combinadaFlex;
     if (!Array.isArray(flex) || !flex.length) return [];
@@ -344,7 +336,6 @@ function evalMarkets(sug: Suggestions, results: ApiResultsResponse): Record<stri
       if (!g) return { label: labelText, ok: null, teams, reason: "Jogo não encontrado na API." };
       if (g.status !== "FINAL") return { label: labelText, ok: null, teams, reason: "Jogo ainda não terminou." };
 
-      // home = teams[0] (normalizeGameText: HOME VS AWAY format)
       const homeWon = g.winnerAbbr === home;
       const awayWon = g.winnerAbbr === away;
       const draw = g.regHome === g.regAway;
@@ -353,7 +344,7 @@ function evalMarkets(sug: Suggestions, results: ApiResultsResponse): Record<stri
       if (pick === "HOME") ok = homeWon;
       else if (pick === "AWAY") ok = awayWon;
       else if (pick === "1X") ok = homeWon || draw;
-      else ok = awayWon || draw; // X2
+      else ok = awayWon || draw;
 
       return { label: labelText, ok, teams };
     });
@@ -372,7 +363,6 @@ function evalMarkets(sug: Suggestions, results: ApiResultsResponse): Record<stri
 
   if (combinadaPicks.length > 0) out["Combinada"] = combinadaPicks;
 
-  // remove markets with no picks
   for (const k of Object.keys(out)) {
     if (!out[k].length) delete out[k];
   }
@@ -516,10 +506,7 @@ const PickLine: React.FC<{
     if (s) teams = [s];
   }
 
-  // ALTERAÇÃO 2: usar formatPickLabel para mostrar nomes legíveis
   const displayLabel = formatPickLabel(p.label);
-
-  // ALTERAÇÃO 1: layout compacto horizontal para Combinada
   const isCombinada = marketTitle === "Combinada";
 
   if (isCombinada) {
@@ -654,7 +641,6 @@ const MarketBlock: React.FC<{
         </span>
       </div>
       {picks.length ? (
-        // ALTERAÇÃO 1: Combinada usa flex wrap horizontal, outros mercados usam lista vertical
         isCombinada ? (
           <div className="flex flex-wrap gap-2">
             {picks.map((p, idx) => (
@@ -743,7 +729,6 @@ const StatsView: React.FC = () => {
     return m;
   }, [historyItems]);
 
-  // ── Build reports ──
   useEffect(() => {
     if (editDate || !dates.length) {
       if (!dates.length) setReports([]);
@@ -753,7 +738,6 @@ const StatsView: React.FC = () => {
     let cancelled = false;
     processingRef.current = true;
 
-    // init with loading state — preserve existing ready entries to avoid flash
     setReports((prev) => {
       const prevMap: Record<string, ReportEntry> = {};
       for (const r of prev) prevMap[r.date] = r;
@@ -785,7 +769,6 @@ const StatsView: React.FC = () => {
             const mineSug: Suggestions | null = history?.mine?.suggestions ?? null;
             const manualStore = manualByDate[date] ?? null;
 
-            // Use cached markets if available
             const autoReady = history?.auto?.markets && Object.keys(history.auto.markets).length > 0;
             const mineReady = history?.mine?.markets && Object.keys(history.mine.markets).length > 0;
 
@@ -831,7 +814,6 @@ const StatsView: React.FC = () => {
                 hasManual: autoApplied.hasManual || mineApplied.hasManual,
               };
 
-              // persist markets
               if (autoSug && autoPct !== null) saveHistoryStats(date, "auto", { correct: autoApplied.correct, total: autoApplied.total, percent: autoPct }, autoByMarketBase as any);
               if (mineSug && minePct !== null) saveHistoryStats(date, "mine", { correct: mineApplied.correct, total: mineApplied.total, percent: minePct }, mineByMarketBase as any);
 
@@ -848,7 +830,6 @@ const StatsView: React.FC = () => {
           })
         );
 
-        // update progressively after each batch
         if (!cancelled) {
           const partial = next.filter(Boolean);
           setReports((prev) => {
@@ -899,7 +880,9 @@ const StatsView: React.FC = () => {
         const newMarkets: Record<string, PickEval[]> = {};
         for (const [m, picks] of Object.entries(byMarket)) {
           newMarkets[m] = picks.map((p) =>
-            p.label === label ? { ...p, ok: value, manual: true, reason: value === null ? "Marcado como pendente (manual)." : value ? "Marcado como certo (manual)." : "Marcado como errado (manual)." } : p
+            (m === market && p.label === label)
+              ? { ...p, ok: value, manual: true, reason: value === null ? "Marcado como pendente (manual)." : value ? "Marcado como certo (manual)." : "Marcado como errado (manual)." }
+              : p
           );
         }
         let correct = 0, total = 0;
@@ -951,7 +934,6 @@ const StatsView: React.FC = () => {
 
   return (
     <div className="space-y-8 pb-24">
-      {/* Header */}
       <div className="bg-gradient-to-r from-indigo-900/40 via-indigo-800/30 to-transparent border border-indigo-500/20 rounded-2xl p-6 flex flex-col sm:flex-row items-center justify-between gap-6">
         <div className="flex items-center gap-4">
           <div className="bg-indigo-600/20 p-4 rounded-2xl border border-indigo-500/30 shrink-0">
@@ -998,7 +980,6 @@ const StatsView: React.FC = () => {
         </div>
       </div>
 
-      {/* Report rows */}
       <div className="space-y-3">
         {reports.map((r) => {
           const isOpen = openDate === r.date;
@@ -1023,7 +1004,6 @@ const StatsView: React.FC = () => {
 
               {isOpen && (
                 <div className="bg-slate-800/30 border border-slate-700/40 rounded-2xl p-5 space-y-6">
-                  {/* Controls */}
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                     <div className="text-[10px] font-black uppercase tracking-widest">
                       {r.hasManual ? (
@@ -1071,7 +1051,6 @@ const StatsView: React.FC = () => {
                   )}
 
                   {r.resultsStatus === "ready" && (() => {
-                    // Separar Combinada dos restantes mercados para renderizar full-width
                     const autoCombinadaPicks = r.auto.byMarket["Combinada"] ?? [];
                     const mineCombinadaPicks = r.mine.byMarket["Combinada"] ?? [];
                     const hasCombinada = autoCombinadaPicks.length > 0 || mineCombinadaPicks.length > 0;
@@ -1081,7 +1060,6 @@ const StatsView: React.FC = () => {
 
                     return (
                       <div className="space-y-6">
-                        {/* ── Combinada full-width ── */}
                         {hasCombinada && (
                           <div className="bg-slate-900/40 border border-yellow-500/20 rounded-2xl p-4">
                             <div className="flex items-center justify-between mb-3">
@@ -1103,10 +1081,8 @@ const StatsView: React.FC = () => {
                               </div>
                             </div>
 
-                            {/* Se ambos têm combinada, mostrar lado a lado com label; se só um, mostrar direto */}
                             {autoCombinadaPicks.length > 0 && mineCombinadaPicks.length > 0 ? (
                               <div className="space-y-3">
-                                {/* Auto combinada */}
                                 <div>
                                   <div className="text-[10px] font-black uppercase tracking-widest text-amber-400/50 mb-2">Auto</div>
                                   <div className="flex flex-wrap gap-2">
@@ -1118,7 +1094,6 @@ const StatsView: React.FC = () => {
                                     ))}
                                   </div>
                                 </div>
-                                {/* Mine combinada */}
                                 <div>
                                   <div className="text-[10px] font-black uppercase tracking-widest text-blue-400/50 mb-2">Minhas</div>
                                   <div className="flex flex-wrap gap-2">
@@ -1132,7 +1107,6 @@ const StatsView: React.FC = () => {
                                 </div>
                               </div>
                             ) : (
-                              // Só um lado tem combinada
                               <div className="flex flex-wrap gap-2">
                                 {(autoCombinadaPicks.length > 0 ? autoCombinadaPicks : mineCombinadaPicks).map((p, idx) => {
                                   const side = autoCombinadaPicks.length > 0 ? "auto" : "mine";
@@ -1148,9 +1122,7 @@ const StatsView: React.FC = () => {
                           </div>
                         )}
 
-                        {/* ── Grid Auto / Mine (sem Combinada) ── */}
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                          {/* Auto */}
                           <div className="space-y-5">
                             <div className="flex items-end justify-between border-b border-slate-700/50 pb-3">
                               <h3 className="text-lg font-black text-amber-200 flex items-center gap-2">
@@ -1177,7 +1149,6 @@ const StatsView: React.FC = () => {
                             )}
                           </div>
 
-                          {/* Mine */}
                           <div className="space-y-5">
                             <div className="flex items-end justify-between border-b border-slate-700/50 pb-3">
                               <h3 className="text-lg font-black text-blue-200 flex items-center gap-2">
