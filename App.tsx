@@ -2,7 +2,7 @@
 
 import React, { useState, useRef } from 'react';
 import { fetchNHLAnalysis } from './services/geminiService';
-import { NHLAnalysisData } from './types';
+import { NHLAnalysisData, GamePrediction } from './types';
 import GameTable from './components/GameTable';
 import SuggestionsView from './components/SuggestionsView';
 import MyPicksView from './components/MyPicksView';
@@ -86,12 +86,20 @@ const App: React.FC = () => {
 
       if (reqId !== requestIdRef.current) return;
 
-      // Extrai os dados quer venham na raiz quer venham dentro da propriedade .data
       const analysisData = (rawAnalysis as any)?.predictions
         ? rawAnalysis
         : (rawAnalysis as any)?.data || rawAnalysis;
 
-      const predictionsList = analysisData?.predictions || [];
+      const rawPredictions: GamePrediction[] = analysisData?.predictions || [];
+
+      // Filtra apenas jogos que fiquem na janela noturna em Portugal (22:00 - 06:00)
+      const filteredPredictions = rawPredictions.filter((game) => {
+        if (!game || !game.dateTime) return true;
+        const dateObj = new Date(game.dateTime);
+        const hour = dateObj.getHours();
+        return hour >= 22 || hour <= 6;
+      });
+
       const suggestionsList = analysisData?.suggestions || {
         tripleWin: [],
         tripleOver15P1: [],
@@ -100,7 +108,7 @@ const App: React.FC = () => {
 
       setProgress(100);
       setData({
-        predictions: predictionsList,
+        predictions: filteredPredictions,
         suggestions: suggestionsList,
         lastUpdated: analysisData?.lastUpdated || new Date().toISOString(),
       });
@@ -263,7 +271,7 @@ const App: React.FC = () => {
                 )}
                 {(!loadedDate || predictionsCount === 0) && (
                   <div className="py-24 text-center text-slate-600 text-[10px] font-black uppercase tracking-widest">
-                    {loadedDate ? 'Sem jogos para esta data' : 'Escolhe uma data e clica em Analisar'}
+                    {loadedDate ? 'Sem jogos no intervalo 23:00 – 05:00' : 'Escolhe uma data e clica em Analisar'}
                   </div>
                 )}
               </div>
@@ -286,7 +294,6 @@ const App: React.FC = () => {
               loadedDate && data ? (
                 <MyPicksView
                   predictions={data.predictions}
-                  suggestions={data.suggestions}
                   selectedDate={loadedDate}
                 />
               ) : (
