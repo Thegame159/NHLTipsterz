@@ -87,21 +87,8 @@ const App: React.FC = () => {
 
       if (reqId !== requestIdRef.current) return;
 
-      // Filtro corrigido: preserva os jogos associados à jornada da data selecionada (fuso ET / UTC)
-      const filteredPredictions = (analysis.predictions || []).filter(p => {
-        if (!p) return false;
-        if (!p.dateTime) return true; // Se não houver data explícita, mantém por segurança
-
-        // Extrai a data ISO UTC original fornecida pela API da NHL (YYYY-MM-DD)
-        const gameDateUTC = new Date(p.dateTime).toISOString().split('T')[0];
-
-        // Ajuste de fuso horário: subtrai 5 horas para alinhar a madrugada em Portugal à jornada de origem (ET)
-        const adjustedDate = new Date(new Date(p.dateTime).getTime() - 5 * 60 * 60 * 1000);
-        const gameJornadaDate = adjustedDate.toISOString().split('T')[0];
-
-        // Aceita o jogo se a data corresponder à data selecionada em UTC ou na jornada ajustada
-        return gameDateUTC === date || gameJornadaDate === date;
-      });
+      // Passa diretamente todos os jogos retornados pela API sem nenhum filtro local
+      const filteredPredictions = analysis.predictions || [];
 
       setProgress(100);
       setData({ ...analysis, predictions: filteredPredictions });
@@ -259,12 +246,12 @@ const App: React.FC = () => {
           <main className="animate-in fade-in duration-500">
             {activeTab === 'schedule' && (
               <div className="space-y-6">
-                {loadedDate && data && (
+                {loadedDate && data && predictionsCount > 0 && (
                   <GameTable predictions={data.predictions} />
                 )}
                 {(!loadedDate || predictionsCount === 0) && (
                   <div className="py-24 text-center text-slate-600 text-[10px] font-black uppercase tracking-widest">
-                    {loadedDate ? 'Sem jogos neste intervalo horário' : 'Escolhe uma data e clica em Analisar'}
+                    {loadedDate ? 'Sem jogos para esta data' : 'Escolhe uma data e clica em Analisar'}
                   </div>
                 )}
               </div>
