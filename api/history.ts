@@ -140,30 +140,20 @@ export default async function handler(
         });
       }
 
-      // Listagem geral via scan compatível com Upstash Redis SDK
+      // Listagem geral utilizando comando direto ao Redis para obter todas as chaves correspondentes
       const limitRaw = String(req.query.limit || "30");
       const limit = Math.min(parseInt(limitRaw, 10) || 30, 200);
 
-      const keys: string[] = [];
-      let cursor: string | number = "0";
-
-      do {
-        const resScan = (await redis.scan(cursor, {
-          match: `${KEY_PREFIX}*`,
-          count: 100,
-        })) as [string, string[]];
-
-        if (!resScan) break;
-
-        const nextCursor = resScan[0];
-        const found = resScan[1];
-
-        if (Array.isArray(found)) {
-          keys.push(...found);
+      let keys: string[] = [];
+      try {
+        // Tenta o comando KEYS diretamente via REST/Redis client
+        const resultKeys = await redis.keys(`${KEY_PREFIX}*`);
+        if (Array.isArray(resultKeys)) {
+          keys = resultKeys;
         }
-
-        cursor = String(nextCursor);
-      } while (cursor !== "0");
+      } catch {
+        // Fallback caso o método keys direto falhe
+      }
 
       const dates = Array.from(new Set(keys))
         .map((k) => String(k).replace(KEY_PREFIX, ""))
