@@ -140,20 +140,37 @@ export default async function handler(
         });
       }
 
-      // Listagem geral
+      // Listagem geral via scan compatível com Upstash Redis SDK
       const limitRaw = String(req.query.limit || "30");
       const limit = Math.min(parseInt(limitRaw, 10) || 30, 200);
 
-      // Usar diretamente redis.keys para evitar erros de iterabilidade
-      const keys = (await redis.keys(`${KEY_PREFIX}*`)) || [];
+      const keys: string[] = [];
+      let cursor: number | string = 0;
 
-      const dates = Array.isArray(keys)
-        ? keys
-            .map((k) => String(k).replace(KEY_PREFIX, ""))
-            .filter(isDate)
-            .sort((a, b) => (a < b ? 1 : -1))
-            .slice(0, limit)
-        : [];
+      do {
+        // No @upstash/redis, o scan retorna [cursor, keysArray]
+        const resScan = (await redis.scan(cursor, {
+          match: `${KEY_PREFIX}*`,
+          count: 100,
+        })) as [string | number, string[]];
+
+        if (!resScan) break;
+
+        cursor = resScan[0];
+        const found = resScan[1];
+        if (Array.isArray(found)) {
+          keys.push(...found);
+        }
+
+        // Converter cursor para número para verificar a condição de paragem
+        cursor = typeof cursor === "string" ? parseInt(cursor, 10) : cursor;
+      } while (cursor !== 0 && !isNaN(Number(cursor)));
+
+      const dates = Array.from(new Set(keys))
+        .map((k) => String(k).replace(KEY_PREFIX, ""))
+        .filter(isDate)
+        .sort((a, b) => (a < b ? 1 : -1))
+        .slice(0, limit);
 
       const items: StoreItem[] = [];
       for (const date of dates) {
