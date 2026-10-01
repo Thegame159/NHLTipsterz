@@ -1,3 +1,5 @@
+// src/services/geminiService.ts
+
 import { NHLAnalysisData, Suggestions } from "../types";
 
 export class AppError extends Error {
@@ -16,13 +18,11 @@ function friendlyMessage(status: number, code?: string, backendMessage?: string)
   if (backendMessage && backendMessage.trim().length > 0) return backendMessage;
 
   if (status === 429 || code === "QUOTA_EXCEEDED" || code === "RATE_LIMIT") {
-    return "Limite atingido (quota/rate limit). Tenta novamente mais tarde.";
+    return "Limite atingido. Tenta novamente mais tarde.";
   }
 
-  if (status === 400) return "Pedido inválido. Verifica a data selecionada e tenta novamente.";
-  if (status === 403) return "Acesso bloqueado (CORS/origem não permitida).";
-  if (status === 500) return "Erro no servidor ao gerar a análise. Tenta novamente.";
-  if (status === 503) return "Serviço temporariamente indisponível. Tenta novamente.";
+  if (status === 400) return "Pedido inválido. Verifica a data selecionada.";
+  if (status === 500) return "Erro no servidor ao gerar a análise.";
 
   return "Erro ao carregar dados. Tenta novamente.";
 }
@@ -47,11 +47,24 @@ function normalizeToUiShape(raw: any): NHLAnalysisData {
     };
   }
 
-  const predictions = Array.isArray(raw.predictions)
+  const rawPredictions = Array.isArray(raw.predictions)
     ? raw.predictions
     : Array.isArray(raw.games)
     ? raw.games
     : [];
+
+  const predictions = rawPredictions.map((p: any) => ({
+    ...p,
+    winProbabilityHome: p.winProbabilityHome ?? p.homeWinProb ?? 0,
+    winProbabilityAway: p.winProbabilityAway ?? p.awayWinProb ?? 0,
+    over15P1Prob: p.over15P1Prob ?? 0,
+    bttsP1Prob: p.bttsP1Prob ?? 0,
+    drawTRProb: p.drawTRProb ?? p.drawProb ?? 0,
+    over45Prob: p.over45Prob ?? p.over55Prob ?? 0,
+    homeTeamAbbr: p.homeTeamAbbr ?? p.homeTeam ?? '',
+    awayTeamAbbr: p.awayTeamAbbr ?? p.awayTeam ?? '',
+    analysisSummary: p.analysisSummary ?? p.analysis ?? '',
+  }));
 
   const suggestions =
     raw.suggestions && typeof raw.suggestions === "object"
@@ -101,11 +114,7 @@ export const fetchNHLAnalysis = async (
 
   const code: string | undefined = data?.code;
   const backendMessage: string | undefined = data?.message;
-
   const message = friendlyMessage(r.status, code, backendMessage);
 
-  const err = new AppError(message, { code, status: r.status });
-  (err as any).details = data?.details || rawText || undefined;
-
-  throw err;
+  throw new AppError(message, { code, status: r.status });
 };
