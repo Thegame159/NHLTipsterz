@@ -104,22 +104,11 @@ export default async function handler(
 
       const currentSide = existing[side] ?? null;
 
-      // ── Quando chegam novas suggestions (guardado pelo utilizador via MyPicksView),
-      //    invalida sempre markets e stats cached — já não correspondem às picks novas.
-      //    Só preserva markets/stats se NÃO vieram suggestions novas (caso do StatsView
-      //    que persiste apenas stats+markets sem alterar as picks).
       const suggestionsChanged = incomingSuggestions !== undefined;
 
       existing[side] = {
-        // Preserva o savedAt original se já existia; só regista novo timestamp
-        // quando são as suggestions que mudam (acção do utilizador).
         savedAt: suggestionsChanged ? Date.now() : (currentSide?.savedAt ?? Date.now()),
-
         suggestions: incomingSuggestions ?? currentSide?.suggestions ?? null,
-
-        // Se vieram novas suggestions → apaga markets e stats para forçar recálculo.
-        // Se NÃO vieram suggestions → aceita os novos stats/markets vindos do StatsView
-        //   ou mantém os existentes.
         stats:   suggestionsChanged ? undefined : (incomingStats   ?? currentSide?.stats),
         markets: suggestionsChanged ? undefined : (incomingMarkets ?? currentSide?.markets),
       };
@@ -151,23 +140,31 @@ export default async function handler(
         });
       }
 
-      // Listagem geral
+      // Listagem geral (Uso do redis.keys ou redis.scan com sintaxe Upstash)
       const limitRaw = String(req.query.limit || "30");
       const limit = Math.min(parseInt(limitRaw, 10) || 30, 200);
 
-      let cursor = "0";
-      const keys: string[] = [];
+      let keys: string[] = [];
 
-      do {
-        const result = await redis.scan(cursor, `${KEY_PREFIX}*`, 100);
-        if (!result) break;
-        const nextCursor = result[0];
-        const foundKeys = Array.isArray(result[1]) ? result[1] : [];
-        keys.push(...foundKeys);
-        cursor = nextCursor;
-      } while (cursor !== "0");
+      try {
+        // Tenta usar redis.keys que é mais simples e direto no Upstash
+        keys = await redis.keys(`${KEY_PREFIX}*`);
+      } catch {
+        // Fallback usando scan com as opções corretas para o Upstash Redis SDK
+        let cursor = 0;
+        do {
+          const [nextCursor, foundKeys] = await redis.scan(cursor, {
+            match: `${KEY_PREFIX}*`,
+            count: 100,
+          });
+          if (foundKeys && foundKeys.length > 0) {
+            keys.push(...foundKeys);
+          }
+          cursor = typeof nextCursor === "number" ? nextCursor : parseInt(nextCursor, 10);
+        } while (cursor !== 0);
+      }
 
-      const dates = keys
+      const dates = Array.from(new Set(keys))
         .map((k) => k.replace(KEY_PREFIX, ""))
         .filter(isDate)
         .sort((a, b) => (a < b ? 1 : -1))
