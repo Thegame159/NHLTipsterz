@@ -1,5 +1,4 @@
 // api/gemini.ts
-
 type GroqChatResponse = {
   choices?: Array<{
     message?: {
@@ -87,7 +86,16 @@ ESTRUTURA JSON EXIGIDA:
 
     const outputText = data.choices?.[0]?.message?.content || "{}";
 
-    return new Response(JSON.stringify({ text: outputText, result: outputText }), {
+    // Tenta descodificar a string JSON da IA antes de enviar para o cliente
+    let parsedContent;
+    try {
+      parsedContent = JSON.parse(outputText);
+    } catch {
+      parsedContent = { predictions: [], suggestions: {} };
+    }
+
+    // Retorna o objeto JSON direto (sem estar envolvido em "text" ou "result")
+    return new Response(JSON.stringify(parsedContent), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
