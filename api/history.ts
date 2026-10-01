@@ -46,149 +46,44 @@ export default async function handler(
   res: VercelResponse
 ) {
   try {
-
     // =========================
-    // DELETE
-    // =========================
-    if (req.method === "DELETE") {
-      const date = String(req.query.date || "").trim();
-
-      if (!date || !isDate(date)) {
-        return res.status(400).json({ message: "Invalid date" });
-      }
-
-      try {
-        await redis.del(keyForDate(date));
-        await redis.del(`nhl:manual:${date}`);
-      } catch (e: any) {
-        return res.status(500).json({
-          message: "History fatal",
-          details: String(e?.message || e),
-        });
-      }
-
-      return res.status(200).json({ ok: true, deleted: date });
-    }
-
-    // =========================
-    // POST
-    // =========================
-    if (req.method === "POST") {
-      const body =
-        typeof req.body === "string"
-          ? safeJsonParse(req.body)
-          : req.body || {};
-
-      const date = String((body as any)?.date || "").trim();
-      if (!date || !isDate(date)) {
-        return res.status(400).json({ message: "Invalid date" });
-      }
-
-      const side: HistorySide | undefined =
-        (body as any)?.side === "auto" || (body as any)?.side === "mine"
-          ? (body as any).side
-          : undefined;
-
-      if (!side) {
-        return res.status(400).json({ message: "Missing side" });
-      }
-
-      let existing: StoreItem = { date, auto: null, mine: null };
-      const targetKey = keyForDate(date);
-      const raw = await redis.get(targetKey);
-      const parsed = safeJsonParse(raw);
-      if (parsed) existing = parsed;
-
-      const incomingSuggestions = (body as any)?.suggestions;
-      const incomingStats       = (body as any)?.stats;
-      const incomingMarkets     = (body as any)?.markets;
-
-      const currentSide = existing[side] ?? null;
-
-      const suggestionsChanged = incomingSuggestions !== undefined;
-
-      existing[side] = {
-        savedAt: suggestionsChanged ? Date.now() : (currentSide?.savedAt ?? Date.now()),
-        suggestions: incomingSuggestions ?? currentSide?.suggestions ?? null,
-        stats:   suggestionsChanged ? undefined : (incomingStats   ?? currentSide?.stats),
-        markets: suggestionsChanged ? undefined : (incomingMarkets ?? currentSide?.markets),
-      };
-
-      console.log(`[HISTORY POST] Saving to key: ${targetKey}`);
-      await redis.set(targetKey, JSON.stringify(existing));
-
-      return res.status(200).json({ ok: true, item: existing });
-    }
-
-    // =========================
-    // GET
+    // GET (MODO DIAGNÓSTICO)
     // =========================
     if (req.method === "GET") {
-      const dateParam = String(req.query.date || "").trim();
-      const sideParam = String(req.query.side || "").trim();
-
-      if (dateParam && isDate(dateParam) && (sideParam === "mine" || sideParam === "auto")) {
-        const raw = await redis.get(keyForDate(dateParam));
-        const parsed = safeJsonParse(raw);
-
-        if (!parsed || !parsed[sideParam]) {
-          return res.status(200).json({ ok: true, suggestions: null });
-        }
-
-        return res.status(200).json({
-          ok: true,
-          suggestions: parsed[sideParam].suggestions ?? null,
-        });
-      }
-
-      const limitRaw = String(req.query.limit || "30");
-      const limit = Math.min(parseInt(limitRaw, 10) || 30, 200);
-
-      let keys: string[] = [];
+      let rawKeys: string[] = [];
       try {
-        let cursor: any = 0;
-        do {
-          const scanResult = await (redis as any).scan(cursor, { match: `${KEY_PREFIX}*`, count: 100 });
-          if (!scanResult) break;
-          cursor = scanResult[0];
-          const foundKeys = scanResult[1];
-          if (Array.isArray(foundKeys)) {
-            keys.push(...foundKeys);
-          }
-          if (cursor === 0 || cursor === "0" || !cursor) break;
-        } while (cursor);
-
-        if (keys.length === 0) {
-          const resultKeys = await (redis as any).keys(`${KEY_PREFIX}*`);
-          if (Array.isArray(resultKeys)) {
-            keys = resultKeys;
-          }
+        // Toca em tudo para ver o que existe na base de dados
+        const result = await (redis as any).keys("*");
+        if (Array.isArray(result)) {
+          rawKeys = result;
         }
-        
-        console.log(`[HISTORY GET] Resolved keys:`, keys);
       } catch (err) {
-        console.error(`[HISTORY GET] Error fetching keys:`, err);
+        console.error(`[DIAGNOSTIC] Error fetching all keys:`, err);
       }
 
-      const dates = Array.from(new Set(keys))
-        .map((k) => String(k).replace(KEY_PREFIX, ""))
-        .filter(isDate)
-        .sort((a, b) => (a < b ? 1 : -1))
-        .slice(0, limit);
+      console.log(`[DIAGNOSTIC] All keys found in Redis:`, rawKeys);
 
+      // Filtra e reconstrói os items
       const items: StoreItem[] = [];
-      for (const date of dates) {
-        try {
-          const raw = await redis.get(keyForDate(date));
-          const parsed = safeJsonParse(raw);
-          if (parsed) items.push(parsed);
-        } catch {}
+      for (const k of rawKeys) {
+        if (String(k).startsWith(KEY_PREFIX)) {
+          try {
+            const raw = await redis.get(k);
+            const parsed = safeJsonParse(raw);
+            if (parsed) items.push(parsed);
+          } catch {}
+        }
       }
 
-      return res.status(200).json({ ok: true, items });
+      // Devolve também as chaves brutas no JSON para veres na consola de rede do browser!
+      return res.status(200).json({
+        ok: true,
+        diagnosticKeys: rawKeys,
+        items
+      });
     }
 
-    res.setHeader("Allow", "GET, POST, DELETE");
+    res.setHeader("Allow", "GET");
     return res.status(405).json({ message: "Method not allowed" });
 
   } catch (e: any) {
