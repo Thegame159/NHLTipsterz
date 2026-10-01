@@ -1,8 +1,15 @@
 // api/_redis.ts
 // Upstash Redis via REST (HTTP) — serverless-safe
 
-const REDIS_REST_URL = process.env.REDIS_REST_URL;
-const REDIS_REST_TOKEN = process.env.REDIS_REST_TOKEN;
+const REDIS_REST_URL =
+  process.env.NEW_REDIS_REST_URL ||
+  process.env.UPSTASH_REDIS_REST_URL ||
+  process.env.REDIS_REST_URL;
+
+const REDIS_REST_TOKEN =
+  process.env.NEW_REDIS_REST_TOKEN ||
+  process.env.UPSTASH_REDIS_REST_TOKEN ||
+  process.env.REDIS_REST_TOKEN;
 
 type UpstashResponse<T> = { result?: T; error?: string };
 
@@ -74,7 +81,9 @@ export const redis = {
 
   async scan(cursor: string, match: string, count = 100): Promise<[string, string[]] | null> {
     const r = await cmd<any>(["SCAN", cursor, "MATCH", match, "COUNT", String(count)]);
-    if (Array.isArray(r) && typeof r[0] === "string" && Array.isArray(r[1])) return [r[0], r[1].map(String)];
+    if (Array.isArray(r) && r.length >= 2 && Array.isArray(r[1])) {
+      return [String(r[0]), r[1].map(String)];
+    }
     return null;
   },
 };
