@@ -1,4 +1,5 @@
-// api/gemini.ts - Análise estatística NHL via Groq API (Llama 3.3 70B)
+// api/gemini.ts
+// Análise estatística de NHL via Groq API (Llama 3.3 70B)
 
 type GroqChatResponse = {
   choices?: Array<{
@@ -14,9 +15,24 @@ type GroqChatResponse = {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const prompt = body.prompt || body.contents || body.message;
 
-    if (!prompt) {
+    // Aceita qualquer formato de payload enviado pelo frontend (prompt, contents, payload, etc.)
+    let promptText = "";
+
+    if (typeof body === "string") {
+      promptText = body;
+    } else if (body && typeof body === "object") {
+      promptText =
+        body.prompt ||
+        body.contents ||
+        body.message ||
+        body.data ||
+        body.payload ||
+        body.games ||
+        JSON.stringify(body);
+    }
+
+    if (!promptText || promptText === "{}") {
       return new Response(
         JSON.stringify({ error: "Nenhum prompt ou dados fornecidos." }),
         { status: 400, headers: { "Content-Type": "application/json" } }
@@ -31,6 +47,7 @@ export async function POST(req: Request) {
       );
     }
 
+    // Chamada à API da Groq com o modelo Llama 3.3 70B Versatile
     const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -49,10 +66,10 @@ export async function POST(req: Request) {
           },
           {
             role: "user",
-            content: typeof prompt === "string" ? prompt : JSON.stringify(prompt),
+            content: promptText,
           },
         ],
-        temperature: 0.2,
+        temperature: 0.2, // Temperatura baixa para garantir rigor e consistência estatística
       }),
     });
 
@@ -68,6 +85,7 @@ export async function POST(req: Request) {
 
     const outputText = data.choices?.[0]?.message?.content || "";
 
+    // Retorna a resposta no formato esperado pelo frontend
     return new Response(JSON.stringify({ text: outputText, result: outputText }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
