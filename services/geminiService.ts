@@ -38,53 +38,29 @@ function defaultSuggestions(): Suggestions {
   };
 }
 
-// Descodifica de forma robusta strings JSON vindas da Groq/OpenAI
-function parseModelJson(rawContent: any): any {
-  if (!rawContent) return null;
-  if (typeof rawContent === "object") return rawContent;
-
-  if (typeof rawContent === "string") {
-    try {
-      // Limpa delimitadores de código markdown se existirem (```json ... ```)
-      let cleaned = rawContent.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
-      return JSON.parse(cleaned);
-    } catch (e) {
-      console.error("Falha ao efetuar parse direto do JSON:", e);
-    }
-  }
-  return null;
-}
-
-// Normaliza e garante o formato que a UI espera (NHLAnalysisData)
 function normalizeToUiShape(raw: any): NHLAnalysisData {
-  let parsedRaw = raw;
-
-  // Se os dados vierem em 'text' ou 'result' (string codificada vinda do modelo)
-  if (raw?.text) {
-    parsedRaw = parseModelJson(raw.text) || parsedRaw;
-  } else if (raw?.result) {
-    parsedRaw = parseModelJson(raw.result) || parsedRaw;
+  if (!raw || typeof raw !== "object") {
+    return {
+      predictions: [],
+      suggestions: defaultSuggestions(),
+      lastUpdated: new Date().toISOString(),
+    };
   }
 
-  // Se o objeto ainda contiver 'text' interiorizadamente
-  if (typeof parsedRaw === "string") {
-    parsedRaw = parseModelJson(parsedRaw) || {};
-  }
-
-  const predictions = Array.isArray(parsedRaw?.predictions)
-    ? parsedRaw.predictions
-    : Array.isArray(parsedRaw?.games)
-    ? parsedRaw.games
+  const predictions = Array.isArray(raw.predictions)
+    ? raw.predictions
+    : Array.isArray(raw.games)
+    ? raw.games
     : [];
 
   const suggestions =
-    parsedRaw?.suggestions && typeof parsedRaw.suggestions === "object"
-      ? (parsedRaw.suggestions as Suggestions)
+    raw.suggestions && typeof raw.suggestions === "object"
+      ? (raw.suggestions as Suggestions)
       : defaultSuggestions();
 
   const lastUpdated =
-    typeof parsedRaw?.lastUpdated === "string" && parsedRaw.lastUpdated.trim()
-      ? parsedRaw.lastUpdated
+    typeof raw.lastUpdated === "string" && raw.lastUpdated.trim()
+      ? raw.lastUpdated
       : new Date().toISOString();
 
   return {
