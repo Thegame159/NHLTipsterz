@@ -14,8 +14,7 @@ root.render(
   </React.StrictMode>
 );
 
-// ✅ PWA Service Worker (necessário para instalar como app e usar o ícone do manifest)
-// Corre só no browser, mas continua a funcionar como PWA normalmente.
+// ✅ PWA Service Worker
 if (typeof window !== "undefined" && typeof navigator !== "undefined" && "serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     navigator.serviceWorker
