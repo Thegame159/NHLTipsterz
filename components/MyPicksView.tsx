@@ -31,46 +31,16 @@ const TEAM_SHORT_NAMES: Record<string, string> = {
 };
 
 const teamLabel = (abbr: string) =>
-  TEAM_SHORT_NAMES[abbr?.toUpperCase()] || abbr;
+  TEAM_SHORT_NAMES[abbr?.toUpperCase()] || abbr || "";
 
 const getLogoUrl = (abbr: string) => {
   const map: Record<string, string> = {
-    TBL: "tb",
-    TB: "tb",
-    SJS: "sj",
-    SJ: "sj",
-    LAK: "la",
-    LA: "la",
-    VGK: "vgs",
-    VGS: "vgs",
-    UTA: "utah",
-    NJD: "nj",
-    NJ: "nj",
-    CBJ: "cbj",
-    WSH: "wsh",
-    WPG: "wpg",
-    NSH: "nsh",
-    MTL: "mtl",
-    NYI: "nyi",
-    NYR: "nyr",
-    ANA: "ana",
-    BOS: "bos",
-    BUF: "buf",
-    CGY: "cgy",
-    CAR: "car",
-    CHI: "chi",
-    COL: "col",
-    DAL: "dal",
-    DET: "det",
-    EDM: "edm",
-    FLA: "fla",
-    MIN: "min",
-    OTT: "ott",
-    PHI: "phi",
-    PIT: "pit",
-    SEA: "sea",
-    STL: "stl",
-    VAN: "van",
+    TBL: "tb", TB: "tb", SJS: "sj", SJ: "sj", LAK: "la", LA: "la",
+    VGK: "vgs", VGS: "vgs", UTA: "utah", NJD: "nj", NJ: "nj", CBJ: "cbj",
+    WSH: "wsh", WPG: "wpg", NSH: "nsh", MTL: "mtl", NYI: "nyi", NYR: "nyr",
+    ANA: "ana", BOS: "bos", BUF: "buf", CGY: "cgy", CAR: "car", CHI: "chi",
+    COL: "col", DAL: "dal", DET: "det", EDM: "edm", FLA: "fla", MIN: "min",
+    OTT: "ott", PHI: "phi", PIT: "pit", SEA: "sea", STL: "stl", VAN: "van",
     TOR: "tor",
   };
   const normalized = (abbr || "").trim().toUpperCase();
@@ -82,17 +52,15 @@ const normalizeGameText = (s: string) => {
   let str = (s || "")
     .trim()
     .toUpperCase()
-    .replace(/\(\s*\d+(\.\d+)?%\s*\)/g, "")
+    .replace(/\(\s*\d+(\.\d+)?\%\s*\)/g, "")
     .replace(/\s+/g, " ")
     .trim();
 
-  // 🔄 inverter formato americano AWAY @ HOME
   if (str.includes(" @ ")) {
     const [away, home] = str.split(" @ ").map((t) => t.trim());
     str = `${home} VS ${away}`;
   }
 
-  // normalizar VS
   str = str.replace(/\s+VS\s+/g, " VS ");
   str = str.replace(/\s+V\s+/g, " VS ");
 
@@ -111,13 +79,13 @@ const parseTeamsFromText = (text: string): string[] => {
 };
 
 const isEmptyPicks = (p: Suggestions) =>
-  p.tripleWin.length === 0 &&
-  p.tripleOver15P1.length === 0 &&
-  p.doubleOver15P1.length === 0 &&
-  p.quadrupleOver45.length === 0 &&
-  p.over55Suggestions.length === 0 &&
-  p.drawSuggestions.length === 0 &&
-(p.combinadaFlex?.length || 0) === 0;
+  (p.tripleWin || []).length === 0 &&
+  (p.tripleOver15P1 || []).length === 0 &&
+  (p.doubleOver15P1 || []).length === 0 &&
+  (p.quadrupleOver45 || []).length === 0 &&
+  (p.over55Suggestions || []).length === 0 &&
+  (p.drawSuggestions || []).length === 0 &&
+  (p.combinadaFlex?.length || 0) === 0;
 
 /* -------------------- PORTAL DROPDOWN -------------------- */
 
@@ -222,7 +190,6 @@ const IconDropdown: React.FC<{
             : "bg-slate-900/40 border-white/10 text-slate-200 hover:bg-slate-900/60"
         }`}
       >
-        {/* ✅ AQUI: mostrar ícone(s) + label quando selecionado */}
         <span className="min-w-0 flex items-center gap-2 truncate">
           {selected ? (
             <>
@@ -304,7 +271,7 @@ const IconDropdown: React.FC<{
   );
 };
 
-/* -------------------- UI (igual às Dicas) -------------------- */
+/* -------------------- UI -------------------- */
 
 const PickLine: React.FC<{
   text: string;
@@ -338,16 +305,16 @@ const PickLine: React.FC<{
             ))}
           </div>
         )}
-      <div className="flex flex-col min-w-0">
-  <span className="text-sm font-semibold text-slate-200 group-hover:text-white truncate">
-    {teams.length === 1 ? teamLabel(teams[0]) : teams.length === 2 ? `${teamLabel(teams[0])} vs ${teamLabel(teams[1])}` : text}
-  </span>
-  {teams.length > 0 && (
-    <span className="text-[10px] text-slate-500 truncate">
-      {teams.join(teams.length === 2 ? " vs " : "")}
-    </span>
-  )}
-</div>
+        <div className="flex flex-col min-w-0">
+          <span className="text-sm font-semibold text-slate-200 group-hover:text-white truncate">
+            {teams.length === 1 ? teamLabel(teams[0]) : teams.length === 2 ? `${teamLabel(teams[0])} vs ${teamLabel(teams[1])}` : text}
+          </span>
+          {teams.length > 0 && (
+            <span className="text-[10px] text-slate-500 truncate">
+              {teams.join(teams.length === 2 ? " vs " : "")}
+            </span>
+          )}
+        </div>
       </div>
 
       {onRemove && (
@@ -388,7 +355,7 @@ const PickCard: React.FC<{
   description,
   max,
   options,
-  selectedItems,
+  selectedItems = [],
   placeholder,
   onAdd,
   onRemove,
@@ -446,7 +413,7 @@ const PickCard: React.FC<{
             selectedItems.map((t, idx) => (
               <PickLine
                 key={`${title}-${idx}-${t}`}
-                text={t}
+                text={typeof t === "object" ? (t as any).game || "" : String(t)}
                 badgeColor={badgeColor}
                 index={idx}
                 onRemove={() => onRemove(idx)}
@@ -465,43 +432,42 @@ const PickCard: React.FC<{
 
 const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
   const [picks, setPicks] = useState<Suggestions>(defaultSuggestions());
-  const [comboGame, setComboGame] = useState<string | null>(null)
+  const [comboGame, setComboGame] = useState<string | null>(null);
 
- useEffect(() => {
-  const load = async () => {
-    try {
-      const res = await fetch(`/api/history?date=${selectedDate}&side=mine`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data?.suggestions) {
-          setPicks({ ...defaultSuggestions(), ...data.suggestions });
-          return;
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await fetch(`/api/history?date=${selectedDate}&side=mine`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.suggestions) {
+            setPicks({ ...defaultSuggestions(), ...data.suggestions });
+            return;
+          }
         }
+      } catch {}
+
+      try {
+        if (typeof window === "undefined") return;
+        const raw = window.localStorage.getItem(storageKey(selectedDate));
+        if (!raw) { setPicks(defaultSuggestions()); return; }
+        const parsed = JSON.parse(raw);
+        setPicks({ ...defaultSuggestions(), ...(parsed || {}) });
+      } catch {
+        setPicks(defaultSuggestions());
       }
-    } catch {}
+    };
 
-    // Fallback: localStorage
-    try {
-      if (typeof window === "undefined") return;
-      const raw = window.localStorage.getItem(storageKey(selectedDate));
-      if (!raw) { setPicks(defaultSuggestions()); return; }
-      const parsed = JSON.parse(raw);
-      setPicks({ ...defaultSuggestions(), ...(parsed || {}) });
-    } catch {
-      setPicks(defaultSuggestions());
-    }
-  };
-
-  load();
-}, [selectedDate]);
+    load();
+  }, [selectedDate]);
 
   const predictionsOfDay = useMemo(() => predictions || [], [predictions]);
 
   const allowedTeams = useMemo(() => {
     const set = new Set<string>();
     for (const g of predictionsOfDay as any[]) {
-      const away = String((g as any).awayTeamAbbr || "").trim().toUpperCase();
-      const home = String((g as any).homeTeamAbbr || "").trim().toUpperCase();
+      const away = String((g as any).awayTeamAbbr || (g as any).awayTeam || "").trim().toUpperCase();
+      const home = String((g as any).homeTeamAbbr || (g as any).homeTeam || "").trim().toUpperCase();
       if (away) set.add(away);
       if (home) set.add(home);
     }
@@ -511,8 +477,8 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
   const gamesOfDay = useMemo(() => {
     const set = new Set<string>();
     for (const g of predictionsOfDay as any[]) {
-      const away = String((g as any).awayTeamAbbr || "").trim().toUpperCase();
-      const home = String((g as any).homeTeamAbbr || "").trim().toUpperCase();
+      const away = String((g as any).awayTeamAbbr || (g as any).awayTeam || "").trim().toUpperCase();
+      const home = String((g as any).homeTeamAbbr || (g as any).homeTeam || "").trim().toUpperCase();
       if (!away || !home) continue;
       const txt = normalizeGameText(`${away} @ ${home}`);
       if (txt.includes(" VS ")) set.add(txt);
@@ -524,16 +490,12 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
     () => allowedTeams.map((abbr) => ({ value: abbr, label: abbr, teams: [abbr] })),
     [allowedTeams]
   );
-const tripleWinOptions = useMemo(() => {
-  const chosen = new Set(
-    (picks.tripleWin || []).map(t => t.trim().toUpperCase())
-  );
 
-  return teamOptions.filter(o =>
-    !chosen.has(o.value.trim().toUpperCase())
-  );
-}, [teamOptions, picks.tripleWin]);
-  
+  const tripleWinOptions = useMemo(() => {
+    const chosen = new Set((picks.tripleWin || []).map((t) => t.trim().toUpperCase()));
+    return teamOptions.filter((o) => !chosen.has(o.value.trim().toUpperCase()));
+  }, [teamOptions, picks.tripleWin]);
+
   const gameOptionsAll: Option[] = useMemo(
     () =>
       gamesOfDay.map((g) => {
@@ -542,17 +504,11 @@ const tripleWinOptions = useMemo(() => {
       }),
     [gamesOfDay]
   );
-const combinadaGameOptions = useMemo(() => {
 
-  const used = new Set(
-    (picks.combinadaFlex || []).map((p:any)=>p.game)
-  );
-
-  return gameOptionsAll.filter(o => !used.has(o.value));
-
-}, [gameOptionsAll, picks.combinadaFlex]);
-
-
+  const combinadaGameOptions = useMemo(() => {
+    const used = new Set((picks.combinadaFlex || []).map((p: any) => p.game));
+    return gameOptionsAll.filter((o) => !used.has(o.value));
+  }, [gameOptionsAll, picks.combinadaFlex]);
 
   const tripleOverSet = useMemo(
     () => new Set((picks.tripleOver15P1 || []).map(normalizeGameText)),
@@ -564,31 +520,20 @@ const combinadaGameOptions = useMemo(() => {
   );
 
   const tripleOverOptions = useMemo(() => {
-  const tripleSet = new Set(
-    (picks.tripleOver15P1 || []).map(normalizeGameText)
-  );
+    const tripleSet = new Set((picks.tripleOver15P1 || []).map(normalizeGameText));
+    return gameOptionsAll.filter((o) => {
+      const normalized = normalizeGameText(o.value);
+      return !doubleOverSet.has(normalized) && !tripleSet.has(normalized);
+    });
+  }, [gameOptionsAll, doubleOverSet, picks.tripleOver15P1]);
 
-  return gameOptionsAll.filter((o) => {
-    const normalized = normalizeGameText(o.value);
-    return (
-      !doubleOverSet.has(normalized) &&   // não pode estar na dupla
-      !tripleSet.has(normalized)         // não pode estar na própria tripla
-    );
-  });
-}, [gameOptionsAll, doubleOverSet, picks.tripleOver15P1]);
   const doubleOverOptions = useMemo(() => {
-  const doubleSet = new Set(
-    (picks.doubleOver15P1 || []).map(normalizeGameText)
-  );
-
-  return gameOptionsAll.filter((o) => {
-    const normalized = normalizeGameText(o.value);
-    return (
-      !tripleOverSet.has(normalized) &&  // não pode estar na tripla
-      !doubleSet.has(normalized)        // não pode estar na própria dupla
-    );
-  });
-}, [gameOptionsAll, tripleOverSet, picks.doubleOver15P1]);
+    const doubleSet = new Set((picks.doubleOver15P1 || []).map(normalizeGameText));
+    return gameOptionsAll.filter((o) => {
+      const normalized = normalizeGameText(o.value);
+      return !tripleOverSet.has(normalized) && !doubleSet.has(normalized);
+    });
+  }, [gameOptionsAll, tripleOverSet, picks.doubleOver15P1]);
 
   const over45Options = useMemo(() => {
     const chosen = new Set((picks.quadrupleOver45 || []).map(normalizeGameText));
@@ -626,7 +571,6 @@ const combinadaGameOptions = useMemo(() => {
       if (cur.length >= 3) return prev;
 
       const nextDouble = (prev.doubleOver15P1 || []).filter((x) => normalizeGameText(x) !== g);
-
       return { ...prev, tripleOver15P1: [...cur, g], doubleOver15P1: nextDouble };
     });
   };
@@ -641,7 +585,6 @@ const combinadaGameOptions = useMemo(() => {
       if (cur.length >= 2) return prev;
 
       const nextTriple = (prev.tripleOver15P1 || []).filter((x) => normalizeGameText(x) !== g);
-
       return { ...prev, doubleOver15P1: [...cur, g], tripleOver15P1: nextTriple };
     });
   };
@@ -680,80 +623,59 @@ const combinadaGameOptions = useMemo(() => {
       return { ...prev, drawSuggestions: [...cur, { game: g, explanation: "" }] as any };
     });
   };
-const addComboPick = (type: "HOME" | "AWAY" | "1X" | "X2") => {
 
-  if(!comboGame) return
+  const addComboPick = (type: "HOME" | "AWAY" | "1X" | "X2") => {
+    if (!comboGame) return;
+    const game = normalizeGameText(comboGame);
 
-  const game = normalizeGameText(comboGame)
+    setPicks((prev) => {
+      const cur = prev.combinadaFlex ?? [];
+      if (cur.find((p: any) => p.game === game)) return prev;
+      if (cur.length >= 6) return prev;
 
-  setPicks(prev => {
+      return {
+        ...prev,
+        combinadaFlex: [...cur, { game, pick: type }],
+      };
+    });
 
-    const cur = prev.combinadaFlex ?? []
+    setComboGame(null);
+  };
 
-    if(cur.find((p:any)=>p.game === game)) return prev
-    if(cur.length >= 6) return prev
-
-   return{
-  ...prev,
-  combinadaFlex:[
-    ...cur,
-    {game,pick:type}
-      ]
-    }
-
-  })
-
-  setComboGame(null)
-
-}
   const savePicks = async () => {
-  try {
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(storageKey(selectedDate), JSON.stringify(picks));
-    }
-  } catch {}
+    try {
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(storageKey(selectedDate), JSON.stringify(picks));
+      }
+    } catch {}
 
-  try {
- const res = await fetch("/api/history", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-  date: selectedDate,
-  side: "mine",
-  suggestions: picks
-})
-  
-});
+    try {
+      const res = await fetch("/api/history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          date: selectedDate,
+          side: "mine",
+          suggestions: picks,
+        }),
+      });
 
-    const data = await res.json().catch(() => null);
+      const data = await res.json().catch(() => null);
 
-    if (!res.ok) {
-      console.error("SAVE /api/history failed:", res.status, data);
+      if (!res.ok) {
+        console.error("SAVE /api/history failed:", res.status, data);
+        alert("Falhou a guardar no servidor (ficou guardado no browser).");
+        return;
+      }
+
+      alert("Picks guardadas!");
+      window.dispatchEvent(new CustomEvent("history-updated"));
+    } catch (err) {
+      console.error("Failed to save picks:", err);
       alert("Falhou a guardar no servidor (ficou guardado no browser).");
-      return;
     }
+  };
 
-    alert("Picks guardadas!");
-
-    // 🔥 ADICIONA ESTA LINHA
-    window.dispatchEvent(new CustomEvent("history-updated"));
-
-  } catch (err) {
-    console.error("Failed to save picks:", err);
-    alert("Falhou a guardar no servidor (ficou guardado no browser).");
-  }
-};
-
-  /* 👇 COLA AQUI */
-const formatCombinadaPick = (item: CombinadaPick) => {
-  const teams = parseTeamsFromText(item.game);
-  const [home, away] = teams;
-
-  if (item.pick === "HOME") return `${home} win`;
-  if (item.pick === "AWAY") return `${away} win`;
-  if (item.pick === "1X") return `1X (${home} ou empate)`;
-  return `X2 (${away} ou empate)`;
-};
   return (
     <div className="space-y-8 pb-24">
       <div className="bg-gradient-to-r from-blue-900/40 to-slate-900/40 border border-blue-500/20 rounded-2xl p-6 sm:p-8 flex flex-col sm:flex-row items-center gap-6">
@@ -784,141 +706,139 @@ const formatCombinadaPick = (item: CombinadaPick) => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-      <div className="col-span-full">
-  <div className="relative overflow-visible bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 shadow-xl">
-    <div className="absolute top-0 right-0 w-40 h-40 -mr-10 -mt-10 opacity-10 rounded-full blur-3xl bg-gradient-to-br from-yellow-400 to-orange-500" />
+        {/* COMBINADA FLEX */}
+        <div className="col-span-full">
+          <div className="relative overflow-visible bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 shadow-xl">
+            <div className="absolute top-0 right-0 w-40 h-40 -mr-10 -mt-10 opacity-10 rounded-full blur-3xl bg-gradient-to-br from-yellow-400 to-orange-500" />
 
-    <div className="relative z-10">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-gradient-to-br from-yellow-400 to-orange-500 shadow-lg shadow-black/20">
-            <i className="fas fa-layer-group text-white text-xl" />
-          </div>
-          <div>
-            <h3 className="text-xl font-bold text-white">Combinada</h3>
-            <p className="text-xs text-slate-400">
-              Vitória ou Dupla Chance (1X / X2) · máx. 6 seleções
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
-            As minhas picks
-          </span>
-          {(picks.combinadaFlex || []).length > 0 && (
-            <span className="bg-yellow-500/20 border border-yellow-500/30 text-yellow-300 text-[10px] font-black px-2 py-0.5 rounded-full">
-              {(picks.combinadaFlex || []).length}/6
-            </span>
-          )}
-        </div>
-      </div>
-
-      <div className="border-t border-slate-700/50 my-4" />
-
-      {/* Selector */}
-      <div className="flex gap-2 mb-4 max-w-[480px]">
-        <IconDropdown
-          placeholder="Seleciona jogo..."
-          options={combinadaGameOptions}
-          value={comboGame || ""}
-          onChange={(v) => setComboGame(v)}
-        />
-      </div>
-
-      {comboGame && (
-        <div className="flex gap-2 mb-5 flex-wrap">
-          {[
-            { type: "HOME" as const, label: "🏠 Home Win", color: "bg-green-500/20 border-green-500/30 text-green-300 hover:bg-green-500/30" },
-            { type: "AWAY" as const, label: "✈️ Away Win", color: "bg-emerald-500/20 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30" },
-            { type: "1X" as const, label: "1X Home/Draw", color: "bg-blue-500/20 border-blue-500/30 text-blue-300 hover:bg-blue-500/30" },
-            { type: "X2" as const, label: "X2 Away/Draw", color: "bg-purple-500/20 border-purple-500/30 text-purple-300 hover:bg-purple-500/30" },
-          ].map(({ type, label, color }) => (
-            <button
-              key={type}
-              onClick={() => addComboPick(type)}
-              className={`px-4 py-2 rounded-xl border text-xs font-black uppercase tracking-widest transition ${color}`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Picks list */}
-      {(picks.combinadaFlex || []).length > 0 ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-          {picks.combinadaFlex.map((item: any, idx: number) => {
-            const teams = parseTeamsFromText(item.game) || [];
-            const [home, away] = teams;
-            const isHome = item.pick === "HOME" || item.pick === "1X";
-            const logo = getLogoUrl(isHome ? home : away);
-            const pickColors: Record<string, string> = {
-              HOME: "bg-green-500/20 border-green-500/30 text-green-300",
-              AWAY: "bg-emerald-500/20 border-emerald-500/30 text-emerald-300",
-              "1X": "bg-blue-500/20 border-blue-500/30 text-blue-300",
-              X2: "bg-purple-500/20 border-purple-500/30 text-purple-300",
-            };
-const label: Record<string, string> = {
-  HOME: teamLabel(home),
-  AWAY: teamLabel(away),
-  "1X": `${teamLabel(home)} 1X`,
-  X2: `${teamLabel(away)} X2`,
-};
-            return (
-              <div
-                key={idx}
-                className="flex items-center justify-between bg-slate-900/60 p-3 rounded-xl border border-slate-700/50 hover:border-slate-600 transition group"
-              >
+            <div className="relative z-10">
+              <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-3">
-              <span className="w-6 h-6 rounded-full bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center text-[10px] font-black text-white shrink-0 shadow-sm">
-  {idx + 1}
-</span>
-                  <img
-                    src={logo}
-                    className="w-8 h-8 bg-slate-800 rounded-full p-1 border border-slate-700 shadow"
-                    onError={(e) => (e.currentTarget.style.display = "none")}
-                  />
+                  <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-gradient-to-br from-yellow-400 to-orange-500 shadow-lg shadow-black/20">
+                    <i className="fas fa-layer-group text-white text-xl" />
+                  </div>
                   <div>
-<span className="text-slate-200 font-bold text-sm">
-  {label[item.pick]}
-</span>
-<p className="text-[10px] text-slate-500 truncate max-w-[140px]">
-  {teams.length === 2 ? `${teams[0]} vs ${teams[1]}` : item.game.replace(" VS ", " vs ")}
-</p>
+                    <h3 className="text-xl font-bold text-white">Combinada</h3>
+                    <p className="text-xs text-slate-400">
+                      Vitória ou Dupla Chance (1X / X2) · máx. 6 seleções
+                    </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${pickColors[item.pick]}`}>
-                    {item.pick}
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                    As minhas picks
                   </span>
-                  <button
-                    onClick={() =>
-                      setPicks((prev: any) => ({
-                        ...prev,
-                        combinadaFlex: (prev.combinadaFlex || []).filter((_: any, i: number) => i !== idx),
-                      }))
-                    }
-                    className="w-7 h-7 flex items-center justify-center rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition"
-                  >
-                    <i className="fas fa-times text-[10px]" />
-                  </button>
+                  {(picks.combinadaFlex || []).length > 0 && (
+                    <span className="bg-yellow-500/20 border border-yellow-500/30 text-yellow-300 text-[10px] font-black px-2 py-0.5 rounded-full">
+                      {(picks.combinadaFlex || []).length}/6
+                    </span>
+                  )}
                 </div>
               </div>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="text-center py-8 text-slate-500">
-          <i className="fas fa-layer-group text-3xl mb-2 block opacity-20" />
-          <p className="italic text-sm">Sem seleções ainda — escolhe um jogo acima.</p>
-        </div>
-      )}
-    </div>
-  </div>
-</div>
 
-        
+              <div className="border-t border-slate-700/50 my-4" />
+
+              <div className="flex gap-2 mb-4 max-w-[480px]">
+                <IconDropdown
+                  placeholder="Seleciona jogo..."
+                  options={combinadaGameOptions}
+                  value={comboGame || ""}
+                  onChange={(v) => setComboGame(v)}
+                />
+              </div>
+
+              {comboGame && (
+                <div className="flex gap-2 mb-5 flex-wrap">
+                  {[
+                    { type: "HOME" as const, label: "🏠 Home Win", color: "bg-green-500/20 border-green-500/30 text-green-300 hover:bg-green-500/30" },
+                    { type: "AWAY" as const, label: "✈️ Away Win", color: "bg-emerald-500/20 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30" },
+                    { type: "1X" as const, label: "1X Home/Draw", color: "bg-blue-500/20 border-blue-500/30 text-blue-300 hover:bg-blue-500/30" },
+                    { type: "X2" as const, label: "X2 Away/Draw", color: "bg-purple-500/20 border-purple-500/30 text-purple-300 hover:bg-purple-500/30" },
+                  ].map(({ type, label, color }) => (
+                    <button
+                      key={type}
+                      onClick={() => addComboPick(type)}
+                      className={`px-4 py-2 rounded-xl border text-xs font-black uppercase tracking-widest transition ${color}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {(picks.combinadaFlex || []).length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                  {picks.combinadaFlex.map((item: any, idx: number) => {
+                    const teams = parseTeamsFromText(item.game) || [];
+                    const [home, away] = teams;
+                    const isHome = item.pick === "HOME" || item.pick === "1X";
+                    const logo = getLogoUrl(isHome ? home : away);
+                    const pickColors: Record<string, string> = {
+                      HOME: "bg-green-500/20 border-green-500/30 text-green-300",
+                      AWAY: "bg-emerald-500/20 border-emerald-500/30 text-emerald-300",
+                      "1X": "bg-blue-500/20 border-blue-500/30 text-blue-300",
+                      X2: "bg-purple-500/20 border-purple-500/30 text-purple-300",
+                    };
+                    const labelMap: Record<string, string> = {
+                      HOME: teamLabel(home),
+                      AWAY: teamLabel(away),
+                      "1X": `${teamLabel(home)} 1X`,
+                      X2: `${teamLabel(away)} X2`,
+                    };
+                    return (
+                      <div
+                        key={idx}
+                        className="flex items-center justify-between bg-slate-900/60 p-3 rounded-xl border border-slate-700/50 hover:border-slate-600 transition group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="w-6 h-6 rounded-full bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center text-[10px] font-black text-white shrink-0 shadow-sm">
+                            {idx + 1}
+                          </span>
+                          <img
+                            src={logo}
+                            className="w-8 h-8 bg-slate-800 rounded-full p-1 border border-slate-700 shadow"
+                            onError={(e) => (e.currentTarget.style.display = "none")}
+                          />
+                          <div>
+                            <span className="text-slate-200 font-bold text-sm">
+                              {labelMap[item.pick]}
+                            </span>
+                            <p className="text-[10px] text-slate-500 truncate max-w-[140px]">
+                              {teams.length === 2 ? `${teams[0]} vs ${teams[1]}` : item.game.replace(" VS ", " vs ")}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${pickColors[item.pick]}`}>
+                            {item.pick}
+                          </span>
+                          <button
+                            onClick={() =>
+                              setPicks((prev: any) => ({
+                                ...prev,
+                                combinadaFlex: (prev.combinadaFlex || []).filter((_: any, i: number) => i !== idx),
+                              }))
+                            }
+                            className="w-7 h-7 flex items-center justify-center rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition"
+                          >
+                            <i className="fas fa-times text-[10px]" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-slate-500">
+                  <i className="fas fa-layer-group text-3xl mb-2 block opacity-20" />
+                  <p className="italic text-sm">Sem seleções ainda — escolhe um jogo acima.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* TRIPLETE DE VITÓRIAS */}
         <PickCard
           title="Triplete de Vitórias"
           icon="fa-award"
@@ -933,145 +853,82 @@ const label: Record<string, string> = {
           onRemove={(idx) => setPicks((p) => ({ ...p, tripleWin: (p.tripleWin || []).filter((_, i) => i !== idx) }))}
         />
 
+        {/* TRIPLETE OVER 1.5 P1 */}
         <PickCard
           title="Triplete Over 1.5 P1"
           icon="fa-fire-alt"
           gradient="bg-gradient-to-br from-red-500 to-rose-700"
           badgeColor="bg-red-500"
-          description="Escolhe 3 jogos do dia para pelo menos 2 golos no 1º período."
+          description="Escolhe 3 jogos com > 1.5 golos no 1º período."
           max={3}
           options={tripleOverOptions}
           selectedItems={picks.tripleOver15P1}
           placeholder="Seleciona jogo..."
           onAdd={addGameToTripleOver}
-          onRemove={(idx) =>
-            setPicks((p) => ({ ...p, tripleOver15P1: (p.tripleOver15P1 || []).filter((_, i) => i !== idx) }))
-          }
+          onRemove={(idx) => setPicks((p) => ({ ...p, tripleOver15P1: (p.tripleOver15P1 || []).filter((_, i) => i !== idx) }))}
         />
 
+        {/* DUPLA OVER 1.5 P1 */}
         <PickCard
           title="Dupla Over 1.5 P1"
           icon="fa-bolt"
-          gradient="bg-gradient-to-br from-blue-500 to-indigo-700"
-          badgeColor="bg-blue-500"
-          description="Escolhe 2 jogos do dia (não pode repetir os do Triplete Over 1.5 P1)."
+          gradient="bg-gradient-to-br from-orange-500 to-amber-600"
+          badgeColor="bg-orange-500"
+          description="Escolhe 2 jogos com > 1.5 golos no 1º período."
           max={2}
           options={doubleOverOptions}
           selectedItems={picks.doubleOver15P1}
           placeholder="Seleciona jogo..."
           onAdd={addGameToDoubleOver}
-          onRemove={(idx) =>
-            setPicks((p) => ({ ...p, doubleOver15P1: (p.doubleOver15P1 || []).filter((_, i) => i !== idx) }))
-          }
+          onRemove={(idx) => setPicks((p) => ({ ...p, doubleOver15P1: (p.doubleOver15P1 || []).filter((_, i) => i !== idx) }))}
         />
 
+        {/* QUADRUPA OVER 4.5 */}
         <PickCard
-          title="Quadriplete O4.5"
-          icon="fa-hockey-puck"
-          gradient="bg-gradient-to-br from-emerald-500 to-teal-700"
+          title="Quádrupla Over 4.5"
+          icon="fa-cubes"
+          gradient="bg-gradient-to-br from-emerald-500 to-green-700"
           badgeColor="bg-emerald-500"
-          description="Escolhe 4 jogos do dia com tendência ofensiva (5+ golos)."
+          description="Escolhe 4 jogos com > 4.5 golos no total."
           max={4}
           options={over45Options}
           selectedItems={picks.quadrupleOver45}
           placeholder="Seleciona jogo..."
           onAdd={addGameToOver45}
-          onRemove={(idx) =>
-            setPicks((p) => ({ ...p, quadrupleOver45: (p.quadrupleOver45 || []).filter((_, i) => i !== idx) }))
-          }
+          onRemove={(idx) => setPicks((p) => ({ ...p, quadrupleOver45: (p.quadrupleOver45 || []).filter((_, i) => i !== idx) }))}
         />
 
-        <div className="md:col-span-2 bg-slate-800/40 border border-slate-700 rounded-2xl p-6 relative overflow-visible group">
-          <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500" />
-          <h3 className="text-xl font-bold flex items-center mb-4 text-indigo-400">
-            <i className="fas fa-handshake mr-3 text-2xl" />
-            Master Insight: Empate (TR)
-          </h3>
-
-          <div className="flex items-center gap-2 mb-5 max-w-[420px]">
-            <IconDropdown
-              placeholder="Seleciona jogo..."
-              options={drawOptions}
-              value={""}
-              onChange={(v) => addGameToDrawTR(v)}
-              disabled={drawOptions.length === 0}
-            />
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {(picks.drawSuggestions || []).length ? (
-              (picks.drawSuggestions as any[]).map((d, idx) => (
-                <div
-                  key={`draw-${idx}`}
-                  className="bg-slate-900/80 p-5 rounded-2xl border border-slate-700/50 hover:bg-slate-900 transition-all"
-                >
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="bg-indigo-500/20 text-indigo-300 text-[10px] font-black px-2 py-0.5 rounded border border-indigo-500/30 uppercase tracking-widest">
-                      Draw Candidate
-                    </span>
-                    <button
-                      onClick={() =>
-                        setPicks((p) => ({
-                          ...p,
-                          drawSuggestions: (p.drawSuggestions || []).filter((_, i) => i !== idx),
-                        }))
-                      }
-                      className="px-2 py-1 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-[10px] font-black text-slate-300"
-                      title="Remover"
-                    >
-                      <i className="fas fa-times" />
-                    </button>
-                  </div>
-
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="flex -space-x-2">
-                      {parseTeamsFromText(d?.game || "").map((abbr, i) => (
-                        <img
-                          key={`${abbr}-${i}`}
-                          src={getLogoUrl(abbr)}
-                          className="w-8 h-8 object-contain drop-shadow-md bg-slate-800 rounded-full p-1 border border-slate-700"
-                          alt={abbr}
-                          loading="lazy"
-                          decoding="async"
-                          onError={(e) => (e.currentTarget.style.display = "none")}
-                        />
-                      ))}
-                    </div>
-                    <p className="font-bold text-lg text-slate-100">{String(d?.game || "")}</p>
-                  </div>
-
-                  <div className="flex gap-3">
-                    <i className="fas fa-quote-left text-indigo-500/30 text-2xl mt-1" />
-                    <p className="text-sm text-slate-400 leading-relaxed italic line-clamp-4">
-                      {d?.explanation ? String(d.explanation) : "—"}
-                    </p>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div className="col-span-2 text-center py-8 text-slate-500">Sem seleções ainda — adiciona acima.</div>
-            )}
-          </div>
-        </div>
-
+        {/* JOGOS OVER 5.5 */}
         <PickCard
-          title="Over 5.5 Plus"
-          icon="fa-plus-circle"
-          gradient="bg-gradient-to-br from-pink-500 to-fuchsia-700"
-          badgeColor="bg-pink-500"
-          description="Jogos com elevado potencial de chuva de golos."
-          max={99}
+          title="Jogos Over 5.5"
+          icon="fa-chart-line"
+          gradient="bg-gradient-to-br from-blue-500 to-indigo-700"
+          badgeColor="bg-blue-500"
+          description="Escolhe jogos com tendência para > 5.5 golos."
+          max={10}
           options={over55Options}
           selectedItems={picks.over55Suggestions}
           placeholder="Seleciona jogo..."
           onAdd={addGameToOver55}
-          onRemove={(idx) =>
-            setPicks((p) => ({ ...p, over55Suggestions: (p.over55Suggestions || []).filter((_, i) => i !== idx) }))
-          }
+          onRemove={(idx) => setPicks((p) => ({ ...p, over55Suggestions: (p.over55Suggestions || []).filter((_, i) => i !== idx) }))}
+        />
+
+        {/* EMPATE EM TEMPO REGULAMENTAR */}
+        <PickCard
+          title="Empate em Tempo Regulamentar"
+          icon="fa-handshake"
+          gradient="bg-gradient-to-br from-purple-500 to-violet-700"
+          badgeColor="bg-purple-500"
+          description="Escolhe jogos com elevada probabilidade de ir a Overtime."
+          max={5}
+          options={drawOptions}
+          selectedItems={(picks.drawSuggestions || []).map((d: any) => (typeof d === "object" ? d.game : d))}
+          placeholder="Seleciona jogo..."
+          onAdd={addGameToDrawTR}
+          onRemove={(idx) => setPicks((p) => ({ ...p, drawSuggestions: (p.drawSuggestions || []).filter((_, i) => i !== idx) }))}
         />
       </div>
     </div>
-      
   );
 };
 
