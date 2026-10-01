@@ -1,4 +1,4 @@
-// api/gemini.ts
+// api/gemini.ts new
 // Análise estatística de NHL via Groq API (Llama 3.3 70B)
 
 type GroqChatResponse = {
