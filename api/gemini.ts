@@ -7,7 +7,7 @@ import { redis } from "./_redis.js";
 export const config = { runtime: "edge" };
 
 const NHL_API = "https://api-web.nhle.com/v1";
-const MODEL = "llama-3.3-70b-versatile";
+const MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
 const CACHE_PREFIX = "nhl:analysis:";
 const CACHE_TTL_MS = 8 * 60 * 60 * 1000; // 8 horas
 
@@ -239,7 +239,8 @@ async function askGroq(apiKey: string, prompt: string): Promise<any[]> {
         model: MODEL,
         response_format: { type: "json_object" },
         temperature: 0.1,
-        max_tokens: 6000,
+                max_completion_tokens: 8000,
+        reasoning_effort: "low",
         messages: [
           { role: "system", content: prompt },
           { role: "user", content: "Gera o JSON pedido." },
