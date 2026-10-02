@@ -45,6 +45,9 @@ const App: React.FC = () => {
   // Inicializa com a data de hoje por predefinição
   const [selectedDate, setSelectedDate] = useState<string>(toDateStringLocal(new Date()));
   const [loadedDate, setLoadedDate]   = useState<string>('');
+  
+  // Estado para o feedback visual de limpeza de cache
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const requestIdRef = useRef(0);
 
@@ -138,6 +141,35 @@ const App: React.FC = () => {
 
   const handleAnalyzeClick = () => loadData(selectedDate);
 
+  // ─── Função de Limpeza Global de Cache ─────────────────────────────────────
+
+  const handleGlobalRefreshClick = async () => {
+    try {
+      const res = await fetch('/api/gemini', {
+        method: 'DELETE',
+      });
+
+      if (res.ok) {
+        // Limpa os dados atuais e data selecionada do ecrã
+        setData(null);
+        setLoadedDate('');
+        
+        // Dispara mensagem de feedback visual
+        setToastMessage('🔄 Histórico e cache limpos com sucesso!');
+        setTimeout(() => {
+          setToastMessage(null);
+        }, 4000);
+      } else {
+        setToastMessage('⚠️ Erro ao limpar a cache.');
+        setTimeout(() => setToastMessage(null), 4000);
+      }
+    } catch (err) {
+      console.error('Erro ao comunicar com o servidor para limpar cache', err);
+      setToastMessage('⚠️ Erro de ligação ao limpar cache.');
+      setTimeout(() => setToastMessage(null), 4000);
+    }
+  };
+
   // ─── Loading screen ─────────────────────────────────────────────────────────
 
   if (loading) {
@@ -199,13 +231,23 @@ const App: React.FC = () => {
             />
           </div>
 
-          <button
-            onClick={handleAnalyzeClick}
-            className="bg-orange-600 text-white font-black px-4 py-2 rounded-lg text-[10px] uppercase tracking-wider hover:bg-orange-500 transition"
-            title={loadedDate ? `Carregado: ${loadedDate}` : 'Ainda não analisado'}
-          >
-            Analisar
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={handleAnalyzeClick}
+              className="bg-orange-600 text-white font-black px-4 py-2 rounded-lg text-[10px] uppercase tracking-wider hover:bg-orange-500 transition"
+              title={loadedDate ? `Carregado: ${loadedDate}` : 'Ainda não analisado'}
+            >
+              Analisar
+            </button>
+
+            <button
+              onClick={handleGlobalRefreshClick}
+              className="bg-zinc-800 text-white p-2 rounded-lg hover:bg-zinc-700 transition border border-white/10 flex items-center justify-center cursor-pointer"
+              title="Limpar toda a cache e histórico guardado"
+            >
+              🔄
+            </button>
+          </div>
 
           <div className="bg-orange-600/5 px-3 py-1.5 rounded-lg border border-orange-600/10 flex items-center gap-2">
             <div className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse" />
@@ -213,6 +255,13 @@ const App: React.FC = () => {
           </div>
         </div>
       </header>
+
+      {/* Toast de Feedback Visual da Limpeza */}
+      {toastMessage && (
+        <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-4 py-3 rounded-xl text-xs font-bold text-center mb-6 backdrop-blur-md animate-in fade-in duration-300 shadow-lg">
+          {toastMessage}
+        </div>
+      )}
 
       {/* Erro */}
       {error ? (
