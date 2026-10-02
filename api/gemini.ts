@@ -11,7 +11,6 @@ type GroqChatResponse = {
   };
 };
 
-// Cache em memória no servidor (válida por 8 horas)
 const predictionCache = new Map<string, { data: any; timestamp: number }>();
 const CACHE_TTL_MS = 8 * 60 * 60 * 1000;
 
@@ -124,17 +123,26 @@ REGRAS OBRIGATÓRIAS DE ESTRUTURAÇÃO:
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "openai/gpt-oss-120b",
+        model: "llama-3.3-70b-versatile", // Modelo oficial e estável da Groq
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: `Analisa os jogos da jornada de ${selectedDate} e garante que preenches corretamente os arrays de lesões de cada equipa.` }
+          { role: "user", content: `Analisa os jogos da jornada de ${selectedDate} e preenche os arrays de lesões de cada equipa de forma detalhada.` }
         ],
         temperature: 0.1,
       }),
     });
 
     const data = (await res.json()) as GroqChatResponse;
+    
+    if (data.error) {
+      console.error("Erro devolvido pela API da Groq:", data.error);
+      return new Response(JSON.stringify({ error: data.error.message || "Erro na API da Groq" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     const outputText = data.choices?.[0]?.message?.content || "{}";
 
     let parsedContent;
