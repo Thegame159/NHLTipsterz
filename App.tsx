@@ -8,6 +8,7 @@ import SuggestionsView from './components/SuggestionsView';
 import MyPicksView from './components/MyPicksView';
 import StatsView from './components/StatsView';
 import BrandLogo from './components/BrandLogo';
+import { buildSuggestions } from './utils/suggestions';
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
 
@@ -90,7 +91,7 @@ const App: React.FC = () => {
 
       const rawPredictions: GamePrediction[] = analysisData?.predictions || [];
 
-      // Filtra apenas jogos que fiquem na janela noturna em Portugal (22:00 - 06:00)
+           // Filtra apenas jogos que fiquem na janela noturna em Portugal (22:00 - 06:00)
       const filteredPredictions = rawPredictions.filter((game) => {
         if (!game || !game.dateTime) return true;
         const dateObj = new Date(game.dateTime);
@@ -98,11 +99,8 @@ const App: React.FC = () => {
         return hour >= 22 || hour <= 6;
       });
 
-      const suggestionsList = analysisData?.suggestions || {
-        tripleWin: [],
-        tripleOver15P1: [],
-        doubleOver15P1: [],
-      };
+      // As dicas são calculadas sobre os jogos visíveis
+      const suggestionsList = buildSuggestions(filteredPredictions);
 
       setProgress(100);
       setData({
