@@ -28,76 +28,39 @@ export async function POST(req: Request) {
 A tua tarefa é analisar exclusivamente os jogos REAIS e OFICIAIS da jornada da NHL para a data ${selectedDate}.
 
 REGRA FUNDAMENTAL DE JORNADA E FUSO HORÁRIO:
-1. Quando a data selecionada for "2026-09-30", a jornada oficial da NHL (correspondente à madrugada de 01/10 em fuso de Portugal) é composta APENAS por estes 3 confrontos:
-   - Philadelphia Flyers (PHI) vs Pittsburgh Penguins (PIT)
-   - Toronto Maple Leafs (TOR) vs New York Islanders (NYI)
-   - Colorado Avalanche (COL) vs Los Angeles Kings (LAK)
-2. NUNCA inventes outros jogos (como Wild, Blackhawks, Sharks, Vegas) para esta data.
-3. Os horários em "dateTime" DEVEM situar-se entre as 23:00 de ${selectedDate} e as 04:30 da madrugada do dia seguinte (fuso de Portugal/WEST). Exemplo: "${selectedDate}T23:00:00Z", "2026-10-01T00:00:00Z", "2026-10-01T02:30:00Z".
-4. Responde EXCLUSIVAMENTE num único objeto JSON válido.
+1. Identifica os jogos oficiais da NHL agendados para a data ${selectedDate} (ou madrugada correspondente em Portugal).
+2. Se não houver jogos oficiais da NHL para esta data exata, devolve um array de previsões vazio ("predictions": []). NUNCA inventes jogos ou equipes que não joguem nesta data.
+3. Os horários em "dateTime" DEVEM situar-se preferencialmente entre as 22:00 de ${selectedDate} e as 06:00 da madrugada do dia seguinte (fuso de Portugal/WEST).
+4. Responde EXCLUSIVAMENTE num único objeto JSON válido, seguindo rigorosamente a estrutura abaixo.
 
 ESTRUTURA JSON EXIGIDA:
 {
   "predictions": [
     {
       "id": "game-1",
-      "homeTeam": "Flyers",
-      "awayTeam": "Penguins",
+      "homeTeam": "Nome da Equipa da Casa (ex: Flyers)",
+      "awayTeam": "Nome da Equipa de Fora (ex: Penguins)",
       "homeTeamAbbr": "PHI",
       "awayTeamAbbr": "PIT",
       "dateTime": "${selectedDate}T23:00:00Z",
-      "winProbabilityHome": 42,
-      "winProbabilityAway": 58,
-      "over15P1Prob": 75,
+      "winProbabilityHome": 50,
+      "winProbabilityAway": 50,
+      "over15P1Prob": 70,
       "bttsP1Prob": 30,
       "drawTRProb": 20,
       "over45Prob": 80,
-      "homeRecordL10": "4-5-1",
-      "awayRecordL10": "7-2-1",
-      "analysisSummary": "Penguins demonstram forte eficácia ofensiva contra a defesa dos Flyers."
-    },
-    {
-      "id": "game-2",
-      "homeTeam": "Maple Leafs",
-      "awayTeam": "Islanders",
-      "homeTeamAbbr": "TOR",
-      "awayTeamAbbr": "NYI",
-      "dateTime": "2026-10-01T00:00:00Z",
-      "winProbabilityHome": 60,
-      "winProbabilityAway": 40,
-      "over15P1Prob": 65,
-      "bttsP1Prob": 22,
-      "drawTRProb": 25,
-      "over45Prob": 60,
-      "homeRecordL10": "6-3-1",
-      "awayRecordL10": "5-4-1",
-      "analysisSummary": "Toronto mantém ligeiro favoritismo jogando em casa no Air Canada Centre."
-    },
-    {
-      "id": "game-3",
-      "homeTeam": "Avalanche",
-      "awayTeam": "Kings",
-      "homeTeamAbbr": "COL",
-      "awayTeamAbbr": "LAK",
-      "dateTime": "2026-10-01T02:30:00Z",
-      "winProbabilityHome": 62,
-      "winProbabilityAway": 38,
-      "over15P1Prob": 82,
-      "bttsP1Prob": 35,
-      "drawTRProb": 18,
-      "over45Prob": 88,
-      "homeRecordL10": "8-2-0",
-      "awayRecordL10": "4-4-2",
-      "analysisSummary": "Confronto de alto volume de golos perspetivado com forte pendor para Colorado."
+      "homeRecordL10": "0-0-0",
+      "awayRecordL10": "0-0-0",
+      "analysisSummary": "Breve resumo da análise para este encontro."
     }
   ],
   "suggestions": {
-    "tripleWin": ["PIT", "TOR", "COL"],
-    "tripleOver15P1": ["PHI VS PIT", "COL VS LAK"],
-    "doubleOver15P1": ["TOR VS NYI"],
+    "tripleWin": [],
+    "tripleOver15P1": [],
+    "doubleOver15P1": [],
     "drawSuggestions": [],
     "quadrupleOver45": [],
-    "over55Suggestions": ["COL VS LAK", "PHI VS PIT"]
+    "over55Suggestions": []
   },
   "lastUpdated": "${new Date().toISOString()}"
 }`;
