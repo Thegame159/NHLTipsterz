@@ -11,20 +11,26 @@ type GroqChatResponse = {
   };
 };
 
-// Estrutura simples de cache em memória no servidor
-// Guarda o JSON gerado e a data/hora em que foi criado
+// Cache em memória no servidor (válida por 8 horas)
 const predictionCache = new Map<string, { data: any; timestamp: number }>();
-const CACHE_TTL_MS = 8 * 60 * 60 * 1000; // 8 horas em milissegundos
+const CACHE_TTL_MS = 8 * 60 * 60 * 1000;
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
     const selectedDate = body.selectedDate || body.date || "2026-10-02";
+    const forceRefresh = body.force === true;
 
-    // 1. Verificar se já existe cache válida para esta data (recente < 8 horas)
+    // Se o botão de refresh foi clicado, limpa a cache desta data específica
+    if (forceRefresh) {
+      console.log(`[CACHE CLEARED] A limpar cache manualmente para a data: ${selectedDate}`);
+      predictionCache.delete(selectedDate);
+    }
+
+    // Verificar se existe cache válida (se não for forceRefresh)
     const cachedEntry = predictionCache.get(selectedDate);
     const now = Date.now();
-    if (cachedEntry && (now - cachedEntry.timestamp < CACHE_TTL_MS)) {
+    if (!forceRefresh && cachedEntry && (now - cachedEntry.timestamp < CACHE_TTL_MS)) {
       console.log(`[CACHE HIT] A retornar dados em cache para a data: ${selectedDate}`);
       return new Response(JSON.stringify(cachedEntry.data), {
         status: 200,
@@ -40,7 +46,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // 2. Ir buscar os jogos reais à API oficial da NHL para a data selecionada
+    // Ir buscar os jogos reais à API oficial da NHL
     let nhlGamesData: any = null;
     try {
       const nhlRes = await fetch(`https://api-web.nhle.com/v1/schedule/${selectedDate}`);
@@ -53,7 +59,7 @@ export async function POST(req: Request) {
 
     let gamesForDate = nhlGamesData?.gameWeek?.find((gw: any) => gw.date === selectedDate)?.games || [];
 
-    // Salvaguarda para 30-09 (garantir os 3 jogos oficiais se a API falhar)
+    // Salvaguarda para 30-09 (garantir os 3 jogos oficiais se a API da NHL falhar)
     if (selectedDate === "2026-09-30" && gamesForDate.length < 3) {
       gamesForDate = [
         { homeTeam: { commonName: { default: "Flyers" }, abbrev: "PHI" }, awayTeam: { commonName: { default: "Penguins" }, abbrev: "PIT" }, startTimeUTC: "2026-09-30T23:00:00Z" },
@@ -75,9 +81,10 @@ A tua tarefa é analisar exclusivamente os jogos REAIS da NHL fornecidos abaixo 
 JOGOS OFICIAIS DA NHL PARA ESTA DATA:
 ${gamesListText}
 
-REGRA:
-Se a lista acima indicar que não há jogos, deves devolver "predictions": []. Se existirem jogos, gera as previsões estatísticas estritamente para esses confrontos, mantendo as abreviaturas corretas (homeTeamAbbr e awayTeamAbbr).
-Responde EXCLUSIVAMENTE num único objeto JSON válido com a estrutura:
+REGRAS:
+1. Se a lista indicar que não há jogos, devolve "predictions": []. Caso contrário, gera as previsões para cada confronto listado.
+2. Inclui obrigatoriamente relatórios de lesões realistas (homeInjuries e awayInjuries) com os jogadores ausentes/lesionados conhecidos para cada equipa (ou ["Sem lesões significativas"] se não houver registo).
+3. Responde EXCLUSIVAMENTE num único objeto JSON válido seguindo exatamente esta estrutura:
 {
   "predictions": [
     {
@@ -95,7 +102,9 @@ Responde EXCLUSIVAMENTE num único objeto JSON válido com a estrutura:
       "over45Prob": 80,
       "homeRecordL10": "5-4-1",
       "awayRecordL10": "6-3-1",
-      "analysisSummary": "Resumo analítico..."
+      "analysisSummary": "Resumo analítico...",
+      "homeInjuries": ["Jogador A (Lesão)"],
+      "awayInjuries": ["Jogador B (Dúvida)"]
     }
   ],
   "suggestions": {
@@ -126,7 +135,7 @@ Responde EXCLUSIVAMENTE num único objeto JSON válido com a estrutura:
       }),
     });
 
-    const data = await res.json();
+    const data = (await res.json()) as GroqChatResponse;
     const outputText = data.choices?.[0]?.message?.content || "{}";
 
     let parsedContent;
@@ -136,7 +145,7 @@ Responde EXCLUSIVAMENTE num único objeto JSON válido com a estrutura:
       parsedContent = { predictions: [], suggestions: {} };
     }
 
-    // 3. Guardar na cache antes de retornar
+    // Guardar na cache
     predictionCache.set(selectedDate, {
       data: parsedContent,
       timestamp: Date.now(),
@@ -149,7 +158,7 @@ Responde EXCLUSIVAMENTE num único objeto JSON válido com a estrutura:
   } catch (error: any) {
     return new Response(
       JSON.stringify({ error: error?.message || "Erro no servidor." }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
+      { status: 500, headers: { "Content-Type": "application/json" }, }
     );
   }
 }
