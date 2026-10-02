@@ -1,6 +1,9 @@
 // api/gemini.ts
-// Fluxo: calendário real (NHL) + classificação real (NHL) → Groq (probabilidades + texto) → cache em Redis.
-// Nota: o nome do ficheiro mantém-se "gemini" para não partir o frontend (/api/gemini).
+// Fluxo: calendário (NHL) + resultados dos ÚLTIMOS 7 DIAS (NHL) → Groq (probabilidades + texto) → cache em Redis.
+//
+// Janela de forma: os 7 dias de calendário anteriores à data analisada, haja ou não jogos de cada equipa.
+// - Nos primeiros dias da época regular, a janela apanha jogos de pré-época (que contam, com menos peso).
+// - No 8.º dia da época regular a janela (dias 1 a 7) já só tem jogos da época regular, por construção.
 
 import { redis } from "./_redis.js";
 
@@ -8,8 +11,17 @@ export const config = { runtime: "edge" };
 
 const NHL_API = "https://api-web.nhle.com/v1";
 const MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
-const CACHE_PREFIX = "nhl:analysis:";
+
+const WINDOW_DAYS = 7;
+const CACHE_PREFIX = "nhl:analysis:v2:";
 const CACHE_TTL_MS = 8 * 60 * 60 * 1000; // 8 horas
+const GAME_CACHE_PREFIX = "nhl:game:v1:"; // golos do 1.º período de jogos já terminados (nunca mudam)
+const GAME_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const MAX_PBP_FETCHES = 80;
+const PBP_BATCH = 10;
+
+// Médias de referência, usadas quando a janela tem poucos jogos para calcular as da liga.
+const LEAGUE_DEFAULTS = { homeWin: 54, regTie: 23, p1Over15: 55, p1Btts: 30, over45: 68, over55: 50 };
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -23,25 +35,55 @@ type NhlGame = {
   awayName: string;
 };
 
-type TeamForm = {
+type FinishedGame = {
+  id: number;
+  date: string;
+  gameType: number;
+  homeAbbr: string;
+  awayAbbr: string;
+  homeScore: number;
+  awayScore: number;
+  ending: "REG" | "OT" | "SO" | "UNKNOWN";
+  p1Home: number | null;
+  p1Away: number | null;
+};
+
+type TeamRecent = {
   abbr: string;
   gp: number;
-  points: number;
-  pointPct: number; // 0..1
-  gfPg: number;
-  gaPg: number;
-  l10: string; // "V-D-DP"
-  l10Gf: number;
-  l10Ga: number;
-  homeRecord: string;
-  roadRecord: string;
+  preGp: number;
+  w: number;
+  l: number;
+  otl: number;
+  gf: number;
+  ga: number;
+  over45: number;
+  over55: number;
+  regTies: number;
+  p1n: number;
+  p1Over15: number;
+  p1Btts: number;
+  p1For: number;
+  p1Against: number;
+};
+
+type LeagueRates = {
+  games: number;
+  p1Games: number;
+  regGoalsAvg: number;
+  homeWin: number;
+  regTie: number;
+  p1Over15: number;
+  p1Btts: number;
+  over45: number;
+  over55: number;
 };
 
 type Prediction = {
   id: string;
   homeTeam: string;
   homeTeamAbbr: string;
-  homeRecordL10: string;
+  homeRecordL10: string; // agora: registo V-D-DP dos últimos 7 dias
   awayTeam: string;
   awayTeamAbbr: string;
   awayRecordL10: string;
@@ -54,14 +96,18 @@ type Prediction = {
   over45Prob: number;
   over55Prob: number;
   analysisSummary: string;
-  // A API da NHL não fornece lesões; não inventamos.
   injuries: { home: string[]; away: string[] };
 };
 
 type AnalysisPayload = {
   predictions: Prediction[];
   lastUpdated: string;
-  meta: { source: "ai" | "baseline"; games: number; note?: string };
+  meta: {
+    source: "ai" | "baseline";
+    games: number;
+    window?: { from: string; to: string; gamesUsed: number; preseasonGames: number };
+    note?: string;
+  };
 };
 
 // ─── Utilitários ─────────────────────────────────────────────────────────────
@@ -88,6 +134,12 @@ const clampPct = (x: unknown, fallback: number) => {
 const etDate = (iso: string) =>
   new Date(iso).toLocaleDateString("en-CA", { timeZone: "America/New_York" });
 
+function addDays(d: string, days: number) {
+  const dt = new Date(d + "T00:00:00Z");
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return dt.toISOString().slice(0, 10);
+}
+
 async function fetchWithTimeout(url: string, init: RequestInit = {}, ms = 10000) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), ms);
@@ -98,7 +150,7 @@ async function fetchWithTimeout(url: string, init: RequestInit = {}, ms = 10000)
   }
 }
 
-// ─── Dados reais da NHL ──────────────────────────────────────────────────────
+// ─── Calendário do dia analisado ─────────────────────────────────────────────
 
 async function fetchGames(date: string): Promise<NhlGame[]> {
   const res = await fetchWithTimeout(`${NHL_API}/schedule/${date}`);
@@ -133,91 +185,259 @@ async function fetchGames(date: string): Promise<NhlGame[]> {
   return games.sort((a, b) => a.startTimeUTC.localeCompare(b.startTimeUTC));
 }
 
-async function fetchForm(): Promise<Map<string, TeamForm>> {
-  const map = new Map<string, TeamForm>();
-  try {
-    const res = await fetchWithTimeout(`${NHL_API}/standings/now`);
-    if (!res.ok) return map;
-    const data = await res.json();
+// ─── Forma recente (últimos 7 dias) ──────────────────────────────────────────
 
-    for (const r of Array.isArray(data?.standings) ? data.standings : []) {
-      const abbr = String(r?.teamAbbrev?.default ?? "").toUpperCase();
-      if (!abbr) continue;
-      const gp = num(r.gamesPlayed);
-      map.set(abbr, {
-        abbr,
-        gp,
-        points: num(r.points),
-        pointPct: num(r.pointPctg),
-        gfPg: gp > 0 ? num(r.goalFor) / gp : 0,
-        gaPg: gp > 0 ? num(r.goalAgainst) / gp : 0,
-        l10: `${num(r.l10Wins)}-${num(r.l10Losses)}-${num(r.l10OtLosses)}`,
-        l10Gf: num(r.l10GoalsFor),
-        l10Ga: num(r.l10GoalsAgainst),
-        homeRecord: `${num(r.homeWins)}-${num(r.homeLosses)}-${num(r.homeOtLosses)}`,
-        roadRecord: `${num(r.roadWins)}-${num(r.roadLosses)}-${num(r.roadOtLosses)}`,
+async function fetchFinishedGames(date: string): Promise<{ games: FinishedGame[]; failedDays: number }> {
+  const days = Array.from({ length: WINDOW_DAYS }, (_, i) => addDays(date, -(i + 1)));
+  let failedDays = 0;
+
+  const perDay = await Promise.all(
+    days.map(async (d) => {
+      try {
+        const res = await fetchWithTimeout(`${NHL_API}/score/${d}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return { d, data: await res.json() };
+      } catch (e) {
+        failedDays++;
+        console.error(`[gemini] score ${d} falhou:`, e);
+        return { d, data: null };
+      }
+    })
+  );
+
+  const seen = new Set<number>();
+  const games: FinishedGame[] = [];
+
+  for (const { d, data } of perDay) {
+    for (const g of Array.isArray(data?.games) ? data.games : []) {
+      const state = String(g?.gameState ?? "").toUpperCase();
+      if (state !== "OFF" && state !== "FINAL") continue;
+      const gameType = num(g?.gameType, 0);
+      if (gameType < 1 || gameType > 3) continue; // pré-época, época regular, playoffs
+      if (!g?.id || seen.has(g.id)) continue;
+      seen.add(g.id);
+
+      const pt = String(g?.periodDescriptor?.periodType ?? "").toUpperCase();
+      const lastPeriod = num(g?.period ?? g?.periodDescriptor?.number, 0);
+      const ending: FinishedGame["ending"] =
+        pt === "SO" ? "SO" : pt === "OT" ? "OT" : pt === "REG" ? "REG" : lastPeriod > 3 ? "OT" : lastPeriod === 3 ? "REG" : "UNKNOWN";
+
+      games.push({
+        id: g.id,
+        date: d,
+        gameType,
+        homeAbbr: String(g.homeTeam?.abbrev ?? "").toUpperCase(),
+        awayAbbr: String(g.awayTeam?.abbrev ?? "").toUpperCase(),
+        homeScore: num(g.homeTeam?.score),
+        awayScore: num(g.awayTeam?.score),
+        ending,
+        p1Home: null,
+        p1Away: null,
       });
     }
-  } catch (e) {
-    console.error("[gemini] standings falhou:", e);
+  }
+
+  return { games, failedDays };
+}
+
+async function fetchP1Goals(gameId: number): Promise<{ h: number; a: number } | null> {
+  try {
+    const res = await fetchWithTimeout(`${NHL_API}/gamecenter/${gameId}/play-by-play`, {}, 8000);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const homeId = data?.homeTeam?.id;
+    const awayId = data?.awayTeam?.id;
+    if (homeId == null || awayId == null) return null;
+
+    let h = 0;
+    let a = 0;
+    for (const p of Array.isArray(data?.plays) ? data.plays : []) {
+      if (p?.typeDescKey !== "goal" || p?.periodDescriptor?.number !== 1) continue;
+      const owner = p?.details?.eventOwnerTeamId;
+      if (owner === homeId) h++;
+      else if (owner === awayId) a++;
+    }
+    return { h, a };
+  } catch {
+    return null;
+  }
+}
+
+/** Preenche os golos do 1.º período. Jogos terminados não mudam, por isso ficam em cache no Redis. */
+async function enrichFirstPeriod(games: FinishedGame[]) {
+  const cached = await Promise.all(games.map((g) => redis.get(`${GAME_CACHE_PREFIX}${g.id}`)));
+  const missing: FinishedGame[] = [];
+
+  games.forEach((g, i) => {
+    const raw = cached[i];
+    if (raw) {
+      try {
+        const v = JSON.parse(raw);
+        if (Number.isFinite(v?.h) && Number.isFinite(v?.a)) {
+          g.p1Home = v.h;
+          g.p1Away = v.a;
+          return;
+        }
+      } catch {
+        /* cai para "em falta" */
+      }
+    }
+    missing.push(g);
+  });
+
+  const toFetch = missing.slice(0, MAX_PBP_FETCHES);
+  for (let i = 0; i < toFetch.length; i += PBP_BATCH) {
+    const batch = toFetch.slice(i, i + PBP_BATCH);
+    const results = await Promise.all(batch.map((g) => fetchP1Goals(g.id)));
+    for (let j = 0; j < batch.length; j++) {
+      const r = results[j];
+      if (!r) continue;
+      batch[j].p1Home = r.h;
+      batch[j].p1Away = r.a;
+      await redis.setPx(`${GAME_CACHE_PREFIX}${batch[j].id}`, JSON.stringify(r), GAME_CACHE_TTL_MS);
+    }
+  }
+}
+
+/** Golos em tempo regulamentar: no prolongamento/desempate o golo decisivo conta fora dos 60 min. */
+const regTotal = (g: FinishedGame) =>
+  g.homeScore + g.awayScore - (g.ending === "OT" || g.ending === "SO" ? 1 : 0);
+
+function aggregateTeams(games: FinishedGame[]): Map<string, TeamRecent> {
+  const map = new Map<string, TeamRecent>();
+  const get = (abbr: string) => {
+    let t = map.get(abbr);
+    if (!t) {
+      t = { abbr, gp: 0, preGp: 0, w: 0, l: 0, otl: 0, gf: 0, ga: 0, over45: 0, over55: 0, regTies: 0, p1n: 0, p1Over15: 0, p1Btts: 0, p1For: 0, p1Against: 0 };
+      map.set(abbr, t);
+    }
+    return t;
+  };
+
+  for (const g of games) {
+    const total = regTotal(g);
+    const wentExtra = g.ending === "OT" || g.ending === "SO";
+
+    for (const side of ["home", "away"] as const) {
+      const abbr = side === "home" ? g.homeAbbr : g.awayAbbr;
+      if (!abbr) continue;
+      const own = side === "home" ? g.homeScore : g.awayScore;
+      const opp = side === "home" ? g.awayScore : g.homeScore;
+      const t = get(abbr);
+
+      t.gp++;
+      if (g.gameType === 1) t.preGp++;
+      t.gf += own;
+      t.ga += opp;
+      if (own > opp) t.w++;
+      else if (wentExtra) t.otl++;
+      else t.l++;
+
+      if (total >= 5) t.over45++;
+      if (total >= 6) t.over55++;
+      if (wentExtra) t.regTies++;
+
+      if (g.p1Home != null && g.p1Away != null) {
+        t.p1n++;
+        if (g.p1Home + g.p1Away >= 2) t.p1Over15++;
+        if (g.p1Home > 0 && g.p1Away > 0) t.p1Btts++;
+        t.p1For += side === "home" ? g.p1Home : g.p1Away;
+        t.p1Against += side === "home" ? g.p1Away : g.p1Home;
+      }
+    }
   }
   return map;
 }
 
-// ─── Probabilidades base (usadas se a IA falhar ou não devolver um jogo) ────
+function leagueRates(games: FinishedGame[]): LeagueRates {
+  const n = games.length;
+  const p1 = games.filter((g) => g.p1Home != null && g.p1Away != null);
+  const pct = (count: number, of: number, fallback: number) => (of >= 8 ? Math.round((count / of) * 100) : fallback);
 
-function baseline(home?: TeamForm, away?: TeamForm) {
-  // Sem jogos disputados (início de época) a equipa conta como "média" (0.5), não como 0%.
-  const pp = (t?: TeamForm) => (t && t.gp > 0 ? t.pointPct : 0.5);
-  const diff = pp(home) - pp(away);
-  const winHome = clampPct(54 + diff * 25, 54);
   return {
-    winProbabilityHome: Math.min(75, Math.max(30, winHome)),
-    over15P1Prob: 55,
-    bttsP1Prob: 30,
-    drawTRProb: 23,
-    over45Prob: 68,
-    over55Prob: 50,
+    games: n,
+    p1Games: p1.length,
+    regGoalsAvg: n > 0 ? games.reduce((s, g) => s + regTotal(g), 0) / n : 0,
+    homeWin: pct(games.filter((g) => g.homeScore > g.awayScore).length, n, LEAGUE_DEFAULTS.homeWin),
+    regTie: pct(games.filter((g) => g.ending === "OT" || g.ending === "SO").length, n, LEAGUE_DEFAULTS.regTie),
+    p1Over15: pct(p1.filter((g) => g.p1Home! + g.p1Away! >= 2).length, p1.length, LEAGUE_DEFAULTS.p1Over15),
+    p1Btts: pct(p1.filter((g) => g.p1Home! > 0 && g.p1Away! > 0).length, p1.length, LEAGUE_DEFAULTS.p1Btts),
+    over45: pct(games.filter((g) => regTotal(g) >= 5).length, n, LEAGUE_DEFAULTS.over45),
+    over55: pct(games.filter((g) => regTotal(g) >= 6).length, n, LEAGUE_DEFAULTS.over55),
+  };
+}
+
+// ─── Probabilidades base (se a IA falhar ou não devolver um jogo) ────────────
+
+function baseline(home: TeamRecent | undefined, away: TeamRecent | undefined, lg: LeagueRates) {
+  const gd = (t?: TeamRecent) => (t && t.gp > 0 ? (t.gf - t.ga) / t.gp : 0);
+  const winHome = Math.min(70, Math.max(35, Math.round(lg.homeWin + (gd(home) - gd(away)) * 3)));
+  return {
+    winProbabilityHome: winHome,
+    over15P1Prob: lg.p1Over15,
+    bttsP1Prob: lg.p1Btts,
+    drawTRProb: lg.regTie,
+    over45Prob: lg.over45,
+    over55Prob: lg.over55,
   };
 }
 
 // ─── Groq ────────────────────────────────────────────────────────────────────
 
-function describeTeam(label: string, t?: TeamForm, venue?: "casa" | "fora") {
-  if (!t || t.gp === 0) return `${label}: sem jogos disputados esta época (sem dados de forma).`;
-  const rec = venue === "casa" ? `em casa ${t.homeRecord}` : `fora ${t.roadRecord}`;
-  return (
-    `${label}: ${t.gp} jogos, ${t.points} pts (${Math.round(t.pointPct * 100)}%), ` +
-    `golos ${t.gfPg.toFixed(2)} marcados / ${t.gaPg.toFixed(2)} sofridos por jogo, ` +
-    `últimos 10 (V-D-DP) ${t.l10} (GF ${t.l10Gf}, GA ${t.l10Ga}), ${rec}`
-  );
+const f1 = (n: number) => n.toFixed(1);
+
+function describeTeam(label: string, t?: TeamRecent) {
+  if (!t || t.gp === 0) {
+    return `${label}: sem jogos nos últimos ${WINDOW_DAYS} dias — usa as médias da liga, com pequeno ajuste pela vantagem de casa.`;
+  }
+  let s =
+    `${label}: ${t.gp} jogo(s) em ${WINDOW_DAYS} dias` +
+    (t.preGp > 0 ? ` (${t.preGp} de pré-época)` : "") +
+    `, V-D-DP ${t.w}-${t.l}-${t.otl}, golos ${f1(t.gf / t.gp)} marcados / ${f1(t.ga / t.gp)} sofridos por jogo` +
+    `, 5+ golos em ${t.over45}/${t.gp}, 6+ em ${t.over55}/${t.gp}, empates no tempo regulamentar ${t.regTies}/${t.gp}`;
+  if (t.p1n > 0) {
+    s +=
+      `, 2+ golos no 1.º período em ${t.p1Over15}/${t.p1n}, ambas marcam no 1.º período em ${t.p1Btts}/${t.p1n}` +
+      `, golos no 1.º período ${f1(t.p1For / t.p1n)} marcados / ${f1(t.p1Against / t.p1n)} sofridos`;
+  }
+  return s;
 }
 
-function buildPrompt(date: string, games: NhlGame[], form: Map<string, TeamForm>) {
+function buildPrompt(date: string, from: string, to: string, games: NhlGame[], form: Map<string, TeamRecent>, lg: LeagueRates) {
   const block = games
     .map((g) => {
       const tag = g.gameType === 1 ? " [PRÉ-ÉPOCA]" : g.gameType === 3 ? " [PLAYOFFS]" : "";
       return [
         `id=${g.id}${tag} | ${g.homeAbbr} (casa) vs ${g.awayAbbr} (fora) | ${g.startTimeUTC}`,
-        `  ${describeTeam(`CASA ${g.homeAbbr}`, form.get(g.homeAbbr), "casa")}`,
-        `  ${describeTeam(`FORA ${g.awayAbbr}`, form.get(g.awayAbbr), "fora")}`,
+        `  ${describeTeam(`CASA ${g.homeAbbr}`, form.get(g.homeAbbr))}`,
+        `  ${describeTeam(`FORA ${g.awayAbbr}`, form.get(g.awayAbbr))}`,
       ].join("\n");
     })
     .join("\n");
 
-  return `És o motor estatístico do NHL Tipsterz. Estima probabilidades para os jogos da NHL de ${date}.
+  const league =
+    lg.games >= 8
+      ? `Na janela (${lg.games} jogos terminados): ${f1(lg.regGoalsAvg)} golos por jogo em tempo regulamentar; casa venceu ${lg.homeWin}%; empate no tempo regulamentar ${lg.regTie}%; 5+ golos ${lg.over45}%; 6+ golos ${lg.over55}%; ` +
+        (lg.p1Games > 0 ? `2+ golos no 1.º período ${lg.p1Over15}%; ambas marcam no 1.º período ${lg.p1Btts}% (${lg.p1Games} jogos com dados do 1.º período).` : `sem dados do 1.º período.`)
+      : `Poucos jogos terminados na janela (${lg.games}) para calcular médias fiáveis. Referências típicas da liga: casa vence ~${LEAGUE_DEFAULTS.homeWin}%; empate no tempo regulamentar ~${LEAGUE_DEFAULTS.regTie}%; 2+ golos no 1.º período ~${LEAGUE_DEFAULTS.p1Over15}%; ambas marcam no 1.º período ~${LEAGUE_DEFAULTS.p1Btts}%; 5+ golos ~${LEAGUE_DEFAULTS.over45}%; 6+ golos ~${LEAGUE_DEFAULTS.over55}%.`;
+
+  return `És o motor estatístico do NHL Tipsterz. Estima probabilidades para os jogos da NHL de ${date}, com base APENAS na forma dos últimos ${WINDOW_DAYS} dias (de ${from} a ${to}).
 
 REGRAS:
-- Usa APENAS os dados fornecidos abaixo. Não inventes lesões, alinhamentos, guarda-redes nem resultados.
-- Se uma equipa não tem jogos disputados (início de época/pré-época), fica perto das médias da liga e diz isso no resumo; vantagem de jogar em casa ≈ 54%.
+- Usa só os dados fornecidos. Não inventes lesões, alinhamentos, guarda-redes nem resultados.
+- As amostras são pequenas (muitas equipas têm 0 a 4 jogos na janela). Quanto menos jogos, mais perto das médias da liga deves ficar; só te afastes bastante delas com sinais consistentes.
+- Jogos de pré-época contam, mas com menos peso do que jogos de época regular (alinhamentos experimentais).
+- Equipas sem jogos na janela: usa as médias da liga, com vantagem de casa.
 - Valores inteiros de 1 a 99 (percentagens).
-- Referências aproximadas da liga: vitória da casa ~54%; empate no tempo regulamentar ~23%; 2+ golos no 1º período ~55%; ambas marcam no 1º período ~30%; 5+ golos no jogo ~68%; 6+ golos no jogo ~50%.
-- analysisSummary: 1 a 2 frases em português de Portugal, baseadas só nos números fornecidos. Não menciones lesões.
+- analysisSummary: 1 a 2 frases em português de Portugal, baseadas só nos números fornecidos, a dizer o que pesou na estimativa (inclui referir quando a amostra é pequena). Não menciones lesões.
+
+MÉDIAS DA LIGA:
+${league}
 
 CAMPOS (por jogo):
 - winProbabilityHome: probabilidade de a equipa da casa vencer (inclui prolongamento/desempate).
-- over15P1Prob: probabilidade de haver 2 ou mais golos no 1º período.
-- bttsP1Prob: probabilidade de ambas as equipas marcarem no 1º período.
+- over15P1Prob: probabilidade de haver 2 ou mais golos no 1.º período.
+- bttsP1Prob: probabilidade de ambas as equipas marcarem no 1.º período.
 - drawTRProb: probabilidade de empate no tempo regulamentar (60 min).
 - over45Prob: probabilidade de 5 ou mais golos no jogo (tempo regulamentar).
 - over55Prob: probabilidade de 6 ou mais golos no jogo (tempo regulamentar).
@@ -239,7 +459,7 @@ async function askGroq(apiKey: string, prompt: string): Promise<any[]> {
         model: MODEL,
         response_format: { type: "json_object" },
         temperature: 0.1,
-                max_completion_tokens: 8000,
+        max_completion_tokens: 8000,
         reasoning_effort: "low",
         messages: [
           { role: "system", content: prompt },
@@ -264,7 +484,9 @@ async function askGroq(apiKey: string, prompt: string): Promise<any[]> {
 
 // ─── Montagem das previsões ──────────────────────────────────────────────────
 
-function buildPredictions(games: NhlGame[], form: Map<string, TeamForm>, ai: any[] | null) {
+const record = (t?: TeamRecent) => (t ? `${t.w}-${t.l}-${t.otl}` : "0-0-0");
+
+function buildPredictions(games: NhlGame[], form: Map<string, TeamRecent>, lg: LeagueRates, ai: any[] | null) {
   const byId = new Map<string, any>();
   for (const item of ai ?? []) if (item?.id != null) byId.set(String(item.id), item);
 
@@ -273,7 +495,7 @@ function buildPredictions(games: NhlGame[], form: Map<string, TeamForm>, ai: any
   const predictions: Prediction[] = games.map((g) => {
     const home = form.get(g.homeAbbr);
     const away = form.get(g.awayAbbr);
-    const base = baseline(home, away);
+    const base = baseline(home, away, lg);
     const a = byId.get(String(g.id));
     if (a) aiCount++;
 
@@ -283,10 +505,10 @@ function buildPredictions(games: NhlGame[], form: Map<string, TeamForm>, ai: any
       id: String(g.id),
       homeTeam: g.homeName,
       homeTeamAbbr: g.homeAbbr,
-      homeRecordL10: home?.l10 ?? "0-0-0",
+      homeRecordL10: record(home),
       awayTeam: g.awayName,
       awayTeamAbbr: g.awayAbbr,
-      awayRecordL10: away?.l10 ?? "0-0-0",
+      awayRecordL10: record(away),
       dateTime: g.startTimeUTC,
       winProbabilityHome: winHome,
       winProbabilityAway: 100 - winHome,
@@ -298,7 +520,7 @@ function buildPredictions(games: NhlGame[], form: Map<string, TeamForm>, ai: any
       analysisSummary:
         typeof a?.analysisSummary === "string" && a.analysisSummary.trim()
           ? a.analysisSummary.trim()
-          : "Estimativa base a partir da classificação (sem análise de IA para este jogo).",
+          : "Estimativa base a partir da forma dos últimos 7 dias (sem análise de IA para este jogo).",
       injuries: { home: [], away: [] },
     };
   });
@@ -319,11 +541,12 @@ async function readCache(date: string): Promise<AnalysisPayload | null> {
   }
 }
 
+/** Limpa as análises em cache (qualquer versão). Os golos do 1.º período de jogos antigos ficam, porque nunca mudam. */
 async function clearCache(): Promise<number> {
   let cursor = "0";
   let removed = 0;
   for (let i = 0; i < 20; i++) {
-    const r = await redis.scan(cursor, `${CACHE_PREFIX}*`, 100);
+    const r = await redis.scan(cursor, "nhl:analysis:*", 100);
     if (!r) break;
     cursor = r[0];
     for (const key of r[1]) {
@@ -365,8 +588,16 @@ export async function POST(req: Request) {
       });
     }
 
-    const form = await fetchForm();
+    // Forma dos últimos 7 dias
+    const from = addDays(date, -WINDOW_DAYS);
+    const to = addDays(date, -1);
+    const { games: recent, failedDays } = await fetchFinishedGames(date);
+    await enrichFirstPeriod(recent);
+    const form = aggregateTeams(recent);
+    const lg = leagueRates(recent);
+    const preseasonGames = recent.filter((g) => g.gameType === 1).length;
 
+    // IA
     let ai: any[] | null = null;
     let aiError: string | null = null;
     const apiKey = process.env.GROQ_API_KEY;
@@ -375,15 +606,19 @@ export async function POST(req: Request) {
       aiError = "GROQ_API_KEY não configurada na Vercel.";
     } else {
       try {
-        ai = await askGroq(apiKey, buildPrompt(date, games, form));
+        ai = await askGroq(apiKey, buildPrompt(date, from, to, games, form, lg));
       } catch (e: any) {
         aiError = e?.message || "Erro na IA.";
         console.error("[gemini] Groq falhou:", aiError);
       }
     }
 
-    const { predictions, aiCount } = buildPredictions(games, form, ai);
+    const { predictions, aiCount } = buildPredictions(games, form, lg, ai);
     const usedAi = aiCount > 0;
+
+    const notes: string[] = [];
+    if (aiError) notes.push(`IA indisponível (${aiError}). A mostrar estimativas base.`);
+    if (failedDays > 0) notes.push(`Falhou a leitura de ${failedDays} dia(s) da janela de 7 dias.`);
 
     const payload: AnalysisPayload = {
       predictions,
@@ -391,12 +626,13 @@ export async function POST(req: Request) {
       meta: {
         source: usedAi ? "ai" : "baseline",
         games: predictions.length,
-        ...(aiError ? { note: `IA indisponível (${aiError}). A mostrar estimativas base.` } : {}),
+        window: { from, to, gamesUsed: recent.length, preseasonGames },
+        ...(notes.length ? { note: notes.join(" ") } : {}),
       },
     };
 
-    // Só guardamos em cache resultados com IA, para não "congelar" estimativas base durante 8h.
-    if (usedAi && aiCount === games.length) {
+    // Só guardamos em cache resultados completos com IA e sem falhas de leitura.
+    if (usedAi && aiCount === games.length && failedDays === 0) {
       await redis.setPx(`${CACHE_PREFIX}${date}`, JSON.stringify(payload), CACHE_TTL_MS);
     }
 
