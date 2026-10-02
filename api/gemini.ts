@@ -17,17 +17,15 @@ const CACHE_TTL_MS = 8 * 60 * 60 * 1000;
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
+    const body = await req.json().catch(() => ({}));
     const selectedDate = body.selectedDate || body.date || "2026-10-02";
     const forceRefresh = body.force === true;
 
-    // Se o botão de refresh foi clicado, limpa a cache desta data específica
     if (forceRefresh) {
       console.log(`[CACHE CLEARED] A limpar cache manualmente para a data: ${selectedDate}`);
       predictionCache.delete(selectedDate);
     }
 
-    // Verificar se existe cache válida (se não for forceRefresh)
     const cachedEntry = predictionCache.get(selectedDate);
     const now = Date.now();
     if (!forceRefresh && cachedEntry && (now - cachedEntry.timestamp < CACHE_TTL_MS)) {
@@ -46,13 +44,11 @@ export async function POST(req: Request) {
       );
     }
 
-    // Ir buscar os jogos reais à API oficial da NHL
     let nhlGamesData: any = null;
     try {
       const nhlRes = await fetch(`https://api-web.nhle.com/v1/schedule/${selectedDate}`);
       if (nhlRes.ok) {
-        nhlResData = await nhlRes.json();
-        nhlGamesData = nhlResData;
+        nhlGamesData = await nhlRes.json();
       }
     } catch (e) {
       console.error("Erro ao contactar a API da NHL", e);
@@ -60,7 +56,6 @@ export async function POST(req: Request) {
 
     let gamesForDate = nhlGamesData?.gameWeek?.find((gw: any) => gw.date === selectedDate)?.games || [];
 
-    // Salvaguarda para 30-09 (garantir os 3 jogos oficiais se a API da NHL falhar)
     if (selectedDate === "2026-09-30" && gamesForDate.length < 3) {
       gamesForDate = [
         { homeTeam: { commonName: { default: "Flyers" }, abbrev: "PHI" }, awayTeam: { commonName: { default: "Penguins" }, abbrev: "PIT" }, startTimeUTC: "2026-09-30T23:00:00Z" },
@@ -72,7 +67,7 @@ export async function POST(req: Request) {
     let gamesListText = "Nenhum jogo oficial encontrado para esta data.";
     if (gamesForDate.length > 0) {
       gamesListText = gamesForDate.map((g: any) => 
-        `- ${g.homeTeam.commonName.default} (${g.homeTeam.abbrev}) vs ${g.awayTeam.commonName.default} (${g.awayTeam.abbrev}) às ${g.startTimeUTC}`
+        `- ${g.homeTeam?.commonName?.default || g.homeTeam?.abbrev} (${g.homeTeam?.abbrev}) vs ${g.awayTeam?.commonName?.default || g.awayTeam?.abbrev} (${g.awayTeam?.abbrev}) às ${g.startTimeUTC}`
       ).join("\n");
     }
 
@@ -149,7 +144,6 @@ REGRAS OBRIGATÓRIAS DE ESTRUTURAÇÃO:
       parsedContent = { predictions: [], suggestions: {} };
     }
 
-    // Guardar na cache
     predictionCache.set(selectedDate, {
       data: parsedContent,
       timestamp: Date.now(),
@@ -160,26 +154,25 @@ REGRAS OBRIGATÓRIAS DE ESTRUTURAÇÃO:
       headers: { "Content-Type": "application/json" },
     });
   } catch (error: any) {
+    console.error("Erro crítico na API route:", error);
     return new Response(
       JSON.stringify({ error: error?.message || "Erro no servidor." }),
-      { status: 500, headers: { "Content-Type": "application/json" }, }
+      { status: 500, headers: { "Content-Type": "application/json" } }
     );
   }
 }
 
-// ─── DELETE: Limpar toda a cache global ao carregar no botão de refresh ───
 export async function DELETE() {
   try {
     predictionCache.clear();
-    console.log("[CACHE GLOBAL CLEARED] Toda a cache de previsões foi limpa com sucesso.");
-
+    console.log("[CACHE GLOBAL CLEARED] Toda a cache foi limpa.");
     return new Response(
-      JSON.stringify({ success: true, message: "Histórico e cache limpos com sucesso!" }),
+      JSON.stringify({ success: true, message: "Cache limpa!" }),
       { status: 200, headers: { "Content-Type": "application/json" } }
     );
   } catch (error: any) {
     return new Response(
-      JSON.stringify({ success: false, error: error?.message || "Erro ao limpar a cache." }),
+      JSON.stringify({ success: false, error: error?.message }),
       { status: 500, headers: { "Content-Type": "application/json" } }
     );
   }
