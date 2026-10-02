@@ -162,3 +162,21 @@ REGRAS:
     );
   }
 }
+
+// ─── DELETE: Limpar toda a cache global ao carregar no botão de refresh ───
+export async function DELETE() {
+  try {
+    predictionCache.clear();
+    console.log("[CACHE GLOBAL CLEARED] Toda a cache de previsões foi limpa com sucesso.");
+
+    return new Response(
+      JSON.stringify({ success: true, message: "Histórico e cache limpos com sucesso!" }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
+  } catch (error: any) {
+    return new Response(
+      JSON.stringify({ success: false, error: error?.message || "Erro ao limpar a cache." }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
+    );
+  }
+}
