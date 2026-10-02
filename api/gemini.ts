@@ -17,6 +17,10 @@ const CACHE_PREFIX = "nhl:analysis:v2:";
 const CACHE_TTL_MS = 8 * 60 * 60 * 1000; // 8 horas
 const GAME_CACHE_PREFIX = "nhl:game:v1:"; // golos do 1.º período de jogos já terminados (nunca mudam)
 const GAME_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const ESPN_INJURIES_URL = "https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/injuries";
+const INJURY_CACHE_KEY = "nhl:injuries:v1";
+const INJURY_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutos
+const MAX_INJURIES_PER_TEAM = 8;
 const MAX_PBP_FETCHES = 80;
 const PBP_BATCH = 10;
 
@@ -106,6 +110,7 @@ type AnalysisPayload = {
     source: "ai" | "baseline";
     games: number;
     window?: { from: string; to: string; gamesUsed: number; preseasonGames: number };
+    injuries?: { source: "espn" | "unavailable"; teams: number };
     note?: string;
   };
 };
@@ -382,6 +387,86 @@ function baseline(home: TeamRecent | undefined, away: TeamRecent | undefined, lg
   };
 }
 
+// ─── Lesões (ESPN, não oficial) ──────────────────────────────────────────────
+// A API da NHL não tem lesões. A ESPN publica-as num endpoint público sem chave.
+// Se o formato mudar ou a fonte falhar, a UI mostra "Sem dados de lesões" em vez de inventar.
+
+type InjuryMap = Map<string, string[]>;
+
+const normName = (s: string) =>
+  s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+async function fetchInjuries(): Promise<InjuryMap | null> {
+  const cached = await redis.get(INJURY_CACHE_KEY);
+  if (cached) {
+    try {
+      return new Map(Object.entries(JSON.parse(cached) as Record<string, string[]>));
+    } catch {
+      /* ignora cache inválida */
+    }
+  }
+
+  try {
+    const res = await fetchWithTimeout(ESPN_INJURIES_URL, {}, 6000);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const teams = Array.isArray(data?.injuries) ? data.injuries : [];
+
+    const out: Record<string, string[]> = {};
+    for (const t of teams) {
+      const name = normName(String(t?.displayName ?? t?.team?.displayName ?? ""));
+      if (!name) continue;
+
+      const rows: { text: string; goalie: boolean }[] = [];
+      for (const i of Array.isArray(t?.injuries) ? t.injuries : []) {
+        const player = String(i?.athlete?.displayName ?? i?.athlete?.fullName ?? "").trim();
+        if (!player) continue;
+        const pos = String(i?.athlete?.position?.abbreviation ?? i?.athlete?.position?.name ?? "").trim();
+        const status = String(i?.status ?? i?.type?.description ?? "").trim();
+        const body = String(i?.details?.type ?? i?.details?.detail ?? i?.details?.location ?? "").trim();
+        const tag = [pos, status].filter(Boolean).join(", ");
+        rows.push({
+          text: `${player}${tag ? ` (${tag})` : ""}${body ? ` – ${body}` : ""}`,
+          goalie: pos.toUpperCase() === "G",
+        });
+      }
+      rows.sort((a, b) => Number(b.goalie) - Number(a.goalie)); // guarda-redes primeiro
+      out[name] = rows.slice(0, MAX_INJURIES_PER_TEAM).map((r) => r.text);
+    }
+
+    if (Object.keys(out).length === 0) return null;
+    await redis.setPx(INJURY_CACHE_KEY, JSON.stringify(out), INJURY_CACHE_TTL_MS);
+    return new Map(Object.entries(out));
+  } catch (e) {
+    console.error("[gemini] lesões (ESPN) falhou:", e);
+    return null;
+  }
+}
+
+function injuriesFor(map: InjuryMap | null, fullName: string): string[] {
+  if (!map) return ["Sem dados de lesões (fonte indisponível)"];
+  const n = normName(fullName);
+  const exact = map.get(n);
+  if (exact) return exact;
+  // Fallback: mesma última palavra do nome (ex.: "Wings", "Leafs"), só se for inequívoco.
+  const last = n.split(" ").pop();
+  const hits = [...map.entries()].filter(([k]) => k.split(" ").pop() === last);
+  return hits.length === 1 ? hits[0][1] : [];
+}
+
+function withInjuries(predictions: Prediction[], map: InjuryMap | null): Prediction[] {
+  return predictions.map((p) => ({
+    ...p,
+    injuries: { home: injuriesFor(map, p.homeTeam), away: injuriesFor(map, p.awayTeam) },
+  }));
+}
+
 // ─── Groq ────────────────────────────────────────────────────────────────────
 
 const f1 = (n: number) => n.toFixed(1);
@@ -403,14 +488,27 @@ function describeTeam(label: string, t?: TeamRecent) {
   return s;
 }
 
-function buildPrompt(date: string, from: string, to: string, games: NhlGame[], form: Map<string, TeamRecent>, lg: LeagueRates) {
+function buildPrompt(
+  date: string,
+  from: string,
+  to: string,
+  games: NhlGame[],
+  form: Map<string, TeamRecent>,
+  lg: LeagueRates,
+  inj: InjuryMap | null
+) {
+  const injLine = (name: string) => {
+    if (!inj) return "";
+    const list = injuriesFor(inj, name);
+    return list.length ? `\n    Lesões (ESPN): ${list.join("; ")}` : "";
+  };
   const block = games
     .map((g) => {
       const tag = g.gameType === 1 ? " [PRÉ-ÉPOCA]" : g.gameType === 3 ? " [PLAYOFFS]" : "";
       return [
         `id=${g.id}${tag} | ${g.homeAbbr} (casa) vs ${g.awayAbbr} (fora) | ${g.startTimeUTC}`,
-        `  ${describeTeam(`CASA ${g.homeAbbr}`, form.get(g.homeAbbr))}`,
-        `  ${describeTeam(`FORA ${g.awayAbbr}`, form.get(g.awayAbbr))}`,
+        `  ${describeTeam(`CASA ${g.homeAbbr}`, form.get(g.homeAbbr))}${injLine(g.homeName)}`,
+        `  ${describeTeam(`FORA ${g.awayAbbr}`, form.get(g.awayAbbr))}${injLine(g.awayName)}`,
       ].join("\n");
     })
     .join("\n");
@@ -424,12 +522,12 @@ function buildPrompt(date: string, from: string, to: string, games: NhlGame[], f
   return `És o motor estatístico do NHL Tipsterz. Estima probabilidades para os jogos da NHL de ${date}, com base APENAS na forma dos últimos ${WINDOW_DAYS} dias (de ${from} a ${to}).
 
 REGRAS:
-- Usa só os dados fornecidos. Não inventes lesões, alinhamentos, guarda-redes nem resultados.
+- Usa só os dados fornecidos. Não inventes lesões, alinhamentos, guarda-redes nem resultados. Se houver lesões listadas (fonte ESPN, podem estar desatualizadas), podes referi-las, sobretudo as de guarda-redes; não acrescentes outras.
 - As amostras são pequenas (muitas equipas têm 0 a 4 jogos na janela). Quanto menos jogos, mais perto das médias da liga deves ficar; só te afastes bastante delas com sinais consistentes.
 - Jogos de pré-época contam, mas com menos peso do que jogos de época regular (alinhamentos experimentais).
 - Equipas sem jogos na janela: usa as médias da liga, com vantagem de casa.
 - Valores inteiros de 1 a 99 (percentagens).
-- analysisSummary: 1 a 2 frases em português de Portugal, baseadas só nos números fornecidos, a dizer o que pesou na estimativa (inclui referir quando a amostra é pequena). Não menciones lesões.
+- analysisSummary: 1 a 2 frases em português de Portugal, baseadas só nos números fornecidos, a dizer o que pesou na estimativa (inclui referir quando a amostra é pequena).
 
 MÉDIAS DA LIGA:
 ${league}
@@ -568,9 +666,19 @@ export async function POST(req: Request) {
 
     if (!isDate(date)) return json({ message: "Data inválida (usa YYYY-MM-DD)." }, 400);
 
+    // Lesões (cache curta própria, para não ficarem presas nas 8h da cache da análise)
+    const injuries = await fetchInjuries();
+    const injMeta = { source: injuries ? ("espn" as const) : ("unavailable" as const), teams: injuries?.size ?? 0 };
+
     if (!force) {
       const cached = await readCache(date);
-      if (cached) return json({ ...cached, meta: { ...cached.meta, cached: true } });
+      if (cached) {
+        return json({
+          ...cached,
+          predictions: withInjuries(cached.predictions, injuries),
+          meta: { ...cached.meta, injuries: injMeta, cached: true },
+        });
+      }
     }
 
     let games: NhlGame[];
@@ -606,18 +714,21 @@ export async function POST(req: Request) {
       aiError = "GROQ_API_KEY não configurada na Vercel.";
     } else {
       try {
-        ai = await askGroq(apiKey, buildPrompt(date, from, to, games, form, lg));
+        ai = await askGroq(apiKey, buildPrompt(date, from, to, games, form, lg, injuries));
       } catch (e: any) {
         aiError = e?.message || "Erro na IA.";
         console.error("[gemini] Groq falhou:", aiError);
       }
     }
 
-    const { predictions, aiCount } = buildPredictions(games, form, lg, ai);
+    const built = buildPredictions(games, form, lg, ai);
+    const aiCount = built.aiCount;
+    const predictions = withInjuries(built.predictions, injuries);
     const usedAi = aiCount > 0;
 
     const notes: string[] = [];
     if (aiError) notes.push(`IA indisponível (${aiError}). A mostrar estimativas base.`);
+    if (!injuries) notes.push("Lesões indisponíveis (fonte ESPN sem resposta ou com formato inesperado).");
     if (failedDays > 0) notes.push(`Falhou a leitura de ${failedDays} dia(s) da janela de 7 dias.`);
 
     const payload: AnalysisPayload = {
@@ -627,6 +738,7 @@ export async function POST(req: Request) {
         source: usedAi ? "ai" : "baseline",
         games: predictions.length,
         window: { from, to, gamesUsed: recent.length, preseasonGames },
+        injuries: injMeta,
         ...(notes.length ? { note: notes.join(" ") } : {}),
       },
     };
