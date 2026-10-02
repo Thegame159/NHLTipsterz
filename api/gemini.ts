@@ -75,15 +75,15 @@ export async function POST(req: Request) {
       ).join("\n");
     }
 
-    const systemPrompt = `És o motor estatístico do NHL Tipsterz.
-A tua tarefa é analisar exclusivamente os jogos REAIS da NHL fornecidos abaixo para a data ${selectedDate}.
+    const systemPrompt = `És o motor estatístico e analítico do NHL Tipsterz.
+A tua tarefa é analisar os jogos REAIS da NHL fornecidos abaixo para a data ${selectedDate}.
 
 JOGOS OFICIAIS DA NHL PARA ESTA DATA:
 ${gamesListText}
 
-REGRAS:
-1. Se a lista indicar que não há jogos, devolve "predictions": []. Caso contrário, gera as previsões para cada confronto listado.
-2. Inclui obrigatoriamente relatórios de lesões realistas (homeInjuries e awayInjuries) com os jogadores ausentes/lesionados conhecidos para cada equipa (ou ["Sem lesões significativas"] se não houver registo).
+REGRAS OBRIGATÓRIAS:
+1. Se a lista indicar que não há jogos, devolve "predictions": []. Caso contrário, gera as previsões para cada confronto.
+2. **LESÕES (MUITO IMPORTANTE):** Deves preencher obrigatoriamente os campos "homeInjuries" e "awayInjuries" com jogadores ausentes, lesionados ou em dúvida conhecidos para cada equipa (ex: nomes reais de jogadores importantes lesionados ou em dúvida, ou "Gestão de plantel / Sem lesões graves"). NUNCA deixes isto vazio ou apenas com "Sem lesões significativas" se houver ausências habituais na equipa.
 3. Responde EXCLUSIVAMENTE num único objeto JSON válido seguindo exatamente esta estrutura:
 {
   "predictions": [
@@ -103,8 +103,8 @@ REGRAS:
       "homeRecordL10": "5-4-1",
       "awayRecordL10": "6-3-1",
       "analysisSummary": "Resumo analítico...",
-      "homeInjuries": ["Jogador A (Lesão)"],
-      "awayInjuries": ["Jogador B (Dúvida)"]
+      "homeInjuries": ["Nome do Jogador (Lesão no Joelho)", "Outro Jogador (Dúvida)"],
+      "awayInjuries": ["Nome do Jogador (Concussão)"]
     }
   ],
   "suggestions": {
