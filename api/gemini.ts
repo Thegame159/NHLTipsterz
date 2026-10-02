@@ -51,7 +51,8 @@ export async function POST(req: Request) {
     try {
       const nhlRes = await fetch(`https://api-web.nhle.com/v1/schedule/${selectedDate}`);
       if (nhlRes.ok) {
-        nhlGamesData = await nhlRes.json();
+        nhlResData = await nhlRes.json();
+        nhlGamesData = nhlResData;
       }
     } catch (e) {
       console.error("Erro ao contactar a API da NHL", e);
@@ -81,9 +82,12 @@ A tua tarefa é analisar os jogos REAIS da NHL fornecidos abaixo para a data ${s
 JOGOS OFICIAIS DA NHL PARA ESTA DATA:
 ${gamesListText}
 
-REGRAS OBRIGATÓRIAS:
+REGRAS OBRIGATÓRIAS DE ESTRUTURAÇÃO:
 1. Se a lista indicar que não há jogos, devolve "predictions": []. Caso contrário, gera as previsões para cada confronto.
-2. **LESÕES (MUITO IMPORTANTE):** Deves preencher obrigatoriamente os campos "homeInjuries" e "awayInjuries" com jogadores ausentes, lesionados ou em dúvida conhecidos para cada equipa (ex: nomes reais de jogadores importantes lesionados ou em dúvida, ou "Gestão de plantel / Sem lesões graves"). NUNCA deixes isto vazio ou apenas com "Sem lesões significativas" se houver ausências habituais na equipa.
+2. **CAMPOS DE LESÕES (OBRIGATÓRIO):** 
+   - Os campos "homeInjuries" e "awayInjuries" **DEVEM OBRIGATORIAMENTE** ser arrays de strings preenchidos com os jogadores lesionados ou em dúvida para cada equipa (ex: ["Moritz Seider (Entorse no tornozelo)", "Filip Hronek (Concussão)"]). 
+   - **NUNCA** deixes estes arrays vazios `[]` nem ponhas apenas "Sem lesões registadas" se houver ausências habituais. Se não houver lesões conhecidas, coloca pelo menos `["Gestão de plantel / Sem lesões graves"]`.
+   - Certifica-te de que os jogadores mencionados no resumo analítico ("analysisSummary") constam também nos arrays "homeInjuries" e "awayInjuries".
 3. Responde EXCLUSIVAMENTE num único objeto JSON válido seguindo exatamente esta estrutura:
 {
   "predictions": [
@@ -102,9 +106,9 @@ REGRAS OBRIGATÓRIAS:
       "over45Prob": 80,
       "homeRecordL10": "5-4-1",
       "awayRecordL10": "6-3-1",
-      "analysisSummary": "Resumo analítico...",
-      "homeInjuries": ["Nome do Jogador (Lesão no Joelho)", "Outro Jogador (Dúvida)"],
-      "awayInjuries": ["Nome do Jogador (Concussão)"]
+      "analysisSummary": "Resumo analítico detalhado...",
+      "homeInjuries": ["Jogador A (Tipo de Lesão)", "Jogador B (Dúvida)"],
+      "awayInjuries": ["Jogador C (Lesão)"]
     }
   ],
   "suggestions": {
@@ -129,7 +133,7 @@ REGRAS OBRIGATÓRIAS:
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: `Analisa os jogos da jornada de ${selectedDate}.` }
+          { role: "user", content: `Analisa os jogos da jornada de ${selectedDate} e garante que preenches corretamente os arrays de lesões de cada equipa.` }
         ],
         temperature: 0.1,
       }),
