@@ -1,14 +1,7 @@
 // api/gemini.ts
 
-type GroqChatResponse = {
-  choices?: Array<{
-    message?: {
-      content?: string;
-    };
-  }>;
-  error?: {
-    message?: string;
-  };
+export const config = {
+  runtime: 'edge', // Usar o Edge Runtime para evitar limitações de Serverless Functions na Vercel
 };
 
 const predictionCache = new Map<string, { data: any; timestamp: number }>();
@@ -21,14 +14,12 @@ export async function POST(req: Request) {
     const forceRefresh = body.force === true;
 
     if (forceRefresh) {
-      console.log(`[CACHE CLEARED] A limpar cache manualmente para a data: ${selectedDate}`);
       predictionCache.delete(selectedDate);
     }
 
     const cachedEntry = predictionCache.get(selectedDate);
     const now = Date.now();
     if (!forceRefresh && cachedEntry && (now - cachedEntry.timestamp < CACHE_TTL_MS)) {
-      console.log(`[CACHE HIT] A retornar dados em cache para a data: ${selectedDate}`);
       return new Response(JSON.stringify(cachedEntry.data), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -43,17 +34,16 @@ export async function POST(req: Request) {
       );
     }
 
-    let nhlGamesData: any = null;
+    let gamesForDate = [];
     try {
       const nhlRes = await fetch(`https://api-web.nhle.com/v1/schedule/${selectedDate}`);
       if (nhlRes.ok) {
-        nhlGamesData = await nhlRes.json();
+        const nhlData = await nhlRes.json();
+        gamesForDate = nhlData?.gameWeek?.find((gw: any) => gw.date === selectedDate)?.games || [];
       }
     } catch (e) {
-      console.error("Erro ao contactar a API da NHL", e);
+      console.error("Erro na API da NHL", e);
     }
-
-    let gamesForDate = nhlGamesData?.gameWeek?.find((gw: any) => gw.date === selectedDate)?.games || [];
 
     if (selectedDate === "2026-09-30" && gamesForDate.length < 3) {
       gamesForDate = [
@@ -70,19 +60,15 @@ export async function POST(req: Request) {
       ).join("\n");
     }
 
-    const systemPrompt = `És o motor estatístico e analítico do NHL Tipsterz.
-A tua tarefa é analisar os jogos REAIS da NHL fornecidos abaixo para a data ${selectedDate}.
+    const systemPrompt = `És o motor estatístico e analítico do NHL Tipsterz. Analisa os jogos REAIS da NHL para a data ${selectedDate}.
 
-JOGOS OFICIAIS DA NHL PARA ESTA DATA:
+JOGOS OFICIAIS:
 ${gamesListText}
 
-REGRAS OBRIGATÓRIAS DE ESTRUTURAÇÃO:
-1. Se a lista indicar que não há jogos, devolve "predictions": []. Caso contrário, gera as previsões para cada confronto.
-2. **CAMPOS DE LESÕES (OBRIGATÓRIO):** 
-   - Os campos "homeInjuries" e "awayInjuries" **DEVEM OBRIGATORIAMENTE** ser arrays de strings preenchidos com os jogadores lesionados ou em dúvida para cada equipa (ex: ["Moritz Seider (Entorse no tornozelo)", "Filip Hronek (Concussão)"]). 
-   - **NUNCA** deixes estes arrays vazios `[]` nem ponhas apenas "Sem lesões registadas" se houver ausências habituais. Se não houver lesões conhecidas, coloca pelo menos `["Gestão de plantel / Sem lesões graves"]`.
-   - Certifica-te de que os jogadores mencionados no resumo analítico ("analysisSummary") constam também nos arrays "homeInjuries" e "awayInjuries".
-3. Responde EXCLUSIVAMENTE num único objeto JSON válido seguindo exatamente esta estrutura:
+REGRAS:
+1. Devolve as previsões para cada jogo listado.
+2. Os campos "homeInjuries" e "awayInjuries" DEVEM ser arrays de strings com lesões reais ou prováveis (ex: ["Jogador (Lesão)"]). Nunca deixes vazio; se não houver dados, coloca ["Sem lesões graves"].
+3. Responde EXCLUSIVAMENTE em formato JSON com esta estrutura exata:
 {
   "predictions": [
     {
@@ -100,9 +86,9 @@ REGRAS OBRIGATÓRIAS DE ESTRUTURAÇÃO:
       "over45Prob": 80,
       "homeRecordL10": "5-4-1",
       "awayRecordL10": "6-3-1",
-      "analysisSummary": "Resumo analítico detalhado...",
-      "homeInjuries": ["Jogador A (Tipo de Lesão)", "Jogador B (Dúvida)"],
-      "awayInjuries": ["Jogador C (Lesão)"]
+      "analysisSummary": "Resumo analítico detalhado com menção a lesões...",
+      "homeInjuries": ["Jogador A (Lesão)"],
+      "awayInjuries": ["Jogador B (Dúvida)"]
     }
   ],
   "suggestions": {
@@ -116,35 +102,29 @@ REGRAS OBRIGATÓRIAS DE ESTRUTURAÇÃO:
   "lastUpdated": "${new Date().toISOString()}"
 }`;
 
-    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "llama-3.3-70b-versatile", // Modelo oficial e estável da Groq
+        model: "llama-3.3-70b-versatile",
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: `Analisa os jogos da jornada de ${selectedDate} e preenche os arrays de lesões de cada equipa de forma detalhada.` }
+          { role: "user", content: `Gera a análise para ${selectedDate}.` }
         ],
         temperature: 0.1,
       }),
     });
 
-    const data = (await res.json()) as GroqChatResponse;
-    
-    if (data.error) {
-      console.error("Erro devolvido pela API da Groq:", data.error);
-      return new Response(JSON.stringify({ error: data.error.message || "Erro na API da Groq" }), {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      });
+    const groqData = await groqRes.json();
+    if (!groqRes.ok) {
+      throw new Error(groqData?.error?.message || "Erro na API da Groq");
     }
 
-    const outputText = data.choices?.[0]?.message?.content || "{}";
-
+    const outputText = groqData.choices?.[0]?.message?.content || "{}";
     let parsedContent;
     try {
       parsedContent = JSON.parse(outputText);
@@ -162,26 +142,17 @@ REGRAS OBRIGATÓRIAS DE ESTRUTURAÇÃO:
       headers: { "Content-Type": "application/json" },
     });
   } catch (error: any) {
-    console.error("Erro crítico na API route:", error);
     return new Response(
-      JSON.stringify({ error: error?.message || "Erro no servidor." }),
+      JSON.stringify({ error: error?.message || "Erro interno no servidor." }),
       { status: 500, headers: { "Content-Type": "application/json" } }
     );
   }
 }
 
 export async function DELETE() {
-  try {
-    predictionCache.clear();
-    console.log("[CACHE GLOBAL CLEARED] Toda a cache foi limpa.");
-    return new Response(
-      JSON.stringify({ success: true, message: "Cache limpa!" }),
-      { status: 200, headers: { "Content-Type": "application/json" } }
-    );
-  } catch (error: any) {
-    return new Response(
-      JSON.stringify({ success: false, error: error?.message }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
-    );
-  }
+  predictionCache.clear();
+  return new Response(
+    JSON.stringify({ success: true, message: "Cache limpa!" }),
+    { status: 200, headers: { "Content-Type": "application/json" } }
+  );
 }
