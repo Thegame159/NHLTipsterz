@@ -33,12 +33,6 @@ const toDateStringLocal = (d: Date): string => {
   return `${yyyy}-${mm}-${dd}`;
 };
 
-const getYesterdayString = (): string => {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  return toDateStringLocal(d);
-};
-
 // ─── App ─────────────────────────────────────────────────────────────────────
 
 const App: React.FC = () => {
@@ -48,7 +42,8 @@ const App: React.FC = () => {
   const [loadingMsgIdx, setLoadingMsgIdx] = useState(0);
   const [error, setError]             = useState<string | null>(null);
   const [activeTab, setActiveTab]     = useState<Tab>('schedule');
-  const [selectedDate, setSelectedDate] = useState<string>(getYesterdayString());
+  // Inicializa com a data de hoje por predefinição
+  const [selectedDate, setSelectedDate] = useState<string>(toDateStringLocal(new Date()));
   const [loadedDate, setLoadedDate]   = useState<string>('');
 
   const requestIdRef = useRef(0);
@@ -177,7 +172,7 @@ const App: React.FC = () => {
     );
   }
 
-  // ─── Render principal ────────────────────────────────────────────────────────
+  // ─── Render principal ────────────────────────────────────────────────        
 
   const predictionsCount = data?.predictions?.length ?? 0;
 
