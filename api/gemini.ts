@@ -1,20 +1,9 @@
 // api/gemini.ts
 
-type GroqChatResponse = {
-  choices?: Array<{
-    message?: {
-      content?: string;
-    };
-  }>;
-  error?: {
-    message?: string;
-  };
-};
-
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const selectedDate = body.selectedDate || body.date || "2026-09-30";
+    const selectedDate = body.selectedDate || body.date || "2026-10-02";
 
     const apiKey = process.env.GROQ_API_KEY;
     if (!apiKey) {
@@ -24,24 +13,45 @@ export async function POST(req: Request) {
       );
     }
 
+    // 1. Ir buscar os jogos reais à API oficial da NHL para a data selecionada
+    let nhlGamesData: any = null;
+    try {
+      const nhlRes = await fetch(`https://api-web.nhle.com/v1/schedule/${selectedDate}`);
+      if (nhlRes.ok) {
+        nhlGamesData = await nhlRes.json();
+      }
+    } catch (e) {
+      console.error("Erro ao contactar a API da NHL", e);
+    }
+
+    // Extrair os jogos do dia da resposta da NHL
+    let gamesListText = "Nenhum jogo oficial encontrado para esta data na API da NHL.";
+    const gamesForDate = nhlGamesData?.gameWeek?.find((gw: any) => gw.date === selectedDate)?.games || [];
+
+    if (gamesForDate.length > 0) {
+      gamesListText = gamesForDate.map((g: any) => 
+        `- ${g.homeTeam.commonName.default} (${g.homeTeam.abbrev}) vs ${g.awayTeam.commonName.default} (${g.awayTeam.abbrev}) às ${g.startTimeUTC}`
+      ).join("\n");
+    }
+
+    // 2. Passar os jogos REAIS obtidos da API para o prompt da Groq analisar
     const systemPrompt = `És o motor estatístico do NHL Tipsterz.
-A tua tarefa é analisar exclusivamente os jogos REAIS e OFICIAIS da jornada da NHL para a data ${selectedDate}.
+A tua tarefa é analisar exclusivamente os jogos REAIS da NHL fornecidos abaixo para a data ${selectedDate}.
 
-REGRA FUNDAMENTAL DE JORNADA E FUSO HORÁRIO:
-1. Identifica os jogos oficiais da NHL agendados para a data ${selectedDate} (ou madrugada correspondente em Portugal).
-2. Se não houver jogos oficiais da NHL para esta data exata, devolve um array de previsões vazio ("predictions": []). NUNCA inventes jogos ou equipes que não joguem nesta data.
-3. Os horários em "dateTime" DEVEM situar-se preferencialmente entre as 22:00 de ${selectedDate} e as 06:00 da madrugada do dia seguinte (fuso de Portugal/WEST).
-4. Responde EXCLUSIVAMENTE num único objeto JSON válido, seguindo rigorosamente a estrutura abaixo.
+JOGOS OFICIAIS DA NHL PARA ESTA DATA:
+${gamesListText}
 
-ESTRUTURA JSON EXIGIDA:
+REGRA:
+Se a lista acima indicar que não há jogos, deves devolver "predictions": []. Se existirem jogos, gera as previsões estatísticas estritamente para esses confrontos, mantendo as abreviaturas corretas (homeTeamAbbr e awayTeamAbbr).
+Responde EXCLUSIVAMENTE num único objeto JSON válido com a estrutura:
 {
   "predictions": [
     {
       "id": "game-1",
-      "homeTeam": "Nome da Equipa da Casa (ex: Flyers)",
-      "awayTeam": "Nome da Equipa de Fora (ex: Penguins)",
-      "homeTeamAbbr": "PHI",
-      "awayTeamAbbr": "PIT",
+      "homeTeam": "Nome",
+      "awayTeam": "Nome",
+      "homeTeamAbbr": "ABC",
+      "awayTeamAbbr": "XYZ",
       "dateTime": "${selectedDate}T23:00:00Z",
       "winProbabilityHome": 50,
       "winProbabilityAway": 50,
@@ -49,9 +59,9 @@ ESTRUTURA JSON EXIGIDA:
       "bttsP1Prob": 30,
       "drawTRProb": 20,
       "over45Prob": 80,
-      "homeRecordL10": "0-0-0",
-      "awayRecordL10": "0-0-0",
-      "analysisSummary": "Breve resumo da análise para este encontro."
+      "homeRecordL10": "5-4-1",
+      "awayRecordL10": "6-3-1",
+      "analysisSummary": "Resumo analítico..."
     }
   ],
   "suggestions": {
@@ -76,21 +86,13 @@ ESTRUTURA JSON EXIGIDA:
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: `Gera a análise e probabilidades em JSON para os jogos da jornada NHL de ${selectedDate}.` }
+          { role: "user", content: `Analisa os jogos da jornada de ${selectedDate}.` }
         ],
         temperature: 0.1,
       }),
     });
 
-    const data = (await res.json()) as GroqChatResponse;
-
-    if (!res.ok || data.error) {
-      return new Response(
-        JSON.stringify({ error: data.error?.message || "Erro na API Groq." }),
-        { status: res.status || 500, headers: { "Content-Type": "application/json" } }
-      );
-    }
-
+    const data = await res.json();
     const outputText = data.choices?.[0]?.message?.content || "{}";
 
     let parsedContent;
