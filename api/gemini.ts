@@ -16,7 +16,7 @@ const MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
 const TEAM_GAMES = 7; // jogos recentes usados por equipa
 const LOOKBACK_DAYS = 21; // até onde se procuram esses jogos
 const PRESEASON_CUTOFF_DAY = 8; // a partir deste dia da época regular a pré-época deixa de contar
-const CACHE_PREFIX = "nhl:analysis:v4:";
+const CACHE_PREFIX = "nhl:analysis:v5:";
 const CACHE_TTL_MS = 8 * 60 * 60 * 1000; // 8 horas
 const GAME_CACHE_PREFIX = "nhl:game:v1:"; // golos do 1.º período de jogos já terminados (nunca mudam)
 const GAME_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -37,6 +37,9 @@ const MODEL_CFG = {
   regTieRate: 0.22, // empates ao fim dos 60 min (NHL 2016-17 a 2024-25: entre 20,5% e 23,5%)
   p1Share: 0.31, // fração dos golos que cai no 1.º período
   extraTimeHomeShare: 0.5, // quem vence o prolongamento/desempate: 50/50
+  // Cansaço (2.ª noite seguida): a equipa cansada marca menos e sofre mais. Efeito ~ -4 pontos na vitória
+  // (equipas cansadas contra descansadas ficam à volta de 45% dos pontos disputados).
+  backToBack: { ownGoals: -0.06, oppGoals: 0.035 },
 } as const;
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
@@ -125,6 +128,7 @@ type AnalysisPayload = {
     source: "model";
     games: number;
     window?: { from: string; to: string; gamesUsed: number; preseasonGames: number; regularSeasonDay: number; gamesPerTeam: number };
+    backToBack?: string[];
     injuries?: { source: "espn" | "unavailable"; teams: number };
     note?: string;
   };
@@ -486,12 +490,20 @@ function teamStrength(t: TeamRecent | undefined, mu: number) {
 
 const clamp01 = (x: number) => Math.min(0.99, Math.max(0.01, x));
 
-function gameModel(home: TeamRecent | undefined, away: TeamRecent | undefined, ctx: LeagueCtx) {
+function gameModel(
+  home: TeamRecent | undefined,
+  away: TeamRecent | undefined,
+  ctx: LeagueCtx,
+  tired: { home: boolean; away: boolean } = { home: false, away: false }
+) {
   const C = MODEL_CFG;
   const h = teamStrength(home, ctx.mu);
   const a = teamStrength(away, ctx.mu);
-  const lh = ctx.mu * (1 + C.homeEdge) * h.att * a.def;
-  const la = ctx.mu * (1 - C.homeEdge) * a.att * h.def;
+  const B2B = C.backToBack;
+  const lh =
+    ctx.mu * (1 + C.homeEdge) * h.att * a.def * (tired.home ? 1 + B2B.ownGoals : 1) * (tired.away ? 1 + B2B.oppGoals : 1);
+  const la =
+    ctx.mu * (1 - C.homeEdge) * a.att * h.def * (tired.away ? 1 + B2B.ownGoals : 1) * (tired.home ? 1 + B2B.oppGoals : 1);
   const m = rawMarkets(lh, la, ctx.share);
   const F = ctx.factors;
 
@@ -610,14 +622,23 @@ function describeTeam(label: string, t?: TeamRecent) {
 
 type Expected = { lh: number; la: number };
 
-function fallbackSummary(g: NhlGame, e: Expected, p: Prediction, home?: TeamRecent, away?: TeamRecent) {
+function fallbackSummary(
+  g: NhlGame,
+  e: Expected,
+  p: Prediction,
+  home?: TeamRecent,
+  away?: TeamRecent,
+  tired: { home: boolean; away: boolean } = { home: false, away: false }
+) {
   const homeFav = p.winProbabilityHome >= 50;
   const fav = homeFav ? g.homeAbbr : g.awayAbbr;
   const favP = homeFav ? p.winProbabilityHome : p.winProbabilityAway;
   if ((home?.gp ?? 0) + (away?.gp ?? 0) === 0) {
     return `Sem jogos recentes de ${g.homeAbbr} e ${g.awayAbbr}: estimativa pelas médias da liga e vantagem de jogar em casa (${fav} ${favP}%).`;
   }
+  const tiredNote = [tired.home ? g.homeAbbr : "", tired.away ? g.awayAbbr : ""].filter(Boolean);
   return (
+    (tiredNote.length ? `${tiredNote.join(" e ")} ${tiredNote.length > 1 ? "jogaram" : "jogou"} ontem (cansaço). ` : "") +
     `${fav} favorito (${favP}%). Golos esperados: ${g.homeAbbr} ${f1(e.lh)}, ${g.awayAbbr} ${f1(e.la)} ` +
     `(total ${f1(e.lh + e.la)}). Base: ${home?.gp ?? 0} jogo(s) de ${g.homeAbbr} e ${away?.gp ?? 0} de ${g.awayAbbr} nos seus últimos jogos.`
   );
@@ -629,8 +650,10 @@ function buildSummaryPrompt(
   predictions: Prediction[],
   expected: Map<string, Expected>,
   form: Map<string, TeamRecent>,
-  inj: InjuryMap | null
+  inj: InjuryMap | null,
+  tiredTeams: Set<string>
 ) {
+  const b2b = (abbr: string) => (tiredTeams.has(abbr) ? " | JOGOU ONTEM (2.ª noite seguida)" : "");
   const injLine = (name: string) => {
     if (!inj) return "";
     const list = injuriesFor(inj, name);
@@ -644,8 +667,8 @@ function buildSummaryPrompt(
       return [
         `id=${g.id} | ${g.homeAbbr} (casa) vs ${g.awayAbbr} (fora)`,
         `  Modelo: vitória casa ${p.winProbabilityHome}% / fora ${p.winProbabilityAway}%; empate aos 60 min ${p.drawTRProb}%; 2+ golos no 1.º período ${p.over15P1Prob}%; ambas marcam no 1.º período ${p.bttsP1Prob}%; 5+ golos ${p.over45Prob}%; 6+ golos ${p.over55Prob}%; golos esperados ${g.homeAbbr} ${f1(e.lh)} / ${g.awayAbbr} ${f1(e.la)}`,
-        `  ${describeTeam(`CASA ${g.homeAbbr}`, form.get(g.homeAbbr))}${injLine(g.homeName)}`,
-        `  ${describeTeam(`FORA ${g.awayAbbr}`, form.get(g.awayAbbr))}${injLine(g.awayName)}`,
+        `  ${describeTeam(`CASA ${g.homeAbbr}`, form.get(g.homeAbbr))}${b2b(g.homeAbbr)}${injLine(g.homeName)}`,
+        `  ${describeTeam(`FORA ${g.awayAbbr}`, form.get(g.awayAbbr))}${b2b(g.awayAbbr)}${injLine(g.awayName)}`,
       ].join("\n");
     })
     .join("\n");
@@ -654,7 +677,8 @@ function buildSummaryPrompt(
 
 A tua tarefa: para cada jogo, escrever "analysisSummary" com 1 a 2 frases diretas em português de Portugal:
 - diz quem é o favorito e o que o justifica, usando só os números fornecidos (golos marcados/sofridos, forma, golos esperados);
-- se houver lesões de guarda-redes listadas (fonte ESPN, podem estar desatualizadas), refere-as;
+- se uma equipa jogou ontem (2.ª noite seguida), refere o cansaço quando for relevante;
+- NÃO repitas a lista de lesões (já aparece por baixo do resumo); só menciona uma lesão de guarda-redes se for relevante para o jogo, e lembra que os números do modelo não a incluem;
 - não inventes lesões, alinhamentos nem resultados; sem avisos genéricos.
 
 JOGOS:
@@ -707,13 +731,14 @@ async function askGroqSummaries(apiKey: string, prompt: string): Promise<Map<str
 
 const record = (t?: TeamRecent) => (t ? `${t.w}-${t.l}-${t.otl}` : "0-0-0");
 
-function buildPredictions(games: NhlGame[], form: Map<string, TeamRecent>, ctx: LeagueCtx) {
+function buildPredictions(games: NhlGame[], form: Map<string, TeamRecent>, ctx: LeagueCtx, tiredTeams: Set<string>) {
   const expected = new Map<string, Expected>();
 
   const predictions: Prediction[] = games.map((g) => {
     const home = form.get(g.homeAbbr);
     const away = form.get(g.awayAbbr);
-    const m = gameModel(home, away, ctx);
+    const tired = { home: tiredTeams.has(g.homeAbbr), away: tiredTeams.has(g.awayAbbr) };
+    const m = gameModel(home, away, ctx, tired);
     const winHome = pct(m.pHome);
 
     const p: Prediction = {
@@ -737,7 +762,7 @@ function buildPredictions(games: NhlGame[], form: Map<string, TeamRecent>, ctx: 
     };
     const e = { lh: m.lh, la: m.la };
     expected.set(p.id, e);
-    p.analysisSummary = fallbackSummary(g, e, p, home, away);
+    p.analysisSummary = fallbackSummary(g, e, p, home, away, tired);
     return p;
   });
 
@@ -825,8 +850,14 @@ export async function POST(req: Request) {
     const from = used.length ? used.map((g) => g.date).sort()[0] : addDays(date, -LOOKBACK_DAYS);
     const to = addDays(date, -1);
 
+    // Equipas que jogaram ontem (2.ª noite seguida)
+    const yesterday = addDays(date, -1);
+    const tiredTeams = new Set(
+      allRecent.filter((g) => g.date === yesterday).flatMap((g) => [g.homeAbbr, g.awayAbbr])
+    );
+
     // Probabilidades: modelo estatístico (não dependem da IA)
-    const { predictions: modelPreds, expected } = buildPredictions(games, form, ctx);
+    const { predictions: modelPreds, expected } = buildPredictions(games, form, ctx, tiredTeams);
 
     // Resumos: IA (opcional). Se falhar, ficam os resumos automáticos.
     let aiError: string | null = null;
@@ -837,7 +868,7 @@ export async function POST(req: Request) {
       try {
         const summaries = await askGroqSummaries(
           apiKey,
-          buildSummaryPrompt(date, games, modelPreds, expected, form, injuries)
+          buildSummaryPrompt(date, games, modelPreds, expected, form, injuries, tiredTeams)
         );
         for (const p of modelPreds) {
           const text = summaries.get(p.id);
@@ -863,6 +894,7 @@ export async function POST(req: Request) {
         source: "model",
         games: predictions.length,
         window: { from, to, gamesUsed: used.length, preseasonGames, regularSeasonDay, gamesPerTeam: TEAM_GAMES },
+        backToBack: games.flatMap((g) => [g.homeAbbr, g.awayAbbr]).filter((t) => tiredTeams.has(t)),
         injuries: injMeta,
         ...(notes.length ? { note: notes.join(" ") } : {}),
       },
