@@ -2,7 +2,7 @@
 // Constrói as "Dicas" a partir das previsões que estão REALMENTE visíveis no ecrã,
 // para que as sugestões nunca falem de jogos que a aba "Jogos" não mostra.
 
-import type { GamePrediction, StrongPick, Suggestions } from "../types";
+import type { GamePrediction, StrongPick, Suggestions, WinCombo } from "../types";
 
 /** Limiares ajustáveis. */
 export const SUGGESTION_RULES = {
@@ -32,9 +32,40 @@ export const STRONG_RULES = {
   },
 } as const;
 
+/** Combo de vitórias: só é gerado com `minGames` ou mais jogos; usa os `legs` favoritos mais prováveis. */
+export const COMBO_RULES = { minGames: 5, legs: 4 };
+
 const pct = (n: number) => Math.round(Number.isFinite(n) ? n : 0);
 const matchup = (g: GamePrediction) => `${g.homeTeamAbbr} vs ${g.awayTeamAbbr}`;
 const byDesc = (f: (g: GamePrediction) => number) => (a: GamePrediction, b: GamePrediction) => f(b) - f(a);
+
+function buildWinCombo(games: GamePrediction[]): WinCombo | null {
+  if (games.length < COMBO_RULES.minGames) return null;
+
+  const legs = games
+    .map((g) => {
+      const homeFav = g.winProbabilityHome >= g.winProbabilityAway;
+      return {
+        team: homeFav ? g.homeTeamAbbr : g.awayTeamAbbr,
+        game: matchup(g),
+        home: g.homeTeamAbbr,
+        away: g.awayTeamAbbr,
+        prob: pct(homeFav ? g.winProbabilityHome : g.winProbabilityAway),
+      };
+    })
+    .sort((a, b) => b.prob - a.prob)
+    .slice(0, COMBO_RULES.legs);
+
+  // Jogos independentes: a probabilidade da combinada é o produto das probabilidades de cada perna.
+  const combined = legs.reduce((acc, l) => acc * (l.prob / 100), 1);
+  if (!(combined > 0)) return null;
+
+  return {
+    legs,
+    combinedProb: Math.round(combined * 1000) / 10, // 1 casa decimal, em %
+    fairOdds: Math.round((1 / combined) * 100) / 100,
+  };
+}
 
 function buildStrongPicks(games: GamePrediction[]): StrongPick[] {
   const M = STRONG_RULES.markets;
@@ -113,5 +144,6 @@ export function buildSuggestions(predictions: GamePrediction[]): Suggestions {
     quadrupleOver45,
     over55Suggestions,
     strongPicks: buildStrongPicks(games),
+    winCombo: buildWinCombo(games),
   };
 }

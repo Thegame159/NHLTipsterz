@@ -31,6 +31,20 @@ export interface StrongPick {
   prob: number; // %
 }
 
+export interface WinComboLeg {
+  team: string; // abreviatura do favorito
+  game: string; // ex.: "MTL vs CAR"
+  home: string;
+  away: string;
+  prob: number; // % de vitória do favorito
+}
+
+export interface WinCombo {
+  legs: WinComboLeg[];
+  combinedProb: number; // % de todas as pernas acertarem
+  fairOdds: number; // 100 / combinedProb
+}
+
 export interface Suggestions {
   tripleWin: string[]; 
   tripleOver15P1: string[];
@@ -42,6 +56,7 @@ export interface Suggestions {
   quadrupleOver45: string[];
   over55Suggestions: string[];
   strongPicks?: StrongPick[];
+  winCombo?: WinCombo | null;
 }
 
 export interface NHLAnalysisData {

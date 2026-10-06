@@ -2,7 +2,7 @@ import React from "react";
 
 
 import { Suggestions, GamePrediction as Prediction } from "../types";
-import { STRONG_RULES } from "../utils/suggestions";
+import { STRONG_RULES, COMBO_RULES } from "../utils/suggestions";
 
 interface Props {
   suggestions: Suggestions;
@@ -590,6 +590,67 @@ const filterTripleWin = (items: string[]) => items;
           </p>
         </div>
       </div>
+
+      {/* COMBO DE VITÓRIAS: só existe com COMBO_RULES.minGames ou mais jogos */}
+      {suggestions.winCombo && (
+        <div className="bg-slate-800/40 border border-slate-700 rounded-2xl p-6 relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500"></div>
+          <h3 className="text-xl font-bold flex items-center mb-1 text-emerald-400">
+            <i className="fas fa-layer-group mr-3 text-2xl"></i>
+            Combo de Vitórias
+          </h3>
+          <p className="text-xs text-slate-400 mb-5 font-medium leading-tight">
+            Os {suggestions.winCombo.legs.length} favoritos mais prováveis do dia numa só combinada (todas têm de acertar).
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
+            {suggestions.winCombo.legs.map((leg, idx) => (
+              <div
+                key={`${leg.game}-${idx}`}
+                className="flex items-center gap-3 bg-slate-900/80 p-3 rounded-xl border border-slate-700/50"
+              >
+                <span className="w-6 h-6 rounded-full bg-emerald-500 text-white text-xs font-black flex items-center justify-center shrink-0">
+                  {idx + 1}
+                </span>
+                <img
+                  src={getLogoUrl(leg.team)}
+                  className="w-8 h-8 object-contain bg-slate-800 rounded-full p-1 border border-slate-700"
+                  alt={leg.team}
+                  loading="lazy"
+                  decoding="async"
+                  onError={(e) => (e.currentTarget.style.display = "none")}
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-slate-100 leading-tight truncate">{teamLabel(leg.team)}</p>
+                  <p className="text-[11px] text-slate-500">{leg.game}</p>
+                </div>
+                <span className="text-xs font-black text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                  {leg.prob}%
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-x-8 gap-y-2 bg-slate-900/80 rounded-xl border border-emerald-500/20 px-4 py-3">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Probabilidade combinada</p>
+              <p className="text-2xl font-black text-emerald-400">
+                {suggestions.winCombo.combinedProb.toLocaleString("pt-PT", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
+              </p>
+            </div>
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Odd justa</p>
+              <p className="text-2xl font-black text-slate-100">
+                {suggestions.winCombo.fairOdds.toLocaleString("pt-PT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </p>
+            </div>
+          </div>
+
+          <p className="text-[10px] text-slate-500 mt-4 leading-tight uppercase tracking-wider font-bold">
+            Odd justa = 100 ÷ probabilidade combinada. Só há valor se a casa pagar mais do que isto. Gerado com {COMBO_RULES.minGames}+ jogos.
+          </p>
+        </div>
+      )}
     </div>
   );
 };
