@@ -1,5 +1,6 @@
 // api/gemini.ts
-// Fluxo: calendário (NHL) + resultados dos ÚLTIMOS 7 DIAS (NHL) → Groq (probabilidades + texto) → cache em Redis.
+// Fluxo: calendário (NHL) + resultados dos ÚLTIMOS 7 DIAS (NHL) → modelo estatístico (Poisson) → probabilidades.
+// A IA (Groq) só escreve o resumo de cada jogo; os números vêm do modelo, não da IA.
 //
 // Janela de forma: os 7 dias de calendário anteriores à data analisada, haja ou não jogos de cada equipa.
 // - Nos primeiros dias da época regular, a janela apanha jogos de pré-época (que contam, com menos peso).
@@ -13,7 +14,7 @@ const NHL_API = "https://api-web.nhle.com/v1";
 const MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
 
 const WINDOW_DAYS = 7;
-const CACHE_PREFIX = "nhl:analysis:v2:";
+const CACHE_PREFIX = "nhl:analysis:v3:";
 const CACHE_TTL_MS = 8 * 60 * 60 * 1000; // 8 horas
 const GAME_CACHE_PREFIX = "nhl:game:v1:"; // golos do 1.º período de jogos já terminados (nunca mudam)
 const GAME_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -24,8 +25,17 @@ const MAX_INJURIES_PER_TEAM = 8;
 const MAX_PBP_FETCHES = 80;
 const PBP_BATCH = 10;
 
-// Médias de referência, usadas quando a janela tem poucos jogos para calcular as da liga.
-const LEAGUE_DEFAULTS = { homeWin: 54, regTie: 23, p1Over15: 55, p1Btts: 30, over45: 68, over55: 50 };
+// Parâmetros do modelo estatístico (ajustáveis).
+const MODEL_CFG = {
+  priorGames: 40, // peso (em jogos) da média da liga na força de ataque/defesa (a diferença real entre equipas é pequena face ao ruído de poucos jogos)
+  leagueGoalsPerGame: 6.1, // golos totais por jogo em tempo regulamentar (referência da liga)
+  leaguePriorGames: 30, // peso dessa referência quando se calculam as médias da janela
+  rateBlendGames: 40, // peso da referência ao calibrar as taxas da liga (empate, 1.º período, totais)
+  homeEdge: 0.05, // vantagem de casa: +5% golos esperados em casa, -5% fora
+  regTieRate: 0.22, // empates ao fim dos 60 min (NHL 2016-17 a 2024-25: entre 20,5% e 23,5%)
+  p1Share: 0.31, // fração dos golos que cai no 1.º período
+  extraTimeHomeShare: 0.5, // quem vence o prolongamento/desempate: 50/50
+} as const;
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -61,6 +71,8 @@ type TeamRecent = {
   otl: number;
   gf: number;
   ga: number;
+  regGf: number; // golos marcados em tempo regulamentar
+  regGa: number;
   over45: number;
   over55: number;
   regTies: number;
@@ -74,9 +86,10 @@ type TeamRecent = {
 type LeagueRates = {
   games: number;
   p1Games: number;
-  regGoalsAvg: number;
-  homeWin: number;
-  regTie: number;
+  regGoalsSum: number;
+  p1GoalsSum: number; // golos no 1.º período (jogos com dados)
+  p1RegGoalsSum: number; // golos em tempo regulamentar desses mesmos jogos
+  ties: number;
   p1Over15: number;
   p1Btts: number;
   over45: number;
@@ -107,7 +120,7 @@ type AnalysisPayload = {
   predictions: Prediction[];
   lastUpdated: string;
   meta: {
-    source: "ai" | "baseline";
+    source: "model";
     games: number;
     window?: { from: string; to: string; gamesUsed: number; preseasonGames: number };
     injuries?: { source: "espn" | "unavailable"; teams: number };
@@ -128,12 +141,6 @@ const isDate = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d);
 const num = (x: unknown, fallback = 0) => {
   const n = Number(x);
   return Number.isFinite(n) ? n : fallback;
-};
-
-const clampPct = (x: unknown, fallback: number) => {
-  const n = Number(x);
-  if (!Number.isFinite(n)) return fallback;
-  return Math.min(99, Math.max(1, Math.round(n)));
 };
 
 const etDate = (iso: string) =>
@@ -313,7 +320,7 @@ function aggregateTeams(games: FinishedGame[]): Map<string, TeamRecent> {
   const get = (abbr: string) => {
     let t = map.get(abbr);
     if (!t) {
-      t = { abbr, gp: 0, preGp: 0, w: 0, l: 0, otl: 0, gf: 0, ga: 0, over45: 0, over55: 0, regTies: 0, p1n: 0, p1Over15: 0, p1Btts: 0, p1For: 0, p1Against: 0 };
+      t = { abbr, gp: 0, preGp: 0, w: 0, l: 0, otl: 0, gf: 0, ga: 0, regGf: 0, regGa: 0, over45: 0, over55: 0, regTies: 0, p1n: 0, p1Over15: 0, p1Btts: 0, p1For: 0, p1Against: 0 };
       map.set(abbr, t);
     }
     return t;
@@ -334,6 +341,9 @@ function aggregateTeams(games: FinishedGame[]): Map<string, TeamRecent> {
       if (g.gameType === 1) t.preGp++;
       t.gf += own;
       t.ga += opp;
+      // Em tempo regulamentar: se foi a prolongamento/desempate, o jogo estava empatado aos 60 min.
+      t.regGf += wentExtra ? Math.min(own, opp) : own;
+      t.regGa += wentExtra ? Math.min(own, opp) : opp;
       if (own > opp) t.w++;
       else if (wentExtra) t.otl++;
       else t.l++;
@@ -355,35 +365,133 @@ function aggregateTeams(games: FinishedGame[]): Map<string, TeamRecent> {
 }
 
 function leagueRates(games: FinishedGame[]): LeagueRates {
-  const n = games.length;
   const p1 = games.filter((g) => g.p1Home != null && g.p1Away != null);
-  const pct = (count: number, of: number, fallback: number) => (of >= 8 ? Math.round((count / of) * 100) : fallback);
-
   return {
-    games: n,
+    games: games.length,
     p1Games: p1.length,
-    regGoalsAvg: n > 0 ? games.reduce((s, g) => s + regTotal(g), 0) / n : 0,
-    homeWin: pct(games.filter((g) => g.homeScore > g.awayScore).length, n, LEAGUE_DEFAULTS.homeWin),
-    regTie: pct(games.filter((g) => g.ending === "OT" || g.ending === "SO").length, n, LEAGUE_DEFAULTS.regTie),
-    p1Over15: pct(p1.filter((g) => g.p1Home! + g.p1Away! >= 2).length, p1.length, LEAGUE_DEFAULTS.p1Over15),
-    p1Btts: pct(p1.filter((g) => g.p1Home! > 0 && g.p1Away! > 0).length, p1.length, LEAGUE_DEFAULTS.p1Btts),
-    over45: pct(games.filter((g) => regTotal(g) >= 5).length, n, LEAGUE_DEFAULTS.over45),
-    over55: pct(games.filter((g) => regTotal(g) >= 6).length, n, LEAGUE_DEFAULTS.over55),
+    regGoalsSum: games.reduce((sum, g) => sum + regTotal(g), 0),
+    p1GoalsSum: p1.reduce((sum, g) => sum + g.p1Home! + g.p1Away!, 0),
+    p1RegGoalsSum: p1.reduce((sum, g) => sum + regTotal(g), 0),
+    ties: games.filter((g) => g.ending === "OT" || g.ending === "SO").length,
+    p1Over15: p1.filter((g) => g.p1Home! + g.p1Away! >= 2).length,
+    p1Btts: p1.filter((g) => g.p1Home! > 0 && g.p1Away! > 0).length,
+    over45: games.filter((g) => regTotal(g) >= 5).length,
+    over55: games.filter((g) => regTotal(g) >= 6).length,
   };
 }
 
-// ─── Probabilidades base (se a IA falhar ou não devolver um jogo) ────────────
+// ─── Modelo estatístico (Poisson) ────────────────────────────────────────────
+// 1. Golos esperados de cada equipa = média da liga × ataque próprio × defesa do adversário × vantagem de casa.
+//    Ataque/defesa vêm dos últimos 7 dias, "puxados" para a média da liga (poucos jogos = pouca confiança).
+// 2. Com esses golos esperados calculam-se vitória, empate nos 60 min, 1.º período e totais de golos.
+// 3. Cada mercado é calibrado para que um jogo "médio" dê a taxa real da liga (sobretudo o empate,
+//    que o Poisson puro subestima: ~17% contra ~22% reais).
 
-function baseline(home: TeamRecent | undefined, away: TeamRecent | undefined, lg: LeagueRates) {
-  const gd = (t?: TeamRecent) => (t && t.gp > 0 ? (t.gf - t.ga) / t.gp : 0);
-  const winHome = Math.min(70, Math.max(35, Math.round(lg.homeWin + (gd(home) - gd(away)) * 3)));
+const poissonPmf = (l: number, max: number) => {
+  const p = [Math.exp(-l)];
+  for (let k = 1; k <= max; k++) p.push((p[k - 1] * l) / k);
+  return p;
+};
+/** P(X >= n) para X ~ Poisson(l) */
+const poissonAtLeast = (l: number, n: number) =>
+  Math.max(0, 1 - poissonPmf(l, n - 1).reduce((a, b) => a + b, 0));
+
+type RawMarkets = { hw: number; aw: number; tie: number; over15P1: number; btts: number; over45: number; over55: number };
+
+function rawMarkets(lh: number, la: number, share: number): RawMarkets {
+  const ph = poissonPmf(lh, 20);
+  const pa = poissonPmf(la, 20);
+  let hw = 0;
+  let aw = 0;
+  let tie = 0;
+  for (let i = 0; i <= 20; i++) {
+    for (let j = 0; j <= 20; j++) {
+      const p = ph[i] * pa[j];
+      if (i > j) hw += p;
+      else if (i < j) aw += p;
+      else tie += p;
+    }
+  }
+  const s1h = lh * share;
+  const s1a = la * share;
+  const s = s1h + s1a;
   return {
-    winProbabilityHome: winHome,
-    over15P1Prob: lg.p1Over15,
-    bttsP1Prob: lg.p1Btts,
-    drawTRProb: lg.regTie,
-    over45Prob: lg.over45,
-    over55Prob: lg.over55,
+    hw,
+    aw,
+    tie,
+    over15P1: 1 - Math.exp(-s) * (1 + s),
+    btts: (1 - Math.exp(-s1h)) * (1 - Math.exp(-s1a)),
+    over45: poissonAtLeast(lh + la, 5),
+    over55: poissonAtLeast(lh + la, 6),
+  };
+}
+
+type LeagueCtx = {
+  mu: number; // golos esperados por equipa num jogo médio
+  share: number;
+  factors: { tie: number; over15P1: number; btts: number; over45: number; over55: number };
+};
+
+function buildLeagueCtx(lg: LeagueRates): LeagueCtx {
+  const C = MODEL_CFG;
+  const totalGoals = (lg.regGoalsSum + C.leagueGoalsPerGame * C.leaguePriorGames) / (lg.games + C.leaguePriorGames);
+  const mu = totalGoals / 2;
+  const share =
+    (lg.p1GoalsSum + C.p1Share * C.leagueGoalsPerGame * C.leaguePriorGames) /
+    (lg.p1RegGoalsSum + C.leagueGoalsPerGame * C.leaguePriorGames);
+
+  const base = rawMarkets(mu * (1 + C.homeEdge), mu * (1 - C.homeEdge), share);
+  const rate = (count: number, n: number) => (n > 0 ? count / n : 0);
+  const blend = (count: number, n: number, prior: number) =>
+    (rate(count, n) * n + prior * C.rateBlendGames) / (n + C.rateBlendGames);
+  const ratio = (target: number, model: number) => (model > 0 ? target / model : 1);
+
+  return {
+    mu,
+    share,
+    factors: {
+      tie: ratio(blend(lg.ties, lg.games, C.regTieRate), base.tie),
+      over15P1: ratio(blend(lg.p1Over15, lg.p1Games, base.over15P1), base.over15P1),
+      btts: ratio(blend(lg.p1Btts, lg.p1Games, base.btts), base.btts),
+      over45: ratio(blend(lg.over45, lg.games, base.over45), base.over45),
+      over55: ratio(blend(lg.over55, lg.games, base.over55), base.over55),
+    },
+  };
+}
+
+function teamStrength(t: TeamRecent | undefined, mu: number) {
+  if (!t || t.gp === 0) return { att: 1, def: 1 };
+  const k = MODEL_CFG.priorGames;
+  return {
+    att: (t.regGf + mu * k) / ((t.gp + k) * mu),
+    def: (t.regGa + mu * k) / ((t.gp + k) * mu),
+  };
+}
+
+const clamp01 = (x: number) => Math.min(0.99, Math.max(0.01, x));
+
+function gameModel(home: TeamRecent | undefined, away: TeamRecent | undefined, ctx: LeagueCtx) {
+  const C = MODEL_CFG;
+  const h = teamStrength(home, ctx.mu);
+  const a = teamStrength(away, ctx.mu);
+  const lh = ctx.mu * (1 + C.homeEdge) * h.att * a.def;
+  const la = ctx.mu * (1 - C.homeEdge) * a.att * h.def;
+  const m = rawMarkets(lh, la, ctx.share);
+  const F = ctx.factors;
+
+  const tie = Math.min(0.4, m.tie * F.tie);
+  const decisive = m.hw + m.aw;
+  const hw = decisive > 0 ? (m.hw * (1 - tie)) / decisive : (1 - tie) / 2;
+
+  return {
+    lh,
+    la,
+    pHome: clamp01(hw + tie * C.extraTimeHomeShare),
+    tie: clamp01(tie),
+    over15P1: clamp01(m.over15P1 * F.over15P1),
+    btts: clamp01(m.btts * F.btts),
+    over45: clamp01(m.over45 * F.over45),
+    over55: clamp01(m.over55 * F.over55),
   };
 }
 
@@ -467,34 +575,46 @@ function withInjuries(predictions: Prediction[], map: InjuryMap | null): Predict
   }));
 }
 
-// ─── Groq ────────────────────────────────────────────────────────────────────
+// ─── Resumos (Groq, opcional) ────────────────────────────────────────────────
 
 const f1 = (n: number) => n.toFixed(1);
+const pct = (x: number) => Math.round(x * 100);
 
 function describeTeam(label: string, t?: TeamRecent) {
-  if (!t || t.gp === 0) {
-    return `${label}: sem jogos nos últimos ${WINDOW_DAYS} dias — usa as médias da liga, com pequeno ajuste pela vantagem de casa.`;
-  }
+  if (!t || t.gp === 0) return `${label}: sem jogos nos últimos ${WINDOW_DAYS} dias.`;
   let s =
-    `${label}: ${t.gp} jogo(s) em ${WINDOW_DAYS} dias` +
+    `${label}: ${t.gp} jogo(s)` +
     (t.preGp > 0 ? ` (${t.preGp} de pré-época)` : "") +
-    `, V-D-DP ${t.w}-${t.l}-${t.otl}, golos ${f1(t.gf / t.gp)} marcados / ${f1(t.ga / t.gp)} sofridos por jogo` +
-    `, 5+ golos em ${t.over45}/${t.gp}, 6+ em ${t.over55}/${t.gp}, empates no tempo regulamentar ${t.regTies}/${t.gp}`;
+    `, V-D-DP ${t.w}-${t.l}-${t.otl}, golos ${f1(t.gf / t.gp)} marcados / ${f1(t.ga / t.gp)} sofridos por jogo`;
   if (t.p1n > 0) {
-    s +=
-      `, 2+ golos no 1.º período em ${t.p1Over15}/${t.p1n}, ambas marcam no 1.º período em ${t.p1Btts}/${t.p1n}` +
-      `, golos no 1.º período ${f1(t.p1For / t.p1n)} marcados / ${f1(t.p1Against / t.p1n)} sofridos`;
+    s += `, golos no 1.º período ${f1(t.p1For / t.p1n)} marcados / ${f1(t.p1Against / t.p1n)} sofridos`;
   }
   return s;
 }
 
-function buildPrompt(
+type Expected = { lh: number; la: number };
+
+function fallbackSummary(g: NhlGame, e: Expected, p: Prediction, home?: TeamRecent, away?: TeamRecent) {
+  const homeFav = p.winProbabilityHome >= 50;
+  const fav = homeFav ? g.homeAbbr : g.awayAbbr;
+  const favP = homeFav ? p.winProbabilityHome : p.winProbabilityAway;
+  if ((home?.gp ?? 0) + (away?.gp ?? 0) === 0) {
+    return `Sem jogos recentes de ${g.homeAbbr} e ${g.awayAbbr}: estimativa pelas médias da liga e vantagem de jogar em casa (${fav} ${favP}%).`;
+  }
+  return (
+    `${fav} favorito (${favP}%). Golos esperados: ${g.homeAbbr} ${f1(e.lh)}, ${g.awayAbbr} ${f1(e.la)} ` +
+    `(total ${f1(e.lh + e.la)}). Base: ${home?.gp ?? 0} jogo(s) de ${g.homeAbbr} e ${away?.gp ?? 0} de ${g.awayAbbr} nos últimos ${WINDOW_DAYS} dias.`
+  );
+}
+
+function buildSummaryPrompt(
   date: string,
   from: string,
   to: string,
   games: NhlGame[],
+  predictions: Prediction[],
+  expected: Map<string, Expected>,
   form: Map<string, TeamRecent>,
-  lg: LeagueRates,
   inj: InjuryMap | null
 ) {
   const injLine = (name: string) => {
@@ -502,52 +622,35 @@ function buildPrompt(
     const list = injuriesFor(inj, name);
     return list.length ? `\n    Lesões (ESPN): ${list.join("; ")}` : "";
   };
+
   const block = games
-    .map((g) => {
-      const tag = g.gameType === 1 ? " [PRÉ-ÉPOCA]" : g.gameType === 3 ? " [PLAYOFFS]" : "";
+    .map((g, i) => {
+      const p = predictions[i];
+      const e = expected.get(p.id)!;
       return [
-        `id=${g.id}${tag} | ${g.homeAbbr} (casa) vs ${g.awayAbbr} (fora) | ${g.startTimeUTC}`,
+        `id=${g.id} | ${g.homeAbbr} (casa) vs ${g.awayAbbr} (fora)`,
+        `  Modelo: vitória casa ${p.winProbabilityHome}% / fora ${p.winProbabilityAway}%; empate aos 60 min ${p.drawTRProb}%; 2+ golos no 1.º período ${p.over15P1Prob}%; ambas marcam no 1.º período ${p.bttsP1Prob}%; 5+ golos ${p.over45Prob}%; 6+ golos ${p.over55Prob}%; golos esperados ${g.homeAbbr} ${f1(e.lh)} / ${g.awayAbbr} ${f1(e.la)}`,
         `  ${describeTeam(`CASA ${g.homeAbbr}`, form.get(g.homeAbbr))}${injLine(g.homeName)}`,
         `  ${describeTeam(`FORA ${g.awayAbbr}`, form.get(g.awayAbbr))}${injLine(g.awayName)}`,
       ].join("\n");
     })
     .join("\n");
 
-  const league =
-    lg.games >= 8
-      ? `Na janela (${lg.games} jogos terminados): ${f1(lg.regGoalsAvg)} golos por jogo em tempo regulamentar; casa venceu ${lg.homeWin}%; empate no tempo regulamentar ${lg.regTie}%; 5+ golos ${lg.over45}%; 6+ golos ${lg.over55}%; ` +
-        (lg.p1Games > 0 ? `2+ golos no 1.º período ${lg.p1Over15}%; ambas marcam no 1.º período ${lg.p1Btts}% (${lg.p1Games} jogos com dados do 1.º período).` : `sem dados do 1.º período.`)
-      : `Poucos jogos terminados na janela (${lg.games}) para calcular médias fiáveis. Referências típicas da liga: casa vence ~${LEAGUE_DEFAULTS.homeWin}%; empate no tempo regulamentar ~${LEAGUE_DEFAULTS.regTie}%; 2+ golos no 1.º período ~${LEAGUE_DEFAULTS.p1Over15}%; ambas marcam no 1.º período ~${LEAGUE_DEFAULTS.p1Btts}%; 5+ golos ~${LEAGUE_DEFAULTS.over45}%; 6+ golos ~${LEAGUE_DEFAULTS.over55}%.`;
+  return `És o redator do NHL Tipsterz. Os números de cada jogo (${date}) já foram calculados por um modelo estatístico com a forma de ${from} a ${to}. NÃO alteres nem recalcules percentagens.
 
-  return `És o motor estatístico do NHL Tipsterz. Estima probabilidades para os jogos da NHL de ${date}, com base APENAS na forma dos últimos ${WINDOW_DAYS} dias (de ${from} a ${to}).
-
-REGRAS:
-- Usa só os dados fornecidos. Não inventes lesões, alinhamentos, guarda-redes nem resultados. Se houver lesões listadas (fonte ESPN, podem estar desatualizadas), podes referi-las, sobretudo as de guarda-redes; não acrescentes outras.
-- As amostras são pequenas (muitas equipas têm 0 a 4 jogos na janela). Quanto menos jogos, mais perto das médias da liga deves ficar; só te afastes bastante delas com sinais consistentes.
-- Jogos de pré-época contam, mas com menos peso do que jogos de época regular (alinhamentos experimentais).
-- Equipas sem jogos na janela: usa as médias da liga, com vantagem de casa.
-- Valores inteiros de 1 a 99 (percentagens).
-- analysisSummary: 1 a 2 frases em português de Portugal, baseadas só nos números fornecidos, a dizer o que pesou na estimativa (inclui referir quando a amostra é pequena).
-
-MÉDIAS DA LIGA:
-${league}
-
-CAMPOS (por jogo):
-- winProbabilityHome: probabilidade de a equipa da casa vencer (inclui prolongamento/desempate).
-- over15P1Prob: probabilidade de haver 2 ou mais golos no 1.º período.
-- bttsP1Prob: probabilidade de ambas as equipas marcarem no 1.º período.
-- drawTRProb: probabilidade de empate no tempo regulamentar (60 min).
-- over45Prob: probabilidade de 5 ou mais golos no jogo (tempo regulamentar).
-- over55Prob: probabilidade de 6 ou mais golos no jogo (tempo regulamentar).
+A tua tarefa: para cada jogo, escrever "analysisSummary" com 1 a 2 frases diretas em português de Portugal:
+- diz quem é o favorito e o que o justifica, usando só os números fornecidos (golos marcados/sofridos, forma, golos esperados);
+- se houver lesões de guarda-redes listadas (fonte ESPN, podem estar desatualizadas), refere-as;
+- não inventes lesões, alinhamentos nem resultados; sem avisos genéricos.
 
 JOGOS:
 ${block}
 
-Responde EXCLUSIVAMENTE com JSON neste formato, com um objeto por jogo e o "id" exatamente como indicado:
-{"games":[{"id":"...","winProbabilityHome":0,"over15P1Prob":0,"bttsP1Prob":0,"drawTRProb":0,"over45Prob":0,"over55Prob":0,"analysisSummary":"..."}]}`;
+Responde EXCLUSIVAMENTE com JSON, um objeto por jogo, com o "id" exatamente como indicado:
+{"games":[{"id":"...","analysisSummary":"..."}]}`;
 }
 
-async function askGroq(apiKey: string, prompt: string): Promise<any[]> {
+async function askGroqSummaries(apiKey: string, prompt: string): Promise<Map<string, string>> {
   const res = await fetchWithTimeout(
     "https://api.groq.com/openai/v1/chat/completions",
     {
@@ -556,8 +659,8 @@ async function askGroq(apiKey: string, prompt: string): Promise<any[]> {
       body: JSON.stringify({
         model: MODEL,
         response_format: { type: "json_object" },
-        temperature: 0.1,
-        max_completion_tokens: 8000,
+        temperature: 0.2,
+        max_completion_tokens: 4000,
         reasoning_effort: "low",
         messages: [
           { role: "system", content: prompt },
@@ -575,31 +678,31 @@ async function askGroq(apiKey: string, prompt: string): Promise<any[]> {
     .replace(/```json|```/g, "")
     .trim();
   const parsed = JSON.parse(content);
-  if (Array.isArray(parsed?.games)) return parsed.games;
-  if (Array.isArray(parsed?.predictions)) return parsed.predictions;
-  throw new Error("Resposta da IA sem lista de jogos.");
+  const list: any[] = Array.isArray(parsed?.games) ? parsed.games : Array.isArray(parsed?.predictions) ? parsed.predictions : [];
+  const out = new Map<string, string>();
+  for (const item of list) {
+    if (item?.id != null && typeof item?.analysisSummary === "string" && item.analysisSummary.trim()) {
+      out.set(String(item.id), item.analysisSummary.trim());
+    }
+  }
+  if (out.size === 0) throw new Error("Resposta da IA sem resumos.");
+  return out;
 }
 
 // ─── Montagem das previsões ──────────────────────────────────────────────────
 
 const record = (t?: TeamRecent) => (t ? `${t.w}-${t.l}-${t.otl}` : "0-0-0");
 
-function buildPredictions(games: NhlGame[], form: Map<string, TeamRecent>, lg: LeagueRates, ai: any[] | null) {
-  const byId = new Map<string, any>();
-  for (const item of ai ?? []) if (item?.id != null) byId.set(String(item.id), item);
-
-  let aiCount = 0;
+function buildPredictions(games: NhlGame[], form: Map<string, TeamRecent>, ctx: LeagueCtx) {
+  const expected = new Map<string, Expected>();
 
   const predictions: Prediction[] = games.map((g) => {
     const home = form.get(g.homeAbbr);
     const away = form.get(g.awayAbbr);
-    const base = baseline(home, away, lg);
-    const a = byId.get(String(g.id));
-    if (a) aiCount++;
+    const m = gameModel(home, away, ctx);
+    const winHome = pct(m.pHome);
 
-    const winHome = clampPct(a?.winProbabilityHome, base.winProbabilityHome);
-
-    return {
+    const p: Prediction = {
       id: String(g.id),
       homeTeam: g.homeName,
       homeTeamAbbr: g.homeAbbr,
@@ -610,20 +713,21 @@ function buildPredictions(games: NhlGame[], form: Map<string, TeamRecent>, lg: L
       dateTime: g.startTimeUTC,
       winProbabilityHome: winHome,
       winProbabilityAway: 100 - winHome,
-      over15P1Prob: clampPct(a?.over15P1Prob, base.over15P1Prob),
-      bttsP1Prob: clampPct(a?.bttsP1Prob, base.bttsP1Prob),
-      drawTRProb: clampPct(a?.drawTRProb, base.drawTRProb),
-      over45Prob: clampPct(a?.over45Prob, base.over45Prob),
-      over55Prob: clampPct(a?.over55Prob, base.over55Prob),
-      analysisSummary:
-        typeof a?.analysisSummary === "string" && a.analysisSummary.trim()
-          ? a.analysisSummary.trim()
-          : "Estimativa base a partir da forma dos últimos 7 dias (sem análise de IA para este jogo).",
+      over15P1Prob: pct(m.over15P1),
+      bttsP1Prob: pct(m.btts),
+      drawTRProb: pct(m.tie),
+      over45Prob: pct(m.over45),
+      over55Prob: pct(m.over55),
+      analysisSummary: "",
       injuries: { home: [], away: [] },
     };
+    const e = { lh: m.lh, la: m.la };
+    expected.set(p.id, e);
+    p.analysisSummary = fallbackSummary(g, e, p, home, away);
+    return p;
   });
 
-  return { predictions, aiCount };
+  return { predictions, expected };
 }
 
 // ─── Cache (Redis) ───────────────────────────────────────────────────────────
@@ -692,7 +796,7 @@ export async function POST(req: Request) {
       return json({
         predictions: [],
         lastUpdated: new Date().toISOString(),
-        meta: { source: "baseline", games: 0, note: "Sem jogos da NHL nesta data." },
+        meta: { source: "model", games: 0, note: "Sem jogos da NHL nesta data." },
       });
     }
 
@@ -702,32 +806,37 @@ export async function POST(req: Request) {
     const { games: recent, failedDays } = await fetchFinishedGames(date);
     await enrichFirstPeriod(recent);
     const form = aggregateTeams(recent);
-    const lg = leagueRates(recent);
+    const ctx = buildLeagueCtx(leagueRates(recent));
     const preseasonGames = recent.filter((g) => g.gameType === 1).length;
 
-    // IA
-    let ai: any[] | null = null;
+    // Probabilidades: modelo estatístico (não dependem da IA)
+    const { predictions: modelPreds, expected } = buildPredictions(games, form, ctx);
+
+    // Resumos: IA (opcional). Se falhar, ficam os resumos automáticos.
     let aiError: string | null = null;
     const apiKey = process.env.GROQ_API_KEY;
-
     if (!apiKey) {
       aiError = "GROQ_API_KEY não configurada na Vercel.";
     } else {
       try {
-        ai = await askGroq(apiKey, buildPrompt(date, from, to, games, form, lg, injuries));
+        const summaries = await askGroqSummaries(
+          apiKey,
+          buildSummaryPrompt(date, from, to, games, modelPreds, expected, form, injuries)
+        );
+        for (const p of modelPreds) {
+          const text = summaries.get(p.id);
+          if (text) p.analysisSummary = text;
+        }
       } catch (e: any) {
         aiError = e?.message || "Erro na IA.";
         console.error("[gemini] Groq falhou:", aiError);
       }
     }
 
-    const built = buildPredictions(games, form, lg, ai);
-    const aiCount = built.aiCount;
-    const predictions = withInjuries(built.predictions, injuries);
-    const usedAi = aiCount > 0;
+    const predictions = withInjuries(modelPreds, injuries);
 
     const notes: string[] = [];
-    if (aiError) notes.push(`IA indisponível (${aiError}). A mostrar estimativas base.`);
+    if (aiError) notes.push(`Resumos automáticos (IA indisponível: ${aiError}).`);
     if (!injuries) notes.push("Lesões indisponíveis (fonte ESPN sem resposta ou com formato inesperado).");
     if (failedDays > 0) notes.push(`Falhou a leitura de ${failedDays} dia(s) da janela de 7 dias.`);
 
@@ -735,7 +844,7 @@ export async function POST(req: Request) {
       predictions,
       lastUpdated: new Date().toISOString(),
       meta: {
-        source: usedAi ? "ai" : "baseline",
+        source: "model",
         games: predictions.length,
         window: { from, to, gamesUsed: recent.length, preseasonGames },
         injuries: injMeta,
@@ -743,8 +852,8 @@ export async function POST(req: Request) {
       },
     };
 
-    // Só guardamos em cache resultados completos com IA e sem falhas de leitura.
-    if (usedAi && aiCount === games.length && failedDays === 0) {
+    // Só guardamos em cache resultados completos (sem falhas de leitura nem da IA).
+    if (!aiError && failedDays === 0) {
       await redis.setPx(`${CACHE_PREFIX}${date}`, JSON.stringify(payload), CACHE_TTL_MS);
     }
 
