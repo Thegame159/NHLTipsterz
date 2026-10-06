@@ -1,10 +1,10 @@
 // api/gemini.ts
-// Fluxo: calendário (NHL) + resultados dos ÚLTIMOS 7 DIAS (NHL) → modelo estatístico (Poisson) → probabilidades.
+// Fluxo: calendário (NHL) + últimos 7 JOGOS de cada equipa (NHL) → modelo estatístico (Poisson) → probabilidades.
 // A IA (Groq) só escreve o resumo de cada jogo; os números vêm do modelo, não da IA.
 //
-// Janela de forma: os 7 dias de calendário anteriores à data analisada, haja ou não jogos de cada equipa.
-// - Nos primeiros dias da época regular, a janela apanha jogos de pré-época (que contam, com menos peso).
-// - No 8.º dia da época regular a janela (dias 1 a 7) já só tem jogos da época regular, por construção.
+// Forma recente: cada equipa é avaliada pelos seus últimos 7 jogos terminados (ou pelos que tiver: com 3 jogos, são esses 3).
+// - Até ao 7.º dia da época regular, jogos de pré-época entram para completar os 7.
+// - A partir do 8.º dia da época regular, a pré-época deixa de contar (a equipa fica só com os jogos da época regular).
 
 import { redis } from "./_redis.js";
 
@@ -13,8 +13,10 @@ export const config = { runtime: "edge" };
 const NHL_API = "https://api-web.nhle.com/v1";
 const MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
 
-const WINDOW_DAYS = 7;
-const CACHE_PREFIX = "nhl:analysis:v3:";
+const TEAM_GAMES = 7; // jogos recentes usados por equipa
+const LOOKBACK_DAYS = 21; // até onde se procuram esses jogos
+const PRESEASON_CUTOFF_DAY = 8; // a partir deste dia da época regular a pré-época deixa de contar
+const CACHE_PREFIX = "nhl:analysis:v4:";
 const CACHE_TTL_MS = 8 * 60 * 60 * 1000; // 8 horas
 const GAME_CACHE_PREFIX = "nhl:game:v1:"; // golos do 1.º período de jogos já terminados (nunca mudam)
 const GAME_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -100,7 +102,7 @@ type Prediction = {
   id: string;
   homeTeam: string;
   homeTeamAbbr: string;
-  homeRecordL10: string; // agora: registo V-D-DP dos últimos 7 dias
+  homeRecordL10: string; // agora: registo V-D-DP dos últimos 7 jogos
   awayTeam: string;
   awayTeamAbbr: string;
   awayRecordL10: string;
@@ -122,7 +124,7 @@ type AnalysisPayload = {
   meta: {
     source: "model";
     games: number;
-    window?: { from: string; to: string; gamesUsed: number; preseasonGames: number };
+    window?: { from: string; to: string; gamesUsed: number; preseasonGames: number; regularSeasonDay: number; gamesPerTeam: number };
     injuries?: { source: "espn" | "unavailable"; teams: number };
     note?: string;
   };
@@ -197,10 +199,10 @@ async function fetchGames(date: string): Promise<NhlGame[]> {
   return games.sort((a, b) => a.startTimeUTC.localeCompare(b.startTimeUTC));
 }
 
-// ─── Forma recente (últimos 7 dias) ──────────────────────────────────────────
+// ─── Forma recente (últimos 7 jogos de cada equipa) ──────────────────────────
 
 async function fetchFinishedGames(date: string): Promise<{ games: FinishedGame[]; failedDays: number }> {
-  const days = Array.from({ length: WINDOW_DAYS }, (_, i) => addDays(date, -(i + 1)));
+  const days = Array.from({ length: LOOKBACK_DAYS }, (_, i) => addDays(date, -(i + 1)));
   let failedDays = 0;
 
   const perDay = await Promise.all(
@@ -315,27 +317,40 @@ async function enrichFirstPeriod(games: FinishedGame[]) {
 const regTotal = (g: FinishedGame) =>
   g.homeScore + g.awayScore - (g.ending === "OT" || g.ending === "SO" ? 1 : 0);
 
-function aggregateTeams(games: FinishedGame[]): Map<string, TeamRecent> {
+const daysBetween = (a: string, b: string) =>
+  Math.round((new Date(b + "T00:00:00Z").getTime() - new Date(a + "T00:00:00Z").getTime()) / 86400000);
+
+/** Escolhe, para cada equipa, os seus últimos TEAM_GAMES jogos terminados (aplicando a regra da pré-época). */
+function selectRecentGames(all: FinishedGame[], date: string, teams: string[]) {
+  const regularDates = all.filter((g) => g.gameType >= 2).map((g) => g.date).sort();
+  const regularSeasonDay = regularDates.length ? daysBetween(regularDates[0], date) + 1 : 0;
+  const usePreseason = regularSeasonDay < PRESEASON_CUTOFF_DAY; // inclui "ainda sem época regular" (dia 0)
+
+  const pool = usePreseason ? all : all.filter((g) => g.gameType !== 1);
+  const sorted = [...pool].sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
+
+  const perTeam = new Map<string, FinishedGame[]>();
+  const used = new Map<number, FinishedGame>();
+  for (const abbr of new Set(teams)) {
+    const mine = sorted.filter((g) => g.homeAbbr === abbr || g.awayAbbr === abbr).slice(0, TEAM_GAMES);
+    perTeam.set(abbr, mine);
+    for (const g of mine) used.set(g.id, g);
+  }
+  return { perTeam, used: [...used.values()], regularSeasonDay };
+}
+
+function aggregateTeams(perTeam: Map<string, FinishedGame[]>): Map<string, TeamRecent> {
   const map = new Map<string, TeamRecent>();
-  const get = (abbr: string) => {
-    let t = map.get(abbr);
-    if (!t) {
-      t = { abbr, gp: 0, preGp: 0, w: 0, l: 0, otl: 0, gf: 0, ga: 0, regGf: 0, regGa: 0, over45: 0, over55: 0, regTies: 0, p1n: 0, p1Over15: 0, p1Btts: 0, p1For: 0, p1Against: 0 };
-      map.set(abbr, t);
-    }
-    return t;
-  };
 
-  for (const g of games) {
-    const total = regTotal(g);
-    const wentExtra = g.ending === "OT" || g.ending === "SO";
+  for (const [abbr, games] of perTeam) {
+    const t: TeamRecent = { abbr, gp: 0, preGp: 0, w: 0, l: 0, otl: 0, gf: 0, ga: 0, regGf: 0, regGa: 0, over45: 0, over55: 0, regTies: 0, p1n: 0, p1Over15: 0, p1Btts: 0, p1For: 0, p1Against: 0 };
 
-    for (const side of ["home", "away"] as const) {
-      const abbr = side === "home" ? g.homeAbbr : g.awayAbbr;
-      if (!abbr) continue;
+    for (const g of games) {
+      const side = g.homeAbbr === abbr ? "home" : "away";
       const own = side === "home" ? g.homeScore : g.awayScore;
       const opp = side === "home" ? g.awayScore : g.homeScore;
-      const t = get(abbr);
+      const total = regTotal(g);
+      const wentExtra = g.ending === "OT" || g.ending === "SO";
 
       t.gp++;
       if (g.gameType === 1) t.preGp++;
@@ -360,6 +375,7 @@ function aggregateTeams(games: FinishedGame[]): Map<string, TeamRecent> {
         t.p1Against += side === "home" ? g.p1Away : g.p1Home;
       }
     }
+    map.set(abbr, t);
   }
   return map;
 }
@@ -382,7 +398,7 @@ function leagueRates(games: FinishedGame[]): LeagueRates {
 
 // ─── Modelo estatístico (Poisson) ────────────────────────────────────────────
 // 1. Golos esperados de cada equipa = média da liga × ataque próprio × defesa do adversário × vantagem de casa.
-//    Ataque/defesa vêm dos últimos 7 dias, "puxados" para a média da liga (poucos jogos = pouca confiança).
+//    Ataque/defesa vêm dos últimos 7 jogos de cada equipa, "puxados" para a média da liga (poucos jogos = pouca confiança).
 // 2. Com esses golos esperados calculam-se vitória, empate nos 60 min, 1.º período e totais de golos.
 // 3. Cada mercado é calibrado para que um jogo "médio" dê a taxa real da liga (sobretudo o empate,
 //    que o Poisson puro subestima: ~17% contra ~22% reais).
@@ -581,7 +597,7 @@ const f1 = (n: number) => n.toFixed(1);
 const pct = (x: number) => Math.round(x * 100);
 
 function describeTeam(label: string, t?: TeamRecent) {
-  if (!t || t.gp === 0) return `${label}: sem jogos nos últimos ${WINDOW_DAYS} dias.`;
+  if (!t || t.gp === 0) return `${label}: sem jogos terminados nos últimos ${LOOKBACK_DAYS} dias.`;
   let s =
     `${label}: ${t.gp} jogo(s)` +
     (t.preGp > 0 ? ` (${t.preGp} de pré-época)` : "") +
@@ -603,14 +619,12 @@ function fallbackSummary(g: NhlGame, e: Expected, p: Prediction, home?: TeamRece
   }
   return (
     `${fav} favorito (${favP}%). Golos esperados: ${g.homeAbbr} ${f1(e.lh)}, ${g.awayAbbr} ${f1(e.la)} ` +
-    `(total ${f1(e.lh + e.la)}). Base: ${home?.gp ?? 0} jogo(s) de ${g.homeAbbr} e ${away?.gp ?? 0} de ${g.awayAbbr} nos últimos ${WINDOW_DAYS} dias.`
+    `(total ${f1(e.lh + e.la)}). Base: ${home?.gp ?? 0} jogo(s) de ${g.homeAbbr} e ${away?.gp ?? 0} de ${g.awayAbbr} nos seus últimos jogos.`
   );
 }
 
 function buildSummaryPrompt(
   date: string,
-  from: string,
-  to: string,
   games: NhlGame[],
   predictions: Prediction[],
   expected: Map<string, Expected>,
@@ -636,7 +650,7 @@ function buildSummaryPrompt(
     })
     .join("\n");
 
-  return `És o redator do NHL Tipsterz. Os números de cada jogo (${date}) já foram calculados por um modelo estatístico com a forma de ${from} a ${to}. NÃO alteres nem recalcules percentagens.
+  return `És o redator do NHL Tipsterz. Os números de cada jogo (${date}) já foram calculados por um modelo estatístico com a forma dos últimos ${TEAM_GAMES} jogos de cada equipa. NÃO alteres nem recalcules percentagens.
 
 A tua tarefa: para cada jogo, escrever "analysisSummary" com 1 a 2 frases diretas em português de Portugal:
 - diz quem é o favorito e o que o justifica, usando só os números fornecidos (golos marcados/sofridos, forma, golos esperados);
@@ -800,14 +814,16 @@ export async function POST(req: Request) {
       });
     }
 
-    // Forma dos últimos 7 dias
-    const from = addDays(date, -WINDOW_DAYS);
+    // Últimos 7 jogos de cada equipa
+    const { games: allRecent, failedDays } = await fetchFinishedGames(date);
+    const teams = games.flatMap((g) => [g.homeAbbr, g.awayAbbr]);
+    const { perTeam, used, regularSeasonDay } = selectRecentGames(allRecent, date, teams);
+    await enrichFirstPeriod(used);
+    const form = aggregateTeams(perTeam);
+    const ctx = buildLeagueCtx(leagueRates(used));
+    const preseasonGames = used.filter((g) => g.gameType === 1).length;
+    const from = used.length ? used.map((g) => g.date).sort()[0] : addDays(date, -LOOKBACK_DAYS);
     const to = addDays(date, -1);
-    const { games: recent, failedDays } = await fetchFinishedGames(date);
-    await enrichFirstPeriod(recent);
-    const form = aggregateTeams(recent);
-    const ctx = buildLeagueCtx(leagueRates(recent));
-    const preseasonGames = recent.filter((g) => g.gameType === 1).length;
 
     // Probabilidades: modelo estatístico (não dependem da IA)
     const { predictions: modelPreds, expected } = buildPredictions(games, form, ctx);
@@ -821,7 +837,7 @@ export async function POST(req: Request) {
       try {
         const summaries = await askGroqSummaries(
           apiKey,
-          buildSummaryPrompt(date, from, to, games, modelPreds, expected, form, injuries)
+          buildSummaryPrompt(date, games, modelPreds, expected, form, injuries)
         );
         for (const p of modelPreds) {
           const text = summaries.get(p.id);
@@ -838,7 +854,7 @@ export async function POST(req: Request) {
     const notes: string[] = [];
     if (aiError) notes.push(`Resumos automáticos (IA indisponível: ${aiError}).`);
     if (!injuries) notes.push("Lesões indisponíveis (fonte ESPN sem resposta ou com formato inesperado).");
-    if (failedDays > 0) notes.push(`Falhou a leitura de ${failedDays} dia(s) da janela de 7 dias.`);
+    if (failedDays > 0) notes.push(`Falhou a leitura de ${failedDays} dia(s) da procura dos últimos jogos (${LOOKBACK_DAYS} dias).`);
 
     const payload: AnalysisPayload = {
       predictions,
@@ -846,7 +862,7 @@ export async function POST(req: Request) {
       meta: {
         source: "model",
         games: predictions.length,
-        window: { from, to, gamesUsed: recent.length, preseasonGames },
+        window: { from, to, gamesUsed: used.length, preseasonGames, regularSeasonDay, gamesPerTeam: TEAM_GAMES },
         injuries: injMeta,
         ...(notes.length ? { note: notes.join(" ") } : {}),
       },
