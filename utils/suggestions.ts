@@ -32,8 +32,12 @@ export const STRONG_RULES = {
   },
 } as const;
 
-/** Combo de vitórias: só é gerado com `minGames` ou mais jogos; usa os `legs` favoritos mais prováveis. */
-export const COMBO_RULES = { minGames: 5, legs: 4 };
+/**
+ * Combo de vitórias: só é gerado com `minGames` ou mais jogos e usa os `legs` favoritos mais prováveis.
+ * Pernas extra (até `maxLegs`) só entram se o favorito seguinte tiver pelo menos `extraLegMinProb`%,
+ * porque cada perna a mais multiplica a probabilidade combinada.
+ */
+export const COMBO_RULES = { minGames: 5, legs: 4, maxLegs: 6, extraLegMinProb: 62 };
 
 const pct = (n: number) => Math.round(Number.isFinite(n) ? n : 0);
 const matchup = (g: GamePrediction) => `${g.homeTeamAbbr} vs ${g.awayTeamAbbr}`;
@@ -42,7 +46,7 @@ const byDesc = (f: (g: GamePrediction) => number) => (a: GamePrediction, b: Game
 function buildWinCombo(games: GamePrediction[]): WinCombo | null {
   if (games.length < COMBO_RULES.minGames) return null;
 
-  const legs = games
+  const ranked = games
     .map((g) => {
       const homeFav = g.winProbabilityHome >= g.winProbabilityAway;
       return {
@@ -53,8 +57,12 @@ function buildWinCombo(games: GamePrediction[]): WinCombo | null {
         prob: pct(homeFav ? g.winProbabilityHome : g.winProbabilityAway),
       };
     })
-    .sort((a, b) => b.prob - a.prob)
-    .slice(0, COMBO_RULES.legs);
+    .sort((a, b) => b.prob - a.prob);
+
+  // 4 pernas de base; as seguintes só entram se forem fortes
+  const legs = ranked.filter(
+    (leg, i) => i < COMBO_RULES.legs || (i < COMBO_RULES.maxLegs && leg.prob >= COMBO_RULES.extraLegMinProb)
+  );
 
   // Jogos independentes: a probabilidade da combinada é o produto das probabilidades de cada perna.
   const combined = legs.reduce((acc, l) => acc * (l.prob / 100), 1);
