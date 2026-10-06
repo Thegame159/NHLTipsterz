@@ -1,7 +1,8 @@
 import React from "react";
 
 
-import { Suggestions, Prediction } from "../types";
+import { Suggestions, GamePrediction as Prediction } from "../types";
+import { STRONG_RULES } from "../utils/suggestions";
 
 interface Props {
   suggestions: Suggestions;
@@ -383,6 +384,67 @@ const filterTripleWin = (items: string[]) => items;
             As nossas melhores seleções baseadas em modelos estatísticos de alta confiança, processados em tempo real com as respetivas probabilidades.
           </p>
         </div>
+      </div>
+
+      {/* ESCOLHAS FORTES: só mercados claramente acima do valor típico da liga */}
+      <div className="bg-slate-800/40 border border-slate-700 rounded-2xl p-6 relative overflow-hidden">
+        <div className="absolute top-0 left-0 w-1 h-full bg-amber-500"></div>
+        <h3 className="text-xl font-bold flex items-center mb-1 text-amber-400">
+          <i className="fas fa-bullseye mr-3 text-2xl"></i>
+          Escolhas Fortes
+        </h3>
+        <p className="text-xs text-slate-400 mb-5 font-medium leading-tight">
+          Só aparecem mercados em que o modelo está claramente acima do valor típico da liga.
+        </p>
+
+        {(suggestions.strongPicks ?? []).length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {(suggestions.strongPicks ?? []).map((pick, idx) => (
+              <div
+                key={`${pick.game}-${pick.market}-${idx}`}
+                className="bg-slate-900/80 p-4 rounded-2xl border border-slate-700/50 hover:bg-slate-900 transition-all"
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <span className="bg-amber-500/20 text-amber-300 text-[10px] font-black px-2 py-0.5 rounded border border-amber-500/30 uppercase tracking-widest">
+                    {pick.market}
+                  </span>
+                  <span className="text-xs font-black text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                    {pick.prob}%
+                  </span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="flex -space-x-2">
+                    {[pick.home, pick.away].map((abbr, i) => (
+                      <img
+                        key={`${abbr}-${i}`}
+                        src={getLogoUrl(abbr)}
+                        className="w-8 h-8 object-contain drop-shadow-md bg-slate-800 rounded-full p-1 border border-slate-700"
+                        alt={abbr}
+                        loading="lazy"
+                        decoding="async"
+                        onError={(e) => (e.currentTarget.style.display = "none")}
+                      />
+                    ))}
+                  </div>
+                  <div>
+                    <p className="font-bold text-slate-100 leading-tight">{pick.game}</p>
+                    {pick.market === STRONG_RULES.markets.win.label && (
+                      <p className="text-xs text-slate-400">Favorito: {teamLabel(pick.selection)}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-6 text-slate-500">
+            Sem escolhas fortes hoje: nenhum mercado está claramente acima da média.
+          </div>
+        )}
+
+        <p className="text-[10px] text-slate-500 mt-4 leading-tight uppercase tracking-wider font-bold">
+          Critério mínimo: vitória {STRONG_RULES.markets.win.min}% · 1.º período &gt;1.5 {STRONG_RULES.markets.over15P1.min}% · ambas marcam 1.º período {STRONG_RULES.markets.btts1P.min}% · empate {STRONG_RULES.markets.draw.min}% · 5+ golos {STRONG_RULES.markets.over45.min}% · 6+ golos {STRONG_RULES.markets.over55.min}%
+        </p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

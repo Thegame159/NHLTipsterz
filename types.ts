@@ -22,6 +22,15 @@ export interface GamePrediction {
   };
 }
 
+export interface StrongPick {
+  game: string; // ex.: "BUF vs MIN"
+  home: string; // abreviatura da equipa da casa
+  away: string; // abreviatura da equipa de fora
+  market: string; // ex.: "Over 1.5 no 1.º período"
+  selection: string; // ex.: "Canadiens" (vitórias) ou o próprio jogo
+  prob: number; // %
+}
+
 export interface Suggestions {
   tripleWin: string[]; 
   tripleOver15P1: string[];
@@ -32,6 +41,7 @@ export interface Suggestions {
   }[];
   quadrupleOver45: string[];
   over55Suggestions: string[];
+  strongPicks?: StrongPick[];
 }
 
 export interface NHLAnalysisData {

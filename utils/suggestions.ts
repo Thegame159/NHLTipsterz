@@ -2,7 +2,7 @@
 // Constrói as "Dicas" a partir das previsões que estão REALMENTE visíveis no ecrã,
 // para que as sugestões nunca falem de jogos que a aba "Jogos" não mostra.
 
-import type { GamePrediction, Suggestions } from "../types";
+import type { GamePrediction, StrongPick, Suggestions } from "../types";
 
 /** Limiares ajustáveis. */
 export const SUGGESTION_RULES = {
@@ -14,9 +14,54 @@ export const SUGGESTION_RULES = {
   draw: { max: 2, minProb: 25 },
 };
 
+/**
+ * "Escolhas fortes": só entram mercados em que o modelo está claramente acima do valor típico da liga.
+ * `min` = probabilidade mínima (%) para o mercado entrar. Ajusta à vontade:
+ * valores típicos de um jogo médio: vitória ~54, 1.º período >1.5 ~56, ambas marcam 1.º período ~37,
+ * empate aos 60' ~22, 5+ golos ~73, 6+ golos ~57.
+ */
+export const STRONG_RULES = {
+  maxPicks: 6,
+  markets: {
+    win: { label: "Vitória", min: 62 },
+    over15P1: { label: "Over 1.5 no 1.º período", min: 64 },
+    btts1P: { label: "Ambas marcam no 1.º período", min: 46 },
+    draw: { label: "Empate aos 60 min", min: 28 },
+    over45: { label: "Over 4.5 golos", min: 80 },
+    over55: { label: "Over 5.5 golos", min: 66 },
+  },
+} as const;
+
 const pct = (n: number) => Math.round(Number.isFinite(n) ? n : 0);
 const matchup = (g: GamePrediction) => `${g.homeTeamAbbr} vs ${g.awayTeamAbbr}`;
 const byDesc = (f: (g: GamePrediction) => number) => (a: GamePrediction, b: GamePrediction) => f(b) - f(a);
+
+function buildStrongPicks(games: GamePrediction[]): StrongPick[] {
+  const M = STRONG_RULES.markets;
+  const found: (StrongPick & { margin: number })[] = [];
+
+  for (const g of games) {
+    const base = { game: matchup(g), home: g.homeTeamAbbr, away: g.awayTeamAbbr };
+    const add = (m: { label: string; min: number }, prob: number, selection: string) => {
+      const p = pct(prob);
+      if (p >= m.min) found.push({ ...base, market: m.label, selection, prob: p, margin: p - m.min });
+    };
+
+    const homeFav = g.winProbabilityHome >= g.winProbabilityAway;
+    add(M.win, homeFav ? g.winProbabilityHome : g.winProbabilityAway, homeFav ? g.homeTeamAbbr : g.awayTeamAbbr);
+    add(M.over15P1, g.over15P1Prob, matchup(g));
+    add(M.btts1P, g.bttsP1Prob, matchup(g));
+    add(M.draw, g.drawTRProb, matchup(g));
+    add(M.over45, g.over45Prob, matchup(g));
+    add(M.over55, g.over55Prob ?? 0, matchup(g));
+  }
+
+  // Ordena por quanto cada pick ultrapassa o seu próprio limiar (mercados diferentes ficam comparáveis)
+  return found
+    .sort((a, b) => b.margin - a.margin)
+    .slice(0, STRONG_RULES.maxPicks)
+    .map(({ margin, ...pick }) => pick);
+}
 
 export function buildSuggestions(predictions: GamePrediction[]): Suggestions {
   const games = Array.isArray(predictions) ? predictions : [];
@@ -60,5 +105,13 @@ export function buildSuggestions(predictions: GamePrediction[]): Suggestions {
       explanation: g.analysisSummary || "Jogo equilibrado, com probabilidade acima da média de empate no tempo regulamentar.",
     }));
 
-  return { tripleWin, tripleOver15P1, doubleOver15P1, drawSuggestions, quadrupleOver45, over55Suggestions };
+  return {
+    tripleWin,
+    tripleOver15P1,
+    doubleOver15P1,
+    drawSuggestions,
+    quadrupleOver45,
+    over55Suggestions,
+    strongPicks: buildStrongPicks(games),
+  };
 }
