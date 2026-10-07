@@ -1,5 +1,5 @@
 /* public/sw.js */
-const CACHE_NAME = "nhl-tipsterz-v1";
+const CACHE_NAME = "nhl-tipsterz-v2";
 
 // Precache mínimo (podes adicionar mais ficheiros se quiseres)
 const CORE_ASSETS = ["/", "/index.html", "/manifest.webmanifest"];
