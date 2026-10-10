@@ -1085,7 +1085,7 @@ function buildSummaryPrompt(
   return `És o redator do NHL Tipsterz. Os números de cada jogo (${date}) já foram calculados por um modelo estatístico com a forma dos últimos ${TEAM_GAMES} jogos de cada equipa. NÃO alteres nem recalcules percentagens.
 
 A tua tarefa: para cada jogo, escrever "analysisSummary" com 1 a 2 frases diretas em português de Portugal:
-- diz quem é o favorito e o que o justifica, usando só os números fornecidos (golos marcados/sofridos, forma, golos esperados);
+- diz quem é o favorito e o que o justifica, usando só os números fornecidos (golos marcados/sofridos, forma, golos esperados). Escreve sempre "golos esperados", nunca "xG";
 - se uma equipa jogou ontem (2.ª noite seguida), refere o cansaço quando for relevante;
 - os números JÁ incluem o ajuste por lesões indicado (jogadores-chave e guarda-redes titular; jogadores de banco não pesam). Refere o ausente mais importante quando ele muda o favorito ou o total de golos; NÃO repitas a lista completa de lesões (aparece por baixo do resumo);
 - não inventes lesões, alinhamentos nem resultados; sem avisos genéricos.

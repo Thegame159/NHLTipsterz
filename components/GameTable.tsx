@@ -252,8 +252,7 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
                       {s && s.n > 0 ? (
                         <span>
                           {' '}· marcou em <b className="text-white">{s.scored}/{s.n}</b> · sofreu em{' '}
-                          <b className="text-white">{s.conceded}/{s.n}</b> · 2+ golos em{' '}
-                          <b className="text-white">{s.over15}/{s.n}</b> · ambas marcaram em{' '}
+                          <b className="text-white">{s.conceded}/{s.n}</b> · ambas marcaram em{' '}
                           <b className="text-white">{s.btts}/{s.n}</b> · prob. de marcar hoje{' '}
                           <b className="text-emerald-400">{s.scoreProb}%</b>
                         </span>
