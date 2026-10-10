@@ -451,7 +451,7 @@ const filterTripleWin = (items: string[]) => items;
         )}
 
         <p className="text-[10px] text-slate-500 mt-4 leading-tight uppercase tracking-wider font-bold">
-          Critério mínimo: vitória {STRONG_RULES.markets.win.min}% · 1.º período &gt;1.5 {STRONG_RULES.markets.over15P1.min}% · ambas marcam 1.º período {STRONG_RULES.markets.btts1P.min}% · empate {STRONG_RULES.markets.draw.min}% · 5+ golos {STRONG_RULES.markets.over45.min}% · 6+ golos {STRONG_RULES.markets.over55.min}%
+          Critério mínimo: vitória {STRONG_RULES.markets.win.min}% · 1.º período &gt;1.5 {STRONG_RULES.markets.over15P1.min}% · ambas marcam 1.º período {STRONG_RULES.markets.btts1P.min}% · 2.º período &gt;1.5 {STRONG_RULES.markets.over15P2.min}% · ambas marcam 2.º período {STRONG_RULES.markets.btts2P.min}% · empate {STRONG_RULES.markets.draw.min}% · 5+ golos {STRONG_RULES.markets.over45.min}% · 6+ golos {STRONG_RULES.markets.over55.min}%
         </p>
       </div>
 

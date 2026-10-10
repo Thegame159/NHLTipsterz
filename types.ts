@@ -41,6 +41,17 @@ export interface GamePrediction {
   p1WinAway?: number;
   homeP1?: TeamP1Stats;
   awayP1?: TeamP1Stats;
+  // 2.º período (opcionais)
+  over15P2Prob?: number;
+  bttsP2Prob?: number;
+  p2WinHome?: number; // % de vencer o 2.º período
+  p2Draw?: number;
+  p2WinAway?: number;
+  p12WinHome?: number; // % de estar a ganhar após 2 períodos
+  p12Draw?: number;
+  p12WinAway?: number;
+  homeP2?: TeamP1Stats;
+  awayP2?: TeamP1Stats;
   injuryAdj?: { home: number; away: number }; // golos/jogo que cada equipa perde por lesões
 }
 

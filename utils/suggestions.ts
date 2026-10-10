@@ -26,6 +26,8 @@ export const STRONG_RULES = {
     win: { label: "Vitória", min: 62 },
     over15P1: { label: "Over 1.5 no 1.º período", min: 64 },
     btts1P: { label: "Ambas marcam no 1.º período", min: 46 },
+    over15P2: { label: "Over 1.5 no 2.º período", min: 70 },
+    btts2P: { label: "Ambas marcam no 2.º período", min: 50 },
     draw: { label: "Empate aos 60 min", min: 28 },
     over45: { label: "Over 4.5 golos", min: 80 },
     over55: { label: "Over 5.5 golos", min: 66 },
@@ -90,6 +92,8 @@ function buildStrongPicks(games: GamePrediction[]): StrongPick[] {
     add(M.win, homeFav ? g.winProbabilityHome : g.winProbabilityAway, homeFav ? g.homeTeamAbbr : g.awayTeamAbbr);
     add(M.over15P1, g.over15P1Prob, matchup(g));
     add(M.btts1P, g.bttsP1Prob, matchup(g));
+    if (typeof g.over15P2Prob === 'number') add(M.over15P2, g.over15P2Prob, matchup(g));
+    if (typeof g.bttsP2Prob === 'number') add(M.btts2P, g.bttsP2Prob, matchup(g));
     add(M.draw, g.drawTRProb, matchup(g));
     add(M.over45, g.over45Prob, matchup(g));
     add(M.over55, g.over55Prob ?? 0, matchup(g));

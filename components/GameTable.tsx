@@ -200,13 +200,19 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
         <td className="py-6 text-center"><ProbabilityCell value={drawProb} /></td>
         <td className="py-6 text-center"><ProbabilityCell value={over15P1} /></td>
         <td className="py-6 text-center"><ProbabilityCell value={bttsP1} /></td>
+        <td className="py-6 text-center">
+          {typeof game.over15P2Prob === 'number' ? <ProbabilityCell value={game.over15P2Prob} /> : <span className="text-slate-700">–</span>}
+        </td>
+        <td className="py-6 text-center">
+          {typeof game.bttsP2Prob === 'number' ? <ProbabilityCell value={game.bttsP2Prob} /> : <span className="text-slate-700">–</span>}
+        </td>
         <td className="py-6 text-center pr-4"><ProbabilityCell value={over45} /></td>
       </tr>
 
       {/* PAINEL EXPANDIDO */}
       {isExpanded && (
         <tr className="bg-slate-900/40 border-b border-slate-800">
-          <td colSpan={6} className="p-6 space-y-4">
+          <td colSpan={8} className="p-6 space-y-4">
 
             {/* Resumo */}
             <div className="text-sm text-slate-300">
@@ -264,6 +270,53 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
                   <p className="text-[10px] text-slate-600 leading-tight">
                     Contagens nos últimos jogos de cada equipa (os números da equipa e do adversário combinam-se no modelo).
                   </p>
+                </div>
+              </div>
+            )}
+
+            {/* 2.º período */}
+            {game.homeP2 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-4 space-y-2">
+                  <div className="text-blue-400 font-bold text-[11px] uppercase tracking-wide">2.º período</div>
+                  {typeof game.p2WinHome === 'number' && (
+                    <div className="text-sm text-slate-300">
+                      A vencer o 2.º período:{' '}
+                      <b className="text-white">{teamLabel(homeTeam)} {game.p2WinHome}%</b> · empate{' '}
+                      <b className="text-white">{game.p2Draw}%</b> ·{' '}
+                      <b className="text-white">{teamLabel(awayTeam)} {game.p2WinAway}%</b>
+                    </div>
+                  )}
+                  {typeof game.p12WinHome === 'number' && (
+                    <div className="text-sm text-slate-300">
+                      A ganhar após 2 períodos:{' '}
+                      <b className="text-white">{teamLabel(homeTeam)} {game.p12WinHome}%</b> · empate{' '}
+                      <b className="text-white">{game.p12Draw}%</b> ·{' '}
+                      <b className="text-white">{teamLabel(awayTeam)} {game.p12WinAway}%</b>
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-4 space-y-3">
+                  <div className="text-blue-400 font-bold text-[11px] uppercase tracking-wide">2.º período, por equipa</div>
+                  {[
+                    { name: teamLabel(homeTeam), s: game.homeP2 },
+                    { name: teamLabel(awayTeam), s: game.awayP2 },
+                  ].map(({ name, s }) => (
+                    <div key={name} className="text-sm text-slate-400">
+                      <span className="font-bold text-slate-200">{name}</span>
+                      {s && s.n > 0 ? (
+                        <span>
+                          {' '}· marcou em <b className="text-white">{s.scored}/{s.n}</b> · sofreu em{' '}
+                          <b className="text-white">{s.conceded}/{s.n}</b> · ambas marcaram em{' '}
+                          <b className="text-white">{s.btts}/{s.n}</b> · prob. de marcar hoje{' '}
+                          <b className="text-emerald-400">{s.scoreProb}%</b>
+                        </span>
+                      ) : (
+                        <span> · sem dados do 2.º período</span>
+                      )}
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
@@ -333,7 +386,7 @@ const GameTable: React.FC<Props> = ({ predictions, totalGames }) => {
         </div>
       ) : (
         <div className="w-full overflow-x-auto rounded-2xl border border-slate-800 bg-slate-800/20 shadow-2xl backdrop-blur-sm">
-          <table className="w-full text-left border-collapse min-w-[900px]">
+          <table className="w-full text-left border-collapse min-w-[1080px]">
             <thead>
               <tr className="bg-slate-900/60 border-b border-slate-800">
                 <th className="py-4 pl-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">
@@ -350,6 +403,12 @@ const GameTable: React.FC<Props> = ({ predictions, totalGames }) => {
                 </th>
                 <th className="py-4 text-center text-[10px] font-black text-slate-500 uppercase tracking-widest">
                   1ºP BTTS
+                </th>
+                <th className="py-4 text-center text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                  2ºP &gt; 1.5
+                </th>
+                <th className="py-4 text-center text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                  2ºP BTTS
                 </th>
                 <th className="py-4 text-center pr-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">
                   Jogo &gt; 4.5

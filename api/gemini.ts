@@ -16,9 +16,9 @@ const MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
 const TEAM_GAMES = 7; // jogos recentes usados por equipa
 const LOOKBACK_DAYS = 21; // até onde se procuram esses jogos
 const PRESEASON_CUTOFF_DAY = 8; // a partir deste dia da época regular a pré-época deixa de contar
-const CACHE_PREFIX = "nhl:analysis:v6:";
+const CACHE_PREFIX = "nhl:analysis:v7:";
 const CACHE_TTL_MS = 2 * 60 * 60 * 1000; // 2 horas (as lesões influenciam os números)
-const GAME_CACHE_PREFIX = "nhl:game:v1:"; // golos do 1.º período de jogos já terminados (nunca mudam)
+const GAME_CACHE_PREFIX = "nhl:game:v2:"; // golos do 1.º período de jogos já terminados (nunca mudam)
 const GAME_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const ESPN_INJURIES_URL = "https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/injuries";
 const INJURY_CACHE_KEY = "nhl:injuries:v2";
@@ -32,6 +32,8 @@ const PBP_BATCH = 10;
 
 // Parâmetros do modelo estatístico (ajustáveis).
 const MODEL_CFG = {
+  priorGamesP2: 30, // idem para o 2.º período
+  p2Share: 0.34, // fração dos golos que cai no 2.º período (referência; a janela corrige)
   priorGamesP1: 30, // idem para os golos do 1.º período (mais ruidosos, mas com padrão próprio de cada equipa)
   priorGames: 40, // peso (em jogos) da média da liga na força de ataque/defesa (a diferença real entre equipas é pequena face ao ruído de poucos jogos)
   leagueGoalsPerGame: 6.1, // golos totais por jogo em tempo regulamentar (referência da liga)
@@ -69,6 +71,8 @@ type FinishedGame = {
   ending: "REG" | "OT" | "SO" | "UNKNOWN";
   p1Home: number | null;
   p1Away: number | null;
+  p2Home: number | null;
+  p2Away: number | null;
 };
 
 type TeamRecent = {
@@ -92,6 +96,13 @@ type TeamRecent = {
   p1Against: number;
   p1Scored: number; // jogos em que a equipa marcou no 1.º período
   p1Conceded: number; // jogos em que sofreu golo no 1.º período
+  p2n: number; // idem para o 2.º período
+  p2For: number;
+  p2Against: number;
+  p2Scored: number;
+  p2Conceded: number;
+  p2Over15: number;
+  p2Btts: number;
 };
 
 type LeagueRates = {
@@ -103,6 +114,11 @@ type LeagueRates = {
   ties: number;
   p1Over15: number;
   p1Btts: number;
+  p2Games: number;
+  p2GoalsSum: number;
+  p2RegGoalsSum: number;
+  p2Over15: number;
+  p2Btts: number;
   over45: number;
   over55: number;
 };
@@ -144,8 +160,18 @@ type Prediction = {
   p1WinHome: number; // % de estar a ganhar no fim do 1.º período
   p1Draw: number;
   p1WinAway: number;
+  over15P2Prob: number; // 2+ golos no 2.º período
+  bttsP2Prob: number; // ambas marcam no 2.º período
+  p2WinHome: number; // % de vencer o 2.º período (golos só nesse período)
+  p2Draw: number;
+  p2WinAway: number;
+  p12WinHome: number; // % de estar a ganhar após 2 períodos
+  p12Draw: number;
+  p12WinAway: number;
   homeP1: TeamP1Stats;
   awayP1: TeamP1Stats;
+  homeP2: TeamP1Stats;
+  awayP2: TeamP1Stats;
   injuryAdj: { home: number; away: number }; // golos/jogo que cada equipa perde por lesões
 };
 
@@ -280,6 +306,8 @@ async function fetchFinishedGames(date: string): Promise<{ games: FinishedGame[]
         ending,
         p1Home: null,
         p1Away: null,
+        p2Home: null,
+        p2Away: null,
       });
     }
   }
@@ -287,7 +315,7 @@ async function fetchFinishedGames(date: string): Promise<{ games: FinishedGame[]
   return { games, failedDays };
 }
 
-async function fetchP1Goals(gameId: number): Promise<{ h: number; a: number } | null> {
+async function fetchPeriodGoals(gameId: number): Promise<{ h: number; a: number; h2: number; a2: number } | null> {
   try {
     const res = await fetchWithTimeout(`${NHL_API}/gamecenter/${gameId}/play-by-play`, {}, 8000);
     if (!res.ok) return null;
@@ -298,19 +326,27 @@ async function fetchP1Goals(gameId: number): Promise<{ h: number; a: number } | 
 
     let h = 0;
     let a = 0;
+    let h2 = 0;
+    let a2 = 0;
     for (const p of Array.isArray(data?.plays) ? data.plays : []) {
-      if (p?.typeDescKey !== "goal" || p?.periodDescriptor?.number !== 1) continue;
+      if (p?.typeDescKey !== "goal") continue;
+      const period = p?.periodDescriptor?.number;
       const owner = p?.details?.eventOwnerTeamId;
-      if (owner === homeId) h++;
-      else if (owner === awayId) a++;
+      if (period === 1) {
+        if (owner === homeId) h++;
+        else if (owner === awayId) a++;
+      } else if (period === 2) {
+        if (owner === homeId) h2++;
+        else if (owner === awayId) a2++;
+      }
     }
-    return { h, a };
+    return { h, a, h2, a2 };
   } catch {
     return null;
   }
 }
 
-/** Preenche os golos do 1.º período. Jogos terminados não mudam, por isso ficam em cache no Redis. */
+/** Preenche os golos do 1.º e do 2.º período. Jogos terminados não mudam, por isso ficam em cache no Redis. */
 async function enrichFirstPeriod(games: FinishedGame[]) {
   const cached = await Promise.all(games.map((g) => redis.get(`${GAME_CACHE_PREFIX}${g.id}`)));
   const missing: FinishedGame[] = [];
@@ -320,9 +356,11 @@ async function enrichFirstPeriod(games: FinishedGame[]) {
     if (raw) {
       try {
         const v = JSON.parse(raw);
-        if (Number.isFinite(v?.h) && Number.isFinite(v?.a)) {
+        if (Number.isFinite(v?.h) && Number.isFinite(v?.a) && Number.isFinite(v?.h2) && Number.isFinite(v?.a2)) {
           g.p1Home = v.h;
           g.p1Away = v.a;
+          g.p2Home = v.h2;
+          g.p2Away = v.a2;
           return;
         }
       } catch {
@@ -335,12 +373,14 @@ async function enrichFirstPeriod(games: FinishedGame[]) {
   const toFetch = missing.slice(0, MAX_PBP_FETCHES);
   for (let i = 0; i < toFetch.length; i += PBP_BATCH) {
     const batch = toFetch.slice(i, i + PBP_BATCH);
-    const results = await Promise.all(batch.map((g) => fetchP1Goals(g.id)));
+    const results = await Promise.all(batch.map((g) => fetchPeriodGoals(g.id)));
     for (let j = 0; j < batch.length; j++) {
       const r = results[j];
       if (!r) continue;
       batch[j].p1Home = r.h;
       batch[j].p1Away = r.a;
+      batch[j].p2Home = r.h2;
+      batch[j].p2Away = r.a2;
       await redis.setPx(`${GAME_CACHE_PREFIX}${batch[j].id}`, JSON.stringify(r), GAME_CACHE_TTL_MS);
     }
   }
@@ -376,7 +416,7 @@ function aggregateTeams(perTeam: Map<string, FinishedGame[]>): Map<string, TeamR
   const map = new Map<string, TeamRecent>();
 
   for (const [abbr, games] of perTeam) {
-    const t: TeamRecent = { abbr, gp: 0, preGp: 0, w: 0, l: 0, otl: 0, gf: 0, ga: 0, regGf: 0, regGa: 0, over45: 0, over55: 0, regTies: 0, p1n: 0, p1Over15: 0, p1Btts: 0, p1For: 0, p1Against: 0, p1Scored: 0, p1Conceded: 0 };
+    const t: TeamRecent = { abbr, gp: 0, preGp: 0, w: 0, l: 0, otl: 0, gf: 0, ga: 0, regGf: 0, regGa: 0, over45: 0, over55: 0, regTies: 0, p1n: 0, p1Over15: 0, p1Btts: 0, p1For: 0, p1Against: 0, p1Scored: 0, p1Conceded: 0, p2n: 0, p2For: 0, p2Against: 0, p2Scored: 0, p2Conceded: 0, p2Over15: 0, p2Btts: 0 };
 
     for (const g of games) {
       const side = g.homeAbbr === abbr ? "home" : "away";
@@ -411,6 +451,18 @@ function aggregateTeams(perTeam: Map<string, FinishedGame[]>): Map<string, TeamR
         if (ownP1 > 0) t.p1Scored++;
         if (oppP1 > 0) t.p1Conceded++;
       }
+
+      if (g.p2Home != null && g.p2Away != null) {
+        t.p2n++;
+        if (g.p2Home + g.p2Away >= 2) t.p2Over15++;
+        if (g.p2Home > 0 && g.p2Away > 0) t.p2Btts++;
+        const ownP2 = side === "home" ? g.p2Home : g.p2Away;
+        const oppP2 = side === "home" ? g.p2Away : g.p2Home;
+        t.p2For += ownP2;
+        t.p2Against += oppP2;
+        if (ownP2 > 0) t.p2Scored++;
+        if (oppP2 > 0) t.p2Conceded++;
+      }
     }
     map.set(abbr, t);
   }
@@ -419,6 +471,7 @@ function aggregateTeams(perTeam: Map<string, FinishedGame[]>): Map<string, TeamR
 
 function leagueRates(games: FinishedGame[]): LeagueRates {
   const p1 = games.filter((g) => g.p1Home != null && g.p1Away != null);
+  const p2 = games.filter((g) => g.p2Home != null && g.p2Away != null);
   return {
     games: games.length,
     p1Games: p1.length,
@@ -428,6 +481,11 @@ function leagueRates(games: FinishedGame[]): LeagueRates {
     ties: games.filter((g) => g.ending === "OT" || g.ending === "SO").length,
     p1Over15: p1.filter((g) => g.p1Home! + g.p1Away! >= 2).length,
     p1Btts: p1.filter((g) => g.p1Home! > 0 && g.p1Away! > 0).length,
+    p2Games: p2.length,
+    p2GoalsSum: p2.reduce((sum, g) => sum + g.p2Home! + g.p2Away!, 0),
+    p2RegGoalsSum: p2.reduce((sum, g) => sum + regTotal(g), 0),
+    p2Over15: p2.filter((g) => g.p2Home! + g.p2Away! >= 2).length,
+    p2Btts: p2.filter((g) => g.p2Home! > 0 && g.p2Away! > 0).length,
     over45: games.filter((g) => regTotal(g) >= 5).length,
     over55: games.filter((g) => regTotal(g) >= 6).length,
   };
@@ -449,10 +507,10 @@ const poissonPmf = (l: number, max: number) => {
 const poissonAtLeast = (l: number, n: number) =>
   Math.max(0, 1 - poissonPmf(l, n - 1).reduce((a, b) => a + b, 0));
 
-type RawMarkets = { hw: number; aw: number; tie: number; over15P1: number; btts: number; over45: number; over55: number };
+type RawMarkets = { hw: number; aw: number; tie: number; over15P1: number; btts: number; over15P2: number; btts2: number; over45: number; over55: number };
 
-/** lh/la: golos esperados no jogo (60 min); lh1/la1: golos esperados no 1.º período. */
-function rawMarkets(lh: number, la: number, lh1: number, la1: number): RawMarkets {
+/** lh/la: golos esperados no jogo (60 min); lh1/la1 e lh2/la2: golos esperados no 1.º e no 2.º período. */
+function rawMarkets(lh: number, la: number, lh1: number, la1: number, lh2: number, la2: number): RawMarkets {
   const ph = poissonPmf(lh, 20);
   const pa = poissonPmf(la, 20);
   let hw = 0;
@@ -467,12 +525,15 @@ function rawMarkets(lh: number, la: number, lh1: number, la1: number): RawMarket
     }
   }
   const s = lh1 + la1;
+  const s2 = lh2 + la2;
   return {
     hw,
     aw,
     tie,
     over15P1: 1 - Math.exp(-s) * (1 + s),
     btts: (1 - Math.exp(-lh1)) * (1 - Math.exp(-la1)),
+    over15P2: 1 - Math.exp(-s2) * (1 + s2),
+    btts2: (1 - Math.exp(-lh2)) * (1 - Math.exp(-la2)),
     over45: poissonAtLeast(lh + la, 5),
     over55: poissonAtLeast(lh + la, 6),
   };
@@ -481,7 +542,8 @@ function rawMarkets(lh: number, la: number, lh1: number, la1: number): RawMarket
 type LeagueCtx = {
   mu: number; // golos esperados por equipa num jogo médio
   mu1: number; // idem, só no 1.º período
-  factors: { tie: number; over15P1: number; btts: number; over45: number; over55: number };
+  mu2: number; // idem, só no 2.º período
+  factors: { tie: number; over15P1: number; btts: number; over15P2: number; btts2: number; over45: number; over55: number };
 };
 
 function buildLeagueCtx(lg: LeagueRates): LeagueCtx {
@@ -492,8 +554,13 @@ function buildLeagueCtx(lg: LeagueRates): LeagueCtx {
     (lg.p1GoalsSum + C.p1Share * C.leagueGoalsPerGame * C.leaguePriorGames) /
     (lg.p1RegGoalsSum + C.leagueGoalsPerGame * C.leaguePriorGames);
   const mu1 = mu * share;
+  const share2 =
+    (lg.p2GoalsSum + C.p2Share * C.leagueGoalsPerGame * C.leaguePriorGames) /
+    (lg.p2RegGoalsSum + C.leagueGoalsPerGame * C.leaguePriorGames);
+  const mu2 = mu * share2;
 
-  const base = rawMarkets(mu * (1 + C.homeEdge), mu * (1 - C.homeEdge), mu1 * (1 + C.homeEdge), mu1 * (1 - C.homeEdge));
+  const e = C.homeEdge;
+  const base = rawMarkets(mu * (1 + e), mu * (1 - e), mu1 * (1 + e), mu1 * (1 - e), mu2 * (1 + e), mu2 * (1 - e));
   const rate = (count: number, n: number) => (n > 0 ? count / n : 0);
   const blend = (count: number, n: number, prior: number) =>
     (rate(count, n) * n + prior * C.rateBlendGames) / (n + C.rateBlendGames);
@@ -502,10 +569,13 @@ function buildLeagueCtx(lg: LeagueRates): LeagueCtx {
   return {
     mu,
     mu1,
+    mu2,
     factors: {
       tie: ratio(blend(lg.ties, lg.games, C.regTieRate), base.tie),
       over15P1: ratio(blend(lg.p1Over15, lg.p1Games, base.over15P1), base.over15P1),
       btts: ratio(blend(lg.p1Btts, lg.p1Games, base.btts), base.btts),
+      over15P2: ratio(blend(lg.p2Over15, lg.p2Games, base.over15P2), base.over15P2),
+      btts2: ratio(blend(lg.p2Btts, lg.p2Games, base.btts2), base.btts2),
       over45: ratio(blend(lg.over45, lg.games, base.over45), base.over45),
       over55: ratio(blend(lg.over55, lg.games, base.over55), base.over55),
     },
@@ -513,15 +583,19 @@ function buildLeagueCtx(lg: LeagueRates): LeagueCtx {
 }
 
 function teamStrength(t: TeamRecent | undefined, ctx: LeagueCtx) {
-  if (!t || t.gp === 0) return { att: 1, def: 1, att1: 1, def1: 1 };
+  if (!t || t.gp === 0) return { att: 1, def: 1, att1: 1, def1: 1, att2: 1, def2: 1 };
   const k = MODEL_CFG.priorGames;
   const k1 = MODEL_CFG.priorGamesP1;
+  const k2 = MODEL_CFG.priorGamesP2;
   return {
     att: (t.regGf + ctx.mu * k) / ((t.gp + k) * ctx.mu),
     def: (t.regGa + ctx.mu * k) / ((t.gp + k) * ctx.mu),
     // 1.º período: padrão próprio de cada equipa, também "puxado" para a média
     att1: t.p1n > 0 ? (t.p1For + ctx.mu1 * k1) / ((t.p1n + k1) * ctx.mu1) : 1,
     def1: t.p1n > 0 ? (t.p1Against + ctx.mu1 * k1) / ((t.p1n + k1) * ctx.mu1) : 1,
+    // 2.º período, idem
+    att2: t.p2n > 0 ? (t.p2For + ctx.mu2 * k2) / ((t.p2n + k2) * ctx.mu2) : 1,
+    def2: t.p2n > 0 ? (t.p2Against + ctx.mu2 * k2) / ((t.p2n + k2) * ctx.mu2) : 1,
   };
 }
 
@@ -531,15 +605,15 @@ const clamp01 = (x: number) => Math.min(0.99, Math.max(0.01, x));
 type GoalAdj = { offLoss: number; defLoss: number };
 const NO_ADJ: GoalAdj = { offLoss: 0, defLoss: 0 };
 
-/** Resultado ao fim do 1.º período (casa ganha / empate / fora ganha), dois Poisson independentes. */
-function firstPeriodOutcome(lh1: number, la1: number) {
-  const ph = poissonPmf(lh1, 8);
-  const pa = poissonPmf(la1, 8);
+/** Resultado de um período (ou de vários seguidos): casa ganha / empate / fora ganha, dois Poisson independentes. */
+function periodOutcome(lh1: number, la1: number) {
+  const ph = poissonPmf(lh1, 12);
+  const pa = poissonPmf(la1, 12);
   let home = 0;
   let draw = 0;
   let away = 0;
-  for (let i = 0; i <= 8; i++) {
-    for (let j = 0; j <= 8; j++) {
+  for (let i = 0; i <= 12; i++) {
+    for (let j = 0; j <= 12; j++) {
       const p = ph[i] * pa[j];
       if (i > j) home += p;
       else if (i < j) away += p;
@@ -592,14 +666,19 @@ function gameModel(
   const lh1 = ctx.mu1 * (1 + C.homeEdge) * h.att1 * a.def1 * fh * rh;
   const la1 = ctx.mu1 * (1 - C.homeEdge) * a.att1 * h.def1 * fa * ra;
 
-  const m = rawMarkets(lh, la, lh1, la1);
+  const lh2 = ctx.mu2 * (1 + C.homeEdge) * h.att2 * a.def2 * fh * rh;
+  const la2 = ctx.mu2 * (1 - C.homeEdge) * a.att2 * h.def2 * fa * ra;
+
+  const m = rawMarkets(lh, la, lh1, la1, lh2, la2);
   const F = ctx.factors;
 
   const tie = Math.min(0.4, m.tie * F.tie);
   const decisive = m.hw + m.aw;
   const hw = decisive > 0 ? (m.hw * (1 - tie)) / decisive : (1 - tie) / 2;
   const pHome = clamp01(hw + tie * C.extraTimeHomeShare);
-  const p1 = firstPeriodOutcome(lh1, la1);
+  const p1 = periodOutcome(lh1, la1);
+  const p2 = periodOutcome(lh2, la2); // quem vence o 2.º período
+  const p12 = periodOutcome(lh1 + lh2, la1 + la2); // quem está a ganhar após 2 períodos
 
   return {
     lh,
@@ -610,13 +689,19 @@ function gameModel(
     tie: clamp01(tie),
     over15P1: clamp01(m.over15P1 * F.over15P1),
     btts: clamp01(m.btts * F.btts),
+    over15P2: clamp01(m.over15P2 * F.over15P2),
+    btts2: clamp01(m.btts2 * F.btts2),
     over45: clamp01(m.over45 * F.over45),
     over55: clamp01(m.over55 * F.over55),
     p1,
+    p2,
+    p12,
     scoreGuess: likelyScore(lh, la, pHome >= 0.5),
     totalLine: Math.round((lh + la) * 2) / 2,
     scoreProbHome: 1 - Math.exp(-lh1),
     scoreProbAway: 1 - Math.exp(-la1),
+    scoreProb2Home: 1 - Math.exp(-lh2),
+    scoreProb2Away: 1 - Math.exp(-la2),
   };
 }
 
@@ -1149,6 +1234,22 @@ const teamP1 = (t: TeamRecent | undefined, scoreProb: number): TeamP1Stats => ({
   scoreProb: pct(scoreProb),
 });
 
+const teamP2 = (t: TeamRecent | undefined, scoreProb: number): TeamP1Stats => ({
+  n: t?.p2n ?? 0,
+  scored: t?.p2Scored ?? 0,
+  conceded: t?.p2Conceded ?? 0,
+  over15: t?.p2Over15 ?? 0,
+  btts: t?.p2Btts ?? 0,
+  scoreProb: pct(scoreProb),
+});
+
+/** Percentagens de um resultado 3-vias que somam sempre 100. */
+const threeWay = (o: { home: number; draw: number; away: number }) => {
+  const home = pct(o.home);
+  const draw = pct(o.draw);
+  return { home, draw, away: Math.max(0, 100 - home - draw) };
+};
+
 function buildPredictions(
   games: NhlGame[],
   form: Map<string, TeamRecent>,
@@ -1174,8 +1275,9 @@ function buildPredictions(
       ia ? { offLoss: ia.offLoss, defLoss: ia.defLoss } : NO_ADJ
     );
     const winHome = pct(m.pHome);
-    const p1Home = pct(m.p1.home);
-    const p1Draw = pct(m.p1.draw);
+    const w1 = threeWay(m.p1);
+    const w2 = threeWay(m.p2);
+    const w12 = threeWay(m.p12);
 
     const p: Prediction = {
       id: String(g.id),
@@ -1204,11 +1306,21 @@ function buildPredictions(
       awayB2B: tired.away,
       scoreGuess: m.scoreGuess,
       totalLine: m.totalLine,
-      p1WinHome: p1Home,
-      p1Draw,
-      p1WinAway: Math.max(0, 100 - p1Home - p1Draw),
+      p1WinHome: w1.home,
+      p1Draw: w1.draw,
+      p1WinAway: w1.away,
+      over15P2Prob: pct(m.over15P2),
+      bttsP2Prob: pct(m.btts2),
+      p2WinHome: w2.home,
+      p2Draw: w2.draw,
+      p2WinAway: w2.away,
+      p12WinHome: w12.home,
+      p12Draw: w12.draw,
+      p12WinAway: w12.away,
       homeP1: teamP1(home, m.scoreProbHome),
       awayP1: teamP1(away, m.scoreProbAway),
+      homeP2: teamP2(home, m.scoreProb2Home),
+      awayP2: teamP2(away, m.scoreProb2Away),
       injuryAdj: { home: Math.round((ih?.total ?? 0) * 100) / 100, away: Math.round((ia?.total ?? 0) * 100) / 100 },
     };
     const e = { lh: m.lh, la: m.la };
