@@ -16,19 +16,23 @@ const MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
 const TEAM_GAMES = 7; // jogos recentes usados por equipa
 const LOOKBACK_DAYS = 21; // até onde se procuram esses jogos
 const PRESEASON_CUTOFF_DAY = 8; // a partir deste dia da época regular a pré-época deixa de contar
-const CACHE_PREFIX = "nhl:analysis:v5:";
-const CACHE_TTL_MS = 8 * 60 * 60 * 1000; // 8 horas
+const CACHE_PREFIX = "nhl:analysis:v6:";
+const CACHE_TTL_MS = 2 * 60 * 60 * 1000; // 2 horas (as lesões influenciam os números)
 const GAME_CACHE_PREFIX = "nhl:game:v1:"; // golos do 1.º período de jogos já terminados (nunca mudam)
 const GAME_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const ESPN_INJURIES_URL = "https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/injuries";
-const INJURY_CACHE_KEY = "nhl:injuries:v1";
+const INJURY_CACHE_KEY = "nhl:injuries:v2";
 const INJURY_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutos
-const MAX_INJURIES_PER_TEAM = 8;
+const MAX_INJURIES_PER_TEAM = 8; // máximo mostrado no ecrã
+const STATS_REST = "https://api.nhle.com/stats/rest/en";
+const PLAYERS_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+const ROSTER_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const MAX_PBP_FETCHES = 80;
 const PBP_BATCH = 10;
 
 // Parâmetros do modelo estatístico (ajustáveis).
 const MODEL_CFG = {
+  priorGamesP1: 30, // idem para os golos do 1.º período (mais ruidosos, mas com padrão próprio de cada equipa)
   priorGames: 40, // peso (em jogos) da média da liga na força de ataque/defesa (a diferença real entre equipas é pequena face ao ruído de poucos jogos)
   leagueGoalsPerGame: 6.1, // golos totais por jogo em tempo regulamentar (referência da liga)
   leaguePriorGames: 30, // peso dessa referência quando se calculam as médias da janela
@@ -86,6 +90,8 @@ type TeamRecent = {
   p1Btts: number;
   p1For: number;
   p1Against: number;
+  p1Scored: number; // jogos em que a equipa marcou no 1.º período
+  p1Conceded: number; // jogos em que sofreu golo no 1.º período
 };
 
 type LeagueRates = {
@@ -101,11 +107,20 @@ type LeagueRates = {
   over55: number;
 };
 
+type TeamP1Stats = {
+  n: number; // jogos com dados do 1.º período
+  scored: number; // jogos em que marcou no 1.º período
+  conceded: number; // jogos em que sofreu golo no 1.º período
+  over15: number; // jogos com 2+ golos no 1.º período (somando as duas equipas)
+  btts: number; // jogos em que ambas marcaram no 1.º período
+  scoreProb: number; // % (modelo) de marcar no 1.º período hoje
+};
+
 type Prediction = {
   id: string;
   homeTeam: string;
   homeTeamAbbr: string;
-  homeRecordL10: string; // agora: registo V-D-DP dos últimos 7 jogos
+  homeRecordL10: string; // registo V-D-DP dos últimos 7 jogos
   awayTeam: string;
   awayTeamAbbr: string;
   awayRecordL10: string;
@@ -119,6 +134,19 @@ type Prediction = {
   over55Prob: number;
   analysisSummary: string;
   injuries: { home: string[]; away: string[] };
+  // Extras para o ecrã
+  homeGames: number; // jogos em que a estimativa de cada equipa se baseia
+  awayGames: number;
+  homeB2B: boolean; // jogou ontem
+  awayB2B: boolean;
+  scoreGuess: string; // ex.: "3–2"
+  totalLine: number; // ex.: 6.5
+  p1WinHome: number; // % de estar a ganhar no fim do 1.º período
+  p1Draw: number;
+  p1WinAway: number;
+  homeP1: TeamP1Stats;
+  awayP1: TeamP1Stats;
+  injuryAdj: { home: number; away: number }; // golos/jogo que cada equipa perde por lesões
 };
 
 type AnalysisPayload = {
@@ -130,6 +158,7 @@ type AnalysisPayload = {
     window?: { from: string; to: string; gamesUsed: number; preseasonGames: number; regularSeasonDay: number; gamesPerTeam: number };
     backToBack?: string[];
     injuries?: { source: "espn" | "unavailable"; teams: number };
+    injuryImpact?: { source: "ok" | "unavailable"; teamsAffected: number };
     note?: string;
   };
 };
@@ -347,7 +376,7 @@ function aggregateTeams(perTeam: Map<string, FinishedGame[]>): Map<string, TeamR
   const map = new Map<string, TeamRecent>();
 
   for (const [abbr, games] of perTeam) {
-    const t: TeamRecent = { abbr, gp: 0, preGp: 0, w: 0, l: 0, otl: 0, gf: 0, ga: 0, regGf: 0, regGa: 0, over45: 0, over55: 0, regTies: 0, p1n: 0, p1Over15: 0, p1Btts: 0, p1For: 0, p1Against: 0 };
+    const t: TeamRecent = { abbr, gp: 0, preGp: 0, w: 0, l: 0, otl: 0, gf: 0, ga: 0, regGf: 0, regGa: 0, over45: 0, over55: 0, regTies: 0, p1n: 0, p1Over15: 0, p1Btts: 0, p1For: 0, p1Against: 0, p1Scored: 0, p1Conceded: 0 };
 
     for (const g of games) {
       const side = g.homeAbbr === abbr ? "home" : "away";
@@ -375,8 +404,12 @@ function aggregateTeams(perTeam: Map<string, FinishedGame[]>): Map<string, TeamR
         t.p1n++;
         if (g.p1Home + g.p1Away >= 2) t.p1Over15++;
         if (g.p1Home > 0 && g.p1Away > 0) t.p1Btts++;
-        t.p1For += side === "home" ? g.p1Home : g.p1Away;
-        t.p1Against += side === "home" ? g.p1Away : g.p1Home;
+        const ownP1 = side === "home" ? g.p1Home : g.p1Away;
+        const oppP1 = side === "home" ? g.p1Away : g.p1Home;
+        t.p1For += ownP1;
+        t.p1Against += oppP1;
+        if (ownP1 > 0) t.p1Scored++;
+        if (oppP1 > 0) t.p1Conceded++;
       }
     }
     map.set(abbr, t);
@@ -418,7 +451,8 @@ const poissonAtLeast = (l: number, n: number) =>
 
 type RawMarkets = { hw: number; aw: number; tie: number; over15P1: number; btts: number; over45: number; over55: number };
 
-function rawMarkets(lh: number, la: number, share: number): RawMarkets {
+/** lh/la: golos esperados no jogo (60 min); lh1/la1: golos esperados no 1.º período. */
+function rawMarkets(lh: number, la: number, lh1: number, la1: number): RawMarkets {
   const ph = poissonPmf(lh, 20);
   const pa = poissonPmf(la, 20);
   let hw = 0;
@@ -432,15 +466,13 @@ function rawMarkets(lh: number, la: number, share: number): RawMarkets {
       else tie += p;
     }
   }
-  const s1h = lh * share;
-  const s1a = la * share;
-  const s = s1h + s1a;
+  const s = lh1 + la1;
   return {
     hw,
     aw,
     tie,
     over15P1: 1 - Math.exp(-s) * (1 + s),
-    btts: (1 - Math.exp(-s1h)) * (1 - Math.exp(-s1a)),
+    btts: (1 - Math.exp(-lh1)) * (1 - Math.exp(-la1)),
     over45: poissonAtLeast(lh + la, 5),
     over55: poissonAtLeast(lh + la, 6),
   };
@@ -448,7 +480,7 @@ function rawMarkets(lh: number, la: number, share: number): RawMarkets {
 
 type LeagueCtx = {
   mu: number; // golos esperados por equipa num jogo médio
-  share: number;
+  mu1: number; // idem, só no 1.º período
   factors: { tie: number; over15P1: number; btts: number; over45: number; over55: number };
 };
 
@@ -459,8 +491,9 @@ function buildLeagueCtx(lg: LeagueRates): LeagueCtx {
   const share =
     (lg.p1GoalsSum + C.p1Share * C.leagueGoalsPerGame * C.leaguePriorGames) /
     (lg.p1RegGoalsSum + C.leagueGoalsPerGame * C.leaguePriorGames);
+  const mu1 = mu * share;
 
-  const base = rawMarkets(mu * (1 + C.homeEdge), mu * (1 - C.homeEdge), share);
+  const base = rawMarkets(mu * (1 + C.homeEdge), mu * (1 - C.homeEdge), mu1 * (1 + C.homeEdge), mu1 * (1 - C.homeEdge));
   const rate = (count: number, n: number) => (n > 0 ? count / n : 0);
   const blend = (count: number, n: number, prior: number) =>
     (rate(count, n) * n + prior * C.rateBlendGames) / (n + C.rateBlendGames);
@@ -468,7 +501,7 @@ function buildLeagueCtx(lg: LeagueRates): LeagueCtx {
 
   return {
     mu,
-    share,
+    mu1,
     factors: {
       tie: ratio(blend(lg.ties, lg.games, C.regTieRate), base.tie),
       over15P1: ratio(blend(lg.p1Over15, lg.p1Games, base.over15P1), base.over15P1),
@@ -479,55 +512,121 @@ function buildLeagueCtx(lg: LeagueRates): LeagueCtx {
   };
 }
 
-function teamStrength(t: TeamRecent | undefined, mu: number) {
-  if (!t || t.gp === 0) return { att: 1, def: 1 };
+function teamStrength(t: TeamRecent | undefined, ctx: LeagueCtx) {
+  if (!t || t.gp === 0) return { att: 1, def: 1, att1: 1, def1: 1 };
   const k = MODEL_CFG.priorGames;
+  const k1 = MODEL_CFG.priorGamesP1;
   return {
-    att: (t.regGf + mu * k) / ((t.gp + k) * mu),
-    def: (t.regGa + mu * k) / ((t.gp + k) * mu),
+    att: (t.regGf + ctx.mu * k) / ((t.gp + k) * ctx.mu),
+    def: (t.regGa + ctx.mu * k) / ((t.gp + k) * ctx.mu),
+    // 1.º período: padrão próprio de cada equipa, também "puxado" para a média
+    att1: t.p1n > 0 ? (t.p1For + ctx.mu1 * k1) / ((t.p1n + k1) * ctx.mu1) : 1,
+    def1: t.p1n > 0 ? (t.p1Against + ctx.mu1 * k1) / ((t.p1n + k1) * ctx.mu1) : 1,
   };
 }
 
 const clamp01 = (x: number) => Math.min(0.99, Math.max(0.01, x));
 
+/** Ajuste por lesões, em golos por jogo: golos que a equipa deixa de marcar / golos a mais que sofre. */
+type GoalAdj = { offLoss: number; defLoss: number };
+const NO_ADJ: GoalAdj = { offLoss: 0, defLoss: 0 };
+
+/** Resultado ao fim do 1.º período (casa ganha / empate / fora ganha), dois Poisson independentes. */
+function firstPeriodOutcome(lh1: number, la1: number) {
+  const ph = poissonPmf(lh1, 8);
+  const pa = poissonPmf(la1, 8);
+  let home = 0;
+  let draw = 0;
+  let away = 0;
+  for (let i = 0; i <= 8; i++) {
+    for (let j = 0; j <= 8; j++) {
+      const p = ph[i] * pa[j];
+      if (i > j) home += p;
+      else if (i < j) away += p;
+      else draw += p;
+    }
+  }
+  return { home, draw, away };
+}
+
+/** Resultado exato mais provável, coerente com o favorito (a vitória pode ser no prolongamento, ex.: 3–2). */
+function likelyScore(lh: number, la: number, homeFav: boolean) {
+  const ph = poissonPmf(lh, 12);
+  const pa = poissonPmf(la, 12);
+  let best = { i: homeFav ? 1 : 0, j: homeFav ? 0 : 1, p: -1 };
+  for (let i = 0; i <= 12; i++) {
+    for (let j = 0; j <= 12; j++) {
+      if (homeFav ? i <= j : j <= i) continue;
+      const p = ph[i] * pa[j];
+      if (p > best.p) best = { i, j, p };
+    }
+  }
+  return `${best.i}–${best.j}`;
+}
+
 function gameModel(
   home: TeamRecent | undefined,
   away: TeamRecent | undefined,
   ctx: LeagueCtx,
-  tired: { home: boolean; away: boolean } = { home: false, away: false }
+  tired: { home: boolean; away: boolean } = { home: false, away: false },
+  adjHome: GoalAdj = NO_ADJ,
+  adjAway: GoalAdj = NO_ADJ
 ) {
   const C = MODEL_CFG;
-  const h = teamStrength(home, ctx.mu);
-  const a = teamStrength(away, ctx.mu);
   const B2B = C.backToBack;
-  const lh =
-    ctx.mu * (1 + C.homeEdge) * h.att * a.def * (tired.home ? 1 + B2B.ownGoals : 1) * (tired.away ? 1 + B2B.oppGoals : 1);
-  const la =
-    ctx.mu * (1 - C.homeEdge) * a.att * h.def * (tired.away ? 1 + B2B.ownGoals : 1) * (tired.home ? 1 + B2B.oppGoals : 1);
-  const m = rawMarkets(lh, la, ctx.share);
+  const h = teamStrength(home, ctx);
+  const a = teamStrength(away, ctx);
+
+  const fh = (tired.home ? 1 + B2B.ownGoals : 1) * (tired.away ? 1 + B2B.oppGoals : 1);
+  const fa = (tired.away ? 1 + B2B.ownGoals : 1) * (tired.home ? 1 + B2B.oppGoals : 1);
+
+  const lh0 = ctx.mu * (1 + C.homeEdge) * h.att * a.def * fh;
+  const la0 = ctx.mu * (1 - C.homeEdge) * a.att * h.def * fa;
+
+  // Lesões: cada equipa marca menos (ataque) e o adversário marca mais (defesa e guarda-redes)
+  const lh = Math.max(0.5, lh0 - adjHome.offLoss + adjAway.defLoss);
+  const la = Math.max(0.5, la0 - adjAway.offLoss + adjHome.defLoss);
+  const rh = lh0 > 0 ? lh / lh0 : 1;
+  const ra = la0 > 0 ? la / la0 : 1;
+
+  const lh1 = ctx.mu1 * (1 + C.homeEdge) * h.att1 * a.def1 * fh * rh;
+  const la1 = ctx.mu1 * (1 - C.homeEdge) * a.att1 * h.def1 * fa * ra;
+
+  const m = rawMarkets(lh, la, lh1, la1);
   const F = ctx.factors;
 
   const tie = Math.min(0.4, m.tie * F.tie);
   const decisive = m.hw + m.aw;
   const hw = decisive > 0 ? (m.hw * (1 - tie)) / decisive : (1 - tie) / 2;
+  const pHome = clamp01(hw + tie * C.extraTimeHomeShare);
+  const p1 = firstPeriodOutcome(lh1, la1);
 
   return {
     lh,
     la,
-    pHome: clamp01(hw + tie * C.extraTimeHomeShare),
+    lh1,
+    la1,
+    pHome,
     tie: clamp01(tie),
     over15P1: clamp01(m.over15P1 * F.over15P1),
     btts: clamp01(m.btts * F.btts),
     over45: clamp01(m.over45 * F.over45),
     over55: clamp01(m.over55 * F.over55),
+    p1,
+    scoreGuess: likelyScore(lh, la, pHome >= 0.5),
+    totalLine: Math.round((lh + la) * 2) / 2,
+    scoreProbHome: 1 - Math.exp(-lh1),
+    scoreProbAway: 1 - Math.exp(-la1),
   };
 }
 
-// ─── Lesões (ESPN, não oficial) ──────────────────────────────────────────────
-// A API da NHL não tem lesões. A ESPN publica-as num endpoint público sem chave.
-// Se o formato mudar ou a fonte falhar, a UI mostra "Sem dados de lesões" em vez de inventar.
+// ─── Lesões (ESPN) e impacto de jogadores-chave ──────────────────────────────
+// A API da NHL não tem lesões; a ESPN publica-as num endpoint público sem chave.
+// Cada lesionado é validado contra o plantel atual da NHL (ignora entradas antigas ou de outras equipas)
+// e ponderado pela importância do jogador: jogador de banco = impacto zero; titular importante = impacto real.
 
-type InjuryMap = Map<string, string[]>;
+type InjuryEntry = { text: string; name: string; pos: string; status: string };
+type InjuryMap = Map<string, InjuryEntry[]>;
 
 const normName = (s: string) =>
   s
@@ -542,7 +641,7 @@ async function fetchInjuries(): Promise<InjuryMap | null> {
   const cached = await redis.get(INJURY_CACHE_KEY);
   if (cached) {
     try {
-      return new Map(Object.entries(JSON.parse(cached) as Record<string, string[]>));
+      return new Map(Object.entries(JSON.parse(cached) as Record<string, InjuryEntry[]>));
     } catch {
       /* ignora cache inválida */
     }
@@ -554,12 +653,12 @@ async function fetchInjuries(): Promise<InjuryMap | null> {
     const data = await res.json();
     const teams = Array.isArray(data?.injuries) ? data.injuries : [];
 
-    const out: Record<string, string[]> = {};
+    const out: Record<string, InjuryEntry[]> = {};
     for (const t of teams) {
       const name = normName(String(t?.displayName ?? t?.team?.displayName ?? ""));
       if (!name) continue;
 
-      const rows: { text: string; goalie: boolean }[] = [];
+      const rows: InjuryEntry[] = [];
       for (const i of Array.isArray(t?.injuries) ? t.injuries : []) {
         const player = String(i?.athlete?.displayName ?? i?.athlete?.fullName ?? "").trim();
         if (!player) continue;
@@ -567,13 +666,9 @@ async function fetchInjuries(): Promise<InjuryMap | null> {
         const status = String(i?.status ?? i?.type?.description ?? "").trim();
         const body = String(i?.details?.type ?? i?.details?.detail ?? i?.details?.location ?? "").trim();
         const tag = [pos, status].filter(Boolean).join(", ");
-        rows.push({
-          text: `${player}${tag ? ` (${tag})` : ""}${body ? ` – ${body}` : ""}`,
-          goalie: pos.toUpperCase() === "G",
-        });
+        rows.push({ text: `${player}${tag ? ` (${tag})` : ""}${body ? ` – ${body}` : ""}`, name: player, pos, status });
       }
-      rows.sort((a, b) => Number(b.goalie) - Number(a.goalie)); // guarda-redes primeiro
-      out[name] = rows.slice(0, MAX_INJURIES_PER_TEAM).map((r) => r.text);
+      out[name] = rows.slice(0, 25);
     }
 
     if (Object.keys(out).length === 0) return null;
@@ -585,8 +680,9 @@ async function fetchInjuries(): Promise<InjuryMap | null> {
   }
 }
 
-function injuriesFor(map: InjuryMap | null, fullName: string): string[] {
-  if (!map) return ["Sem dados de lesões (fonte indisponível)"];
+/** Lesões de uma equipa (por nome completo). null = fonte indisponível. */
+function injuryEntriesFor(map: InjuryMap | null, fullName: string): InjuryEntry[] | null {
+  if (!map) return null;
   const n = normName(fullName);
   const exact = map.get(n);
   if (exact) return exact;
@@ -596,11 +692,320 @@ function injuriesFor(map: InjuryMap | null, fullName: string): string[] {
   return hits.length === 1 ? hits[0][1] : [];
 }
 
-function withInjuries(predictions: Prediction[], map: InjuryMap | null): Prediction[] {
-  return predictions.map((p) => ({
-    ...p,
-    injuries: { home: injuriesFor(map, p.homeTeam), away: injuriesFor(map, p.awayTeam) },
-  }));
+// --- Estatísticas de jogadores e plantéis (NHL) --------------------------------
+
+type PlayerStat = { id: number; name: string; pos: string; gp: number; pts: number; toi: number; gs: number; sa: number; sv: number };
+type RosterPlayer = { id: number; name: string; pos: string };
+
+const seasonIdFor = (date: string) => {
+  const y = Number(date.slice(0, 4));
+  const m = Number(date.slice(5, 7));
+  const start = m >= 9 ? y : y - 1;
+  return `${start}${start + 1}`;
+};
+const prevSeasonId = (season: string) => {
+  const y = Number(season.slice(0, 4));
+  return `${y - 1}${y}`;
+};
+
+async function fetchSeasonPlayers(season: string): Promise<Map<number, PlayerStat> | null> {
+  const key = `nhl:players:v1:${season}`;
+  const cached = await redis.get(key);
+  if (cached) {
+    try {
+      return new Map((JSON.parse(cached) as PlayerStat[]).map((p) => [p.id, p]));
+    } catch {
+      /* ignora cache inválida */
+    }
+  }
+
+  try {
+    const q = encodeURIComponent(`seasonId=${season} and gameTypeId=2`);
+    const [sk, gk] = await Promise.all([
+      fetchWithTimeout(`${STATS_REST}/skater/summary?limit=-1&cayenneExp=${q}`, {}, 15000),
+      fetchWithTimeout(`${STATS_REST}/goalie/summary?limit=-1&cayenneExp=${q}`, {}, 15000),
+    ]);
+    if (!sk.ok || !gk.ok) return null;
+    const [skData, gkData] = await Promise.all([sk.json(), gk.json()]);
+
+    const list: PlayerStat[] = [];
+    for (const r of Array.isArray(skData?.data) ? skData.data : []) {
+      const id = num(r?.playerId);
+      if (!id) continue;
+      list.push({
+        id,
+        name: String(r?.skaterFullName ?? ""),
+        pos: String(r?.positionCode ?? ""),
+        gp: num(r?.gamesPlayed),
+        pts: num(r?.points),
+        toi: num(r?.timeOnIcePerGame), // segundos por jogo
+        gs: 0,
+        sa: 0,
+        sv: 0,
+      });
+    }
+    for (const r of Array.isArray(gkData?.data) ? gkData.data : []) {
+      const id = num(r?.playerId);
+      if (!id) continue;
+      list.push({
+        id,
+        name: String(r?.goalieFullName ?? ""),
+        pos: "G",
+        gp: num(r?.gamesPlayed),
+        pts: 0,
+        toi: 0,
+        gs: num(r?.gamesStarted),
+        sa: num(r?.shotsAgainst),
+        sv: num(r?.saves),
+      });
+    }
+
+    // Sem dados (ex.: época atual ainda sem jogos): guarda pouco tempo para voltar a tentar em breve
+    await redis.setPx(key, JSON.stringify(list), list.length ? PLAYERS_CACHE_TTL_MS : 60 * 60 * 1000);
+    return new Map(list.map((p) => [p.id, p]));
+  } catch (e) {
+    console.error(`[gemini] estatísticas de jogadores ${season} falharam:`, e);
+    return null;
+  }
+}
+
+async function fetchRoster(abbr: string): Promise<RosterPlayer[] | null> {
+  const key = `nhl:roster:v1:${abbr}`;
+  const cached = await redis.get(key);
+  if (cached) {
+    try {
+      return JSON.parse(cached) as RosterPlayer[];
+    } catch {
+      /* ignora cache inválida */
+    }
+  }
+
+  try {
+    const res = await fetchWithTimeout(`${NHL_API}/roster/${abbr}/current`, {}, 8000);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const out: RosterPlayer[] = [];
+    for (const [group, pos] of [["forwards", "F"], ["defensemen", "D"], ["goalies", "G"]] as const) {
+      for (const p of Array.isArray(data?.[group]) ? data[group] : []) {
+        const id = num(p?.id);
+        if (!id) continue;
+        const name = `${p?.firstName?.default ?? ""} ${p?.lastName?.default ?? ""}`.trim();
+        out.push({ id, name, pos: group === "forwards" ? String(p?.positionCode ?? pos) : pos });
+      }
+    }
+    if (out.length === 0) return null;
+    await redis.setPx(key, JSON.stringify(out), ROSTER_CACHE_TTL_MS);
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchRosters(abbrs: string[]): Promise<Map<string, RosterPlayer[]>> {
+  const list = await Promise.all(abbrs.map(async (a) => [a, await fetchRoster(a)] as const));
+  const map = new Map<string, RosterPlayer[]>();
+  for (const [a, r] of list) if (r) map.set(a, r);
+  return map;
+}
+
+// --- Impacto das lesões --------------------------------------------------------
+// Tudo em "golos por jogo". Parâmetros ajustáveis (estimativas razoáveis, a calibrar com o histórico).
+
+const INJ_CFG = {
+  prevSeasonWeight: 0.6, // peso da época passada nas estatísticas do jogador
+  forward: { replacementPpg: 0.35, priorGames: 10, goalsPerPoint: 0.22, offShare: 0.8 },
+  defense: { floorMinutes: 18.5, goalsPerMinute: 0.03, offShare: 0.4 },
+  maxPerPlayer: 0.25,
+  maxPerTeam: 0.5,
+  minTag: 0.03, // abaixo disto o jogador é "de banco": sem etiqueta e sem efeito relevante
+  goalie: {
+    shotsAgainstPerGame: 29.5,
+    priorSv: 0.903,
+    priorShots: 1200,
+    replacementSv: 0.895,
+    minStarterShare: 0.55,
+    maxStarterShare: 0.9,
+    minDelta: -0.3,
+    maxDelta: 0.45,
+  },
+} as const;
+
+type TeamImpact = {
+  offLoss: number; // golos que a equipa deixa de marcar
+  defLoss: number; // golos a mais que sofre (defesas e guarda-redes)
+  total: number;
+  tags: Map<string, { value: number; label: string }>; // por texto da lesão
+};
+
+function statusWeight(status: string): number {
+  const s = status.toLowerCase();
+  if (/\bout\b|injured reserve|\bir\b|ltir|suspen/.test(s)) return 1;
+  if (/doubtful/.test(s)) return 0.75;
+  return 0.5; // day-to-day, questionable, etc.
+}
+
+function blendStat(cur?: PlayerStat, prev?: PlayerStat): PlayerStat | undefined {
+  if (!cur && !prev) return undefined;
+  const w = INJ_CFG.prevSeasonWeight;
+  const base = (cur ?? prev)!;
+  const c = cur ?? { ...base, gp: 0, pts: 0, toi: 0, gs: 0, sa: 0, sv: 0 };
+  const p = prev ?? { ...base, gp: 0, pts: 0, toi: 0, gs: 0, sa: 0, sv: 0 };
+  const gp = c.gp + w * p.gp;
+  return {
+    id: base.id,
+    name: c.name || p.name,
+    pos: c.pos || p.pos,
+    gp,
+    pts: c.pts + w * p.pts,
+    toi: gp > 0 ? (c.toi * c.gp + w * p.toi * p.gp) / gp : 0,
+    gs: c.gs + w * p.gs,
+    sa: c.sa + w * p.sa,
+    sv: c.sv + w * p.sv,
+  };
+}
+
+function computeTeamInjuryImpact(
+  entries: InjuryEntry[],
+  roster: RosterPlayer[],
+  cur: Map<number, PlayerStat> | null,
+  prev: Map<number, PlayerStat> | null
+): TeamImpact {
+  const C = INJ_CFG;
+  const out: TeamImpact = { offLoss: 0, defLoss: 0, total: 0, tags: new Map() };
+
+  const byName = new Map(roster.map((p) => [normName(p.name), p]));
+  const find = (name: string): RosterPlayer | undefined => {
+    const n = normName(name);
+    const exact = byName.get(n);
+    if (exact) return exact;
+    // apelido único no plantel + mesma inicial
+    const parts = n.split(" ");
+    const last = parts[parts.length - 1];
+    const hits = roster.filter((p) => {
+      const q = normName(p.name).split(" ");
+      return q[q.length - 1] === last && q[0]?.[0] === parts[0]?.[0];
+    });
+    return hits.length === 1 ? hits[0] : undefined;
+  };
+  const stat = (id: number) => blendStat(cur?.get(id), prev?.get(id));
+
+  const goalieInjury = new Map<number, { w: number; text: string }>();
+
+  for (const e of entries) {
+    const rp = find(e.name);
+    if (!rp) continue; // não está no plantel atual: ignora (entrada antiga ou noutra equipa)
+    const w = statusWeight(e.status);
+
+    if (rp.pos === "G") {
+      const prevW = goalieInjury.get(rp.id)?.w ?? 0;
+      if (w >= prevW) goalieInjury.set(rp.id, { w, text: e.text });
+      continue;
+    }
+
+    const s = stat(rp.id);
+    if (!s || s.gp <= 0) continue;
+
+    let value: number;
+    let offShare: number;
+    if (rp.pos === "D") {
+      value = Math.max(0, s.toi / 60 - C.defense.floorMinutes) * C.defense.goalsPerMinute;
+      offShare = C.defense.offShare;
+    } else {
+      const ppg = (s.pts + C.forward.replacementPpg * C.forward.priorGames) / (s.gp + C.forward.priorGames);
+      value = Math.max(0, ppg - C.forward.replacementPpg) * C.forward.goalsPerPoint;
+      offShare = C.forward.offShare;
+    }
+    value = Math.min(C.maxPerPlayer, value) * w;
+    if (value <= 0) continue;
+
+    out.offLoss += value * offShare;
+    out.defLoss += value * (1 - offShare);
+    if (value >= C.minTag) out.tags.set(e.text, { value, label: `impacto −${value.toFixed(2)} golos` });
+  }
+
+  // Guarda-redes: o que conta é perder o titular (o suplente defende pior)
+  const G = C.goalie;
+  const goalies = roster
+    .filter((p) => p.pos === "G")
+    .map((p) => ({ p, s: stat(p.id) }))
+    .filter((x): x is { p: RosterPlayer; s: PlayerStat } => !!x.s)
+    .sort((a, b) => b.s.gs - a.s.gs);
+
+  if (goalies.length > 0) {
+    const sv = (s: PlayerStat) => (s.sv + G.priorSv * G.priorShots) / (s.sa + G.priorShots);
+    const starter = goalies[0];
+    const injured = goalieInjury.get(starter.p.id);
+
+    if (injured) {
+      const others = goalies.slice(1);
+      const totalGs = goalies.reduce((sum, g) => sum + g.s.gs, 0);
+      const share = totalGs > 0 ? Math.min(G.maxStarterShare, Math.max(G.minStarterShare, starter.s.gs / totalGs)) : 0.7;
+      const svStarter = sv(starter.s);
+      const healthy = others.filter((g) => (goalieInjury.get(g.p.id)?.w ?? 0) < 1);
+      const svBackupToday = healthy.length ? sv(healthy[0].s) : G.replacementSv;
+      const svBackupTypical = others.length ? sv(others[0].s) : G.replacementSv;
+
+      const typical = share * svStarter + (1 - share) * svBackupTypical;
+      const pStart = (1 - injured.w) * share; // hipótese de o titular jogar hoje
+      const today = pStart * svStarter + (1 - pStart) * svBackupToday;
+      const delta = Math.min(G.maxDelta, Math.max(G.minDelta, G.shotsAgainstPerGame * (typical - today)));
+
+      if (delta > 0) {
+        out.defLoss += delta;
+        if (delta >= C.minTag) {
+          out.tags.set(injured.text, { value: delta, label: `guarda-redes titular: −${delta.toFixed(2)} golos` });
+        }
+      }
+    }
+  }
+
+  // Limite por equipa, para uma lista errada da ESPN não estragar um jogo todo
+  const raw = out.offLoss + out.defLoss;
+  if (raw > C.maxPerTeam) {
+    const k = C.maxPerTeam / raw;
+    out.offLoss *= k;
+    out.defLoss *= k;
+  }
+  out.total = out.offLoss + out.defLoss;
+  return out;
+}
+
+async function buildImpacts(
+  date: string,
+  games: NhlGame[],
+  injuries: InjuryMap | null
+): Promise<Map<string, TeamImpact> | null> {
+  if (!injuries) return null;
+  const season = seasonIdFor(date);
+  const abbrs = [...new Set(games.flatMap((g) => [g.homeAbbr, g.awayAbbr]))];
+
+  const [cur, prev, rosters] = await Promise.all([
+    fetchSeasonPlayers(season),
+    fetchSeasonPlayers(prevSeasonId(season)),
+    fetchRosters(abbrs),
+  ]);
+  if (!cur && !prev) return null;
+  if (rosters.size === 0) return null;
+
+  const impacts = new Map<string, TeamImpact>();
+  for (const g of games) {
+    for (const [abbr, name] of [[g.homeAbbr, g.homeName], [g.awayAbbr, g.awayName]] as const) {
+      const entries = injuryEntriesFor(injuries, name);
+      const roster = rosters.get(abbr);
+      if (!entries || !roster) continue;
+      impacts.set(abbr, computeTeamInjuryImpact(entries, roster, cur, prev));
+    }
+  }
+  return impacts;
+}
+
+/** Texto das lesões para o ecrã: jogadores com impacto primeiro, cada um com a sua etiqueta. */
+function injuryDisplay(entries: InjuryEntry[] | null, impact?: TeamImpact): string[] {
+  if (!entries) return ["Sem dados de lesões (fonte indisponível)"];
+  const ranked = entries
+    .map((e) => ({ e, tag: impact?.tags.get(e.text) }))
+    .sort((a, b) => (b.tag?.value ?? 0) - (a.tag?.value ?? 0));
+  return ranked.slice(0, MAX_INJURIES_PER_TEAM).map(({ e, tag }) => (tag ? `${e.text} · ${tag.label}` : e.text));
 }
 
 // ─── Resumos (Groq, opcional) ────────────────────────────────────────────────
@@ -651,13 +1056,17 @@ function buildSummaryPrompt(
   expected: Map<string, Expected>,
   form: Map<string, TeamRecent>,
   inj: InjuryMap | null,
-  tiredTeams: Set<string>
+  tiredTeams: Set<string>,
+  impacts: Map<string, TeamImpact> | null
 ) {
   const b2b = (abbr: string) => (tiredTeams.has(abbr) ? " | JOGOU ONTEM (2.ª noite seguida)" : "");
-  const injLine = (name: string) => {
-    if (!inj) return "";
-    const list = injuriesFor(inj, name);
-    return list.length ? `\n    Lesões (ESPN): ${list.join("; ")}` : "";
+  const injLine = (abbr: string, name: string) => {
+    const entries = injuryEntriesFor(inj, name);
+    if (!entries || entries.length === 0) return "";
+    const impact = impacts?.get(abbr);
+    const list = injuryDisplay(entries, impact);
+    const adj = impact && impact.total >= INJ_CFG.minTag ? ` (ajuste total já incluído nos números: −${impact.total.toFixed(2)} golos)` : "";
+    return `\n    Lesões (ESPN)${adj}: ${list.join("; ")}`;
   };
 
   const block = games
@@ -667,8 +1076,8 @@ function buildSummaryPrompt(
       return [
         `id=${g.id} | ${g.homeAbbr} (casa) vs ${g.awayAbbr} (fora)`,
         `  Modelo: vitória casa ${p.winProbabilityHome}% / fora ${p.winProbabilityAway}%; empate aos 60 min ${p.drawTRProb}%; 2+ golos no 1.º período ${p.over15P1Prob}%; ambas marcam no 1.º período ${p.bttsP1Prob}%; 5+ golos ${p.over45Prob}%; 6+ golos ${p.over55Prob}%; golos esperados ${g.homeAbbr} ${f1(e.lh)} / ${g.awayAbbr} ${f1(e.la)}`,
-        `  ${describeTeam(`CASA ${g.homeAbbr}`, form.get(g.homeAbbr))}${b2b(g.homeAbbr)}${injLine(g.homeName)}`,
-        `  ${describeTeam(`FORA ${g.awayAbbr}`, form.get(g.awayAbbr))}${b2b(g.awayAbbr)}${injLine(g.awayName)}`,
+        `  ${describeTeam(`CASA ${g.homeAbbr}`, form.get(g.homeAbbr))}${b2b(g.homeAbbr)}${injLine(g.homeAbbr, g.homeName)}`,
+        `  ${describeTeam(`FORA ${g.awayAbbr}`, form.get(g.awayAbbr))}${b2b(g.awayAbbr)}${injLine(g.awayAbbr, g.awayName)}`,
       ].join("\n");
     })
     .join("\n");
@@ -678,7 +1087,7 @@ function buildSummaryPrompt(
 A tua tarefa: para cada jogo, escrever "analysisSummary" com 1 a 2 frases diretas em português de Portugal:
 - diz quem é o favorito e o que o justifica, usando só os números fornecidos (golos marcados/sofridos, forma, golos esperados);
 - se uma equipa jogou ontem (2.ª noite seguida), refere o cansaço quando for relevante;
-- NÃO repitas a lista de lesões (já aparece por baixo do resumo); só menciona uma lesão de guarda-redes se for relevante para o jogo, e lembra que os números do modelo não a incluem;
+- os números JÁ incluem o ajuste por lesões indicado (jogadores-chave e guarda-redes titular; jogadores de banco não pesam). Refere o ausente mais importante quando ele muda o favorito ou o total de golos; NÃO repitas a lista completa de lesões (aparece por baixo do resumo);
 - não inventes lesões, alinhamentos nem resultados; sem avisos genéricos.
 
 JOGOS:
@@ -731,15 +1140,42 @@ async function askGroqSummaries(apiKey: string, prompt: string): Promise<Map<str
 
 const record = (t?: TeamRecent) => (t ? `${t.w}-${t.l}-${t.otl}` : "0-0-0");
 
-function buildPredictions(games: NhlGame[], form: Map<string, TeamRecent>, ctx: LeagueCtx, tiredTeams: Set<string>) {
+const teamP1 = (t: TeamRecent | undefined, scoreProb: number): TeamP1Stats => ({
+  n: t?.p1n ?? 0,
+  scored: t?.p1Scored ?? 0,
+  conceded: t?.p1Conceded ?? 0,
+  over15: t?.p1Over15 ?? 0,
+  btts: t?.p1Btts ?? 0,
+  scoreProb: pct(scoreProb),
+});
+
+function buildPredictions(
+  games: NhlGame[],
+  form: Map<string, TeamRecent>,
+  ctx: LeagueCtx,
+  tiredTeams: Set<string>,
+  injuries: InjuryMap | null,
+  impacts: Map<string, TeamImpact> | null
+) {
   const expected = new Map<string, Expected>();
 
   const predictions: Prediction[] = games.map((g) => {
     const home = form.get(g.homeAbbr);
     const away = form.get(g.awayAbbr);
     const tired = { home: tiredTeams.has(g.homeAbbr), away: tiredTeams.has(g.awayAbbr) };
-    const m = gameModel(home, away, ctx, tired);
+    const ih = impacts?.get(g.homeAbbr);
+    const ia = impacts?.get(g.awayAbbr);
+    const m = gameModel(
+      home,
+      away,
+      ctx,
+      tired,
+      ih ? { offLoss: ih.offLoss, defLoss: ih.defLoss } : NO_ADJ,
+      ia ? { offLoss: ia.offLoss, defLoss: ia.defLoss } : NO_ADJ
+    );
     const winHome = pct(m.pHome);
+    const p1Home = pct(m.p1.home);
+    const p1Draw = pct(m.p1.draw);
 
     const p: Prediction = {
       id: String(g.id),
@@ -758,7 +1194,22 @@ function buildPredictions(games: NhlGame[], form: Map<string, TeamRecent>, ctx: 
       over45Prob: pct(m.over45),
       over55Prob: pct(m.over55),
       analysisSummary: "",
-      injuries: { home: [], away: [] },
+      injuries: {
+        home: injuryDisplay(injuryEntriesFor(injuries, g.homeName), ih),
+        away: injuryDisplay(injuryEntriesFor(injuries, g.awayName), ia),
+      },
+      homeGames: home?.gp ?? 0,
+      awayGames: away?.gp ?? 0,
+      homeB2B: tired.home,
+      awayB2B: tired.away,
+      scoreGuess: m.scoreGuess,
+      totalLine: m.totalLine,
+      p1WinHome: p1Home,
+      p1Draw,
+      p1WinAway: Math.max(0, 100 - p1Home - p1Draw),
+      homeP1: teamP1(home, m.scoreProbHome),
+      awayP1: teamP1(away, m.scoreProbAway),
+      injuryAdj: { home: Math.round((ih?.total ?? 0) * 100) / 100, away: Math.round((ia?.total ?? 0) * 100) / 100 },
     };
     const e = { lh: m.lh, la: m.la };
     expected.set(p.id, e);
@@ -809,19 +1260,9 @@ export async function POST(req: Request) {
 
     if (!isDate(date)) return json({ message: "Data inválida (usa YYYY-MM-DD)." }, 400);
 
-    // Lesões (cache curta própria, para não ficarem presas nas 8h da cache da análise)
-    const injuries = await fetchInjuries();
-    const injMeta = { source: injuries ? ("espn" as const) : ("unavailable" as const), teams: injuries?.size ?? 0 };
-
     if (!force) {
       const cached = await readCache(date);
-      if (cached) {
-        return json({
-          ...cached,
-          predictions: withInjuries(cached.predictions, injuries),
-          meta: { ...cached.meta, injuries: injMeta, cached: true },
-        });
-      }
+      if (cached) return json({ ...cached, meta: { ...cached.meta, cached: true } });
     }
 
     let games: NhlGame[];
@@ -856,8 +1297,20 @@ export async function POST(req: Request) {
       allRecent.filter((g) => g.date === yesterday).flatMap((g) => [g.homeAbbr, g.awayAbbr])
     );
 
+    // Lesões (ESPN) → impacto por jogador-chave, validado contra os plantéis da NHL
+    const injuries = await fetchInjuries();
+    const injMeta = { source: injuries ? ("espn" as const) : ("unavailable" as const), teams: injuries?.size ?? 0 };
+    const impacts = await buildImpacts(date, games, injuries).catch((e) => {
+      console.error("[gemini] impacto das lesões falhou:", e);
+      return null;
+    });
+    const impactMeta = {
+      source: impacts ? ("ok" as const) : ("unavailable" as const),
+      teamsAffected: impacts ? [...impacts.values()].filter((i) => i.total >= INJ_CFG.minTag).length : 0,
+    };
+
     // Probabilidades: modelo estatístico (não dependem da IA)
-    const { predictions: modelPreds, expected } = buildPredictions(games, form, ctx, tiredTeams);
+    const { predictions, expected } = buildPredictions(games, form, ctx, tiredTeams, injuries, impacts);
 
     // Resumos: IA (opcional). Se falhar, ficam os resumos automáticos.
     let aiError: string | null = null;
@@ -868,9 +1321,9 @@ export async function POST(req: Request) {
       try {
         const summaries = await askGroqSummaries(
           apiKey,
-          buildSummaryPrompt(date, games, modelPreds, expected, form, injuries, tiredTeams)
+          buildSummaryPrompt(date, games, predictions, expected, form, injuries, tiredTeams, impacts)
         );
-        for (const p of modelPreds) {
+        for (const p of predictions) {
           const text = summaries.get(p.id);
           if (text) p.analysisSummary = text;
         }
@@ -880,11 +1333,10 @@ export async function POST(req: Request) {
       }
     }
 
-    const predictions = withInjuries(modelPreds, injuries);
-
     const notes: string[] = [];
     if (aiError) notes.push(`Resumos automáticos (IA indisponível: ${aiError}).`);
     if (!injuries) notes.push("Lesões indisponíveis (fonte ESPN sem resposta ou com formato inesperado).");
+    else if (!impacts) notes.push("Impacto das lesões indisponível (estatísticas de jogadores ou plantéis sem resposta): lesões só informativas.");
     if (failedDays > 0) notes.push(`Falhou a leitura de ${failedDays} dia(s) da procura dos últimos jogos (${LOOKBACK_DAYS} dias).`);
 
     const payload: AnalysisPayload = {
@@ -896,6 +1348,7 @@ export async function POST(req: Request) {
         window: { from, to, gamesUsed: used.length, preseasonGames, regularSeasonDay, gamesPerTeam: TEAM_GAMES },
         backToBack: games.flatMap((g) => [g.homeAbbr, g.awayAbbr]).filter((t) => tiredTeams.has(t)),
         injuries: injMeta,
+        injuryImpact: impactMeta,
         ...(notes.length ? { note: notes.join(" ") } : {}),
       },
     };

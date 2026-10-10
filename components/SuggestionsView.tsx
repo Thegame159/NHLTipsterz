@@ -7,6 +7,7 @@ import { STRONG_RULES, COMBO_RULES } from "../utils/suggestions";
 interface Props {
   suggestions: Suggestions;
   predictions: Prediction[];
+  totalGames?: number;
 }
 
 const getLogoUrl = (abbr: string) => {
@@ -361,7 +362,7 @@ const SuggestionCard: React.FC<{
 );
 
   
-  const SuggestionsView: React.FC<Props> = ({ suggestions, predictions }) => {
+  const SuggestionsView: React.FC<Props> = ({ suggestions, predictions, totalGames }) => {
 
   const filterSuggestionsByTime = (items: string[]) => items;
 const filterTripleWin = (items: string[]) => items;
@@ -382,6 +383,13 @@ const filterTripleWin = (items: string[]) => items;
           </h2>
           <p className="text-slate-400 text-sm max-w-lg">
             As nossas melhores seleções baseadas em modelos estatísticos de alta confiança, processados em tempo real com as respetivas probabilidades.
+          </p>
+          <p className="text-[11px] font-black uppercase tracking-widest text-blue-400/80 mt-2">
+            {typeof totalGames === 'number' && totalGames > 0
+              ? `Hoje: ${totalGames} ${totalGames === 1 ? 'jogo' : 'jogos'}${
+                  predictions.length !== totalGames ? ` (${predictions.length} na janela noturna)` : ''
+                }`
+              : `${predictions.length} ${predictions.length === 1 ? 'jogo' : 'jogos'}`}
           </p>
         </div>
       </div>
@@ -600,7 +608,7 @@ const filterTripleWin = (items: string[]) => items;
             Combo de Vitórias
           </h3>
           <p className="text-xs text-slate-400 mb-5 font-medium leading-tight">
-            Os {suggestions.winCombo.legs.length} favoritos mais prováveis do dia numa só combinada (todas têm de acertar).
+            Os {suggestions.winCombo.legs.length} favoritos mais prováveis do dia numa só combinada (todas têm de acertar). Vitória incluindo prolongamento/desempate.
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
@@ -647,7 +655,7 @@ const filterTripleWin = (items: string[]) => items;
           </div>
 
           <p className="text-[10px] text-slate-500 mt-4 leading-tight uppercase tracking-wider font-bold">
-            Odd justa = 100 ÷ probabilidade combinada. Só há valor se a casa pagar mais do que isto. Gerado com {COMBO_RULES.minGames}+ jogos.
+            Odd justa = 100 ÷ probabilidade combinada, com vitórias incluindo prolongamento/desempate. Só há valor se a casa pagar mais do que isto. Gerado com {COMBO_RULES.minGames}+ jogos.
           </p>
         </div>
       )}

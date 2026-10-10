@@ -107,6 +107,7 @@ const App: React.FC = () => {
         predictions: filteredPredictions,
         suggestions: suggestionsList,
         lastUpdated: analysisData?.lastUpdated || new Date().toISOString(),
+        totalGames: rawPredictions.length,
       });
       setLoadedDate(date);
 
@@ -309,7 +310,7 @@ const App: React.FC = () => {
             {activeTab === 'schedule' && (
               <div className="space-y-6">
                 {loadedDate && data && predictionsCount > 0 && (
-                  <GameTable predictions={data.predictions} />
+                  <GameTable predictions={data.predictions} totalGames={data.totalGames} />
                 )}
                 {(!loadedDate || predictionsCount === 0) && (
                   <div className="py-24 text-center text-slate-600 text-[10px] font-black uppercase tracking-widest">
@@ -324,6 +325,7 @@ const App: React.FC = () => {
                 <SuggestionsView
                   suggestions={data.suggestions}
                   predictions={data.predictions}
+                  totalGames={data.totalGames}
                 />
               ) : (
                 <div className="py-24 text-center text-slate-600 text-[10px] font-black uppercase tracking-widest">

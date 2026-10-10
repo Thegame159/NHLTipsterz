@@ -11,6 +11,7 @@ import {
 
 interface Props {
   predictions: GamePrediction[];
+  totalGames?: number;
 }
 
 // ─── Helper de segurança numérica ──────────────────────────────────────────
@@ -101,6 +102,22 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
                   <span className="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-bold uppercase">
                     {game.homeRecordL10 || '0-0-0'}
                   </span>
+                  {typeof game.homeGames === 'number' && (
+                    <span
+                      title={`Estimativa baseada nos últimos ${game.homeGames} jogo(s)`}
+                      className="text-[10px] bg-slate-800/60 text-slate-500 px-1.5 py-0.5 rounded font-bold"
+                    >
+                      {game.homeGames}J
+                    </span>
+                  )}
+                  {game.homeB2B && (
+                    <span
+                      title="Jogou ontem (2.ª noite seguida)"
+                      className="text-[10px] bg-amber-500/15 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-black uppercase"
+                    >
+                      B2B
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -123,6 +140,22 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
                   <span className="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-bold uppercase">
                     {game.awayRecordL10 || '0-0-0'}
                   </span>
+                  {typeof game.awayGames === 'number' && (
+                    <span
+                      title={`Estimativa baseada nos últimos ${game.awayGames} jogo(s)`}
+                      className="text-[10px] bg-slate-800/60 text-slate-500 px-1.5 py-0.5 rounded font-bold"
+                    >
+                      {game.awayGames}J
+                    </span>
+                  )}
+                  {game.awayB2B && (
+                    <span
+                      title="Jogou ontem (2.ª noite seguida)"
+                      className="text-[10px] bg-amber-500/15 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-black uppercase"
+                    >
+                      B2B
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -181,11 +214,69 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
               <span className="italic text-slate-400">{game.analysisSummary || (game as any).analysis || 'Sem resumo disponível.'}</span>
             </div>
 
+            {/* Estimativas do modelo */}
+            {(game.scoreGuess || game.homeP1) && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-4 space-y-2">
+                  <div className="text-blue-400 font-bold text-[11px] uppercase tracking-wide">Palpite do modelo</div>
+                  <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm text-slate-300">
+                    {game.scoreGuess && (
+                      <span>
+                        Resultado: <b className="text-white">{teamLabel(homeTeam)} {game.scoreGuess} {teamLabel(awayTeam)}</b>
+                      </span>
+                    )}
+                    {typeof game.totalLine === 'number' && (
+                      <span>
+                        Total: <b className="text-white">{game.totalLine.toFixed(1)}</b> golos
+                      </span>
+                    )}
+                  </div>
+                  {typeof game.p1WinHome === 'number' && (
+                    <div className="text-sm text-slate-300">
+                      A ganhar no fim do 1.º período:{' '}
+                      <b className="text-white">{teamLabel(homeTeam)} {game.p1WinHome}%</b> · empate{' '}
+                      <b className="text-white">{game.p1Draw}%</b> ·{' '}
+                      <b className="text-white">{teamLabel(awayTeam)} {game.p1WinAway}%</b>
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-4 space-y-3">
+                  <div className="text-blue-400 font-bold text-[11px] uppercase tracking-wide">1.º período, por equipa</div>
+                  {[
+                    { name: teamLabel(homeTeam), s: game.homeP1 },
+                    { name: teamLabel(awayTeam), s: game.awayP1 },
+                  ].map(({ name, s }) => (
+                    <div key={name} className="text-sm text-slate-400">
+                      <span className="font-bold text-slate-200">{name}</span>
+                      {s && s.n > 0 ? (
+                        <span>
+                          {' '}· marcou em <b className="text-white">{s.scored}/{s.n}</b> · sofreu em{' '}
+                          <b className="text-white">{s.conceded}/{s.n}</b> · 2+ golos em{' '}
+                          <b className="text-white">{s.over15}/{s.n}</b> · ambas marcaram em{' '}
+                          <b className="text-white">{s.btts}/{s.n}</b> · prob. de marcar hoje{' '}
+                          <b className="text-emerald-400">{s.scoreProb}%</b>
+                        </span>
+                      ) : (
+                        <span> · sem dados do 1.º período</span>
+                      )}
+                    </div>
+                  ))}
+                  <p className="text-[10px] text-slate-600 leading-tight">
+                    Contagens nos últimos jogos de cada equipa (os números da equipa e do adversário combinam-se no modelo).
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Lesões */}
             <div className="grid grid-cols-2 gap-6 text-sm">
               <div>
                 <div className="text-rose-400 font-bold mb-2 text-[11px] uppercase tracking-wide">
                   Lesões {teamLabel(homeTeam)}
+                  {(game.injuryAdj?.home ?? 0) >= 0.05 && (
+                    <span className="ml-2 text-amber-400 normal-case">· ajuste −{game.injuryAdj!.home.toFixed(2)} golos/jogo</span>
+                  )}
                 </div>
                 {game.injuries?.home?.length > 0
                   ? <ul className="space-y-1 text-slate-400">
@@ -197,6 +288,9 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
               <div>
                 <div className="text-rose-400 font-bold mb-2 text-[11px] uppercase tracking-wide">
                   Lesões {teamLabel(awayTeam)}
+                  {(game.injuryAdj?.away ?? 0) >= 0.05 && (
+                    <span className="ml-2 text-amber-400 normal-case">· ajuste −{game.injuryAdj!.away.toFixed(2)} golos/jogo</span>
+                  )}
                 </div>
                 {game.injuries?.away?.length > 0
                   ? <ul className="space-y-1 text-slate-400">
@@ -216,7 +310,7 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
 
 // ─── Tabela principal ────────────────────────────────────────────────────────
 
-const GameTable: React.FC<Props> = ({ predictions }) => {
+const GameTable: React.FC<Props> = ({ predictions, totalGames }) => {
   const gamesList = predictions || [];
 
   return (
@@ -229,6 +323,7 @@ const GameTable: React.FC<Props> = ({ predictions }) => {
         </span>
         <span className="ml-auto text-[10px] text-slate-600 font-bold">
           {gamesList.length} {gamesList.length === 1 ? 'jogo' : 'jogos'}
+          {typeof totalGames === 'number' && totalGames > gamesList.length ? ` (de ${totalGames} hoje)` : ''}
         </span>
       </div>
 

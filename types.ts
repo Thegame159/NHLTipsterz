@@ -1,4 +1,13 @@
 
+export interface TeamP1Stats {
+  n: number; // jogos com dados do 1.º período
+  scored: number; // jogos em que marcou no 1.º período
+  conceded: number; // jogos em que sofreu golo no 1.º período
+  over15: number; // jogos com 2+ golos no 1.º período
+  btts: number; // jogos em que ambas marcaram no 1.º período
+  scoreProb: number; // % (modelo) de marcar no 1.º período hoje
+}
+
 export interface GamePrediction {
   id: string;
   homeTeam: string;
@@ -20,6 +29,19 @@ export interface GamePrediction {
     home: string[];
     away: string[];
   };
+  // Extras calculados pelo servidor (opcionais, para compatibilidade com dados antigos)
+  homeGames?: number; // jogos em que a estimativa de cada equipa se baseia
+  awayGames?: number;
+  homeB2B?: boolean; // jogou ontem
+  awayB2B?: boolean;
+  scoreGuess?: string; // ex.: "3–2"
+  totalLine?: number; // ex.: 6.5
+  p1WinHome?: number; // % de estar a ganhar no fim do 1.º período
+  p1Draw?: number;
+  p1WinAway?: number;
+  homeP1?: TeamP1Stats;
+  awayP1?: TeamP1Stats;
+  injuryAdj?: { home: number; away: number }; // golos/jogo que cada equipa perde por lesões
 }
 
 export interface StrongPick {
@@ -63,4 +85,5 @@ export interface NHLAnalysisData {
   predictions: GamePrediction[];
   suggestions: Suggestions;
   lastUpdated: string;
+  totalGames?: number; // jogos do dia (antes do filtro da janela noturna)
 }
