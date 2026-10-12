@@ -8,6 +8,7 @@ import SuggestionsView from './components/SuggestionsView';
 import MyPicksView from './components/MyPicksView';
 import StatsView from './components/StatsView';
 import BrandLogo from './components/BrandLogo';
+import UpdateBanner from './components/UpdateBanner';
 import { buildSuggestions } from './utils/suggestions';
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
@@ -351,6 +352,9 @@ const App: React.FC = () => {
           </main>
         </>
       )}
+
+      {/* Aviso de nova versão */}
+      <UpdateBanner />
 
       {/* Footer fixo */}
       <footer className="fixed bottom-0 left-0 right-0 bg-black/80 backdrop-blur-md border-t border-white/5 p-4 text-center z-40">

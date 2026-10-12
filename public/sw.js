@@ -1,5 +1,5 @@
 /* public/sw.js */
-const CACHE_NAME = "nhl-tipsterz-v2";
+const CACHE_NAME = "nhl-tipsterz-v3";
 
 // Precache mínimo (podes adicionar mais ficheiros se quiseres)
 const CORE_ASSETS = ["/", "/index.html", "/manifest.webmanifest"];
@@ -27,6 +27,10 @@ self.addEventListener("fetch", (event) => {
 
   // só GET
   if (req.method !== "GET") return;
+
+  // O aviso de versão e a API vêm sempre da rede (nunca da cache), senão a app não deteta versões novas
+  const { pathname } = new URL(req.url);
+  if (pathname === "/version.json" || pathname.startsWith("/api/")) return;
 
   const accept = req.headers.get("accept") || "";
   const isHTML = accept.includes("text/html");
