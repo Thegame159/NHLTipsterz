@@ -161,13 +161,6 @@ type Prediction = {
   p1Draw: number;
   p1WinAway: number;
   over15P2Prob: number; // 2+ golos no 2.º período
-  bttsP2Prob: number; // ambas marcam no 2.º período
-  p2WinHome: number; // % de vencer o 2.º período (golos só nesse período)
-  p2Draw: number;
-  p2WinAway: number;
-  p12WinHome: number; // % de estar a ganhar após 2 períodos
-  p12Draw: number;
-  p12WinAway: number;
   homeP1: TeamP1Stats;
   awayP1: TeamP1Stats;
   homeP2: TeamP1Stats;
@@ -677,8 +670,6 @@ function gameModel(
   const hw = decisive > 0 ? (m.hw * (1 - tie)) / decisive : (1 - tie) / 2;
   const pHome = clamp01(hw + tie * C.extraTimeHomeShare);
   const p1 = periodOutcome(lh1, la1);
-  const p2 = periodOutcome(lh2, la2); // quem vence o 2.º período
-  const p12 = periodOutcome(lh1 + lh2, la1 + la2); // quem está a ganhar após 2 períodos
 
   return {
     lh,
@@ -694,8 +685,6 @@ function gameModel(
     over45: clamp01(m.over45 * F.over45),
     over55: clamp01(m.over55 * F.over55),
     p1,
-    p2,
-    p12,
     scoreGuess: likelyScore(lh, la, pHome >= 0.5),
     totalLine: Math.round((lh + la) * 2) / 2,
     scoreProbHome: 1 - Math.exp(-lh1),
@@ -1276,8 +1265,6 @@ function buildPredictions(
     );
     const winHome = pct(m.pHome);
     const w1 = threeWay(m.p1);
-    const w2 = threeWay(m.p2);
-    const w12 = threeWay(m.p12);
 
     const p: Prediction = {
       id: String(g.id),
@@ -1310,13 +1297,6 @@ function buildPredictions(
       p1Draw: w1.draw,
       p1WinAway: w1.away,
       over15P2Prob: pct(m.over15P2),
-      bttsP2Prob: pct(m.btts2),
-      p2WinHome: w2.home,
-      p2Draw: w2.draw,
-      p2WinAway: w2.away,
-      p12WinHome: w12.home,
-      p12Draw: w12.draw,
-      p12WinAway: w12.away,
       homeP1: teamP1(home, m.scoreProbHome),
       awayP1: teamP1(away, m.scoreProbAway),
       homeP2: teamP2(home, m.scoreProb2Home),

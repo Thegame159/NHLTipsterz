@@ -451,7 +451,7 @@ const filterTripleWin = (items: string[]) => items;
         )}
 
         <p className="text-[10px] text-slate-500 mt-4 leading-tight uppercase tracking-wider font-bold">
-          Critério mínimo: vitória {STRONG_RULES.markets.win.min}% · 1.º período &gt;1.5 {STRONG_RULES.markets.over15P1.min}% · ambas marcam 1.º período {STRONG_RULES.markets.btts1P.min}% · 2.º período &gt;1.5 {STRONG_RULES.markets.over15P2.min}% · ambas marcam 2.º período {STRONG_RULES.markets.btts2P.min}% · empate {STRONG_RULES.markets.draw.min}% · 5+ golos {STRONG_RULES.markets.over45.min}% · 6+ golos {STRONG_RULES.markets.over55.min}%
+          Critério mínimo: vitória {STRONG_RULES.markets.win.min}% · 1.º período &gt;1.5 {STRONG_RULES.markets.over15P1.min}% · ambas marcam 1.º período {STRONG_RULES.markets.btts1P.min}% · 2.º período &gt;1.5 {STRONG_RULES.markets.over15P2.min}% · empate {STRONG_RULES.markets.draw.min}% · 5+ golos {STRONG_RULES.markets.over45.min}% · 6+ golos {STRONG_RULES.markets.over55.min}%
         </p>
       </div>
 
@@ -481,6 +481,15 @@ const filterTripleWin = (items: string[]) => items;
           gradient="bg-gradient-to-br from-blue-500 to-indigo-700"
           badgeColor="bg-blue-500"
           description="Seleção secundária de alta confiança para golos rápidos."
+        />
+
+        <SuggestionCard
+          title="Triplete Over 1.5 P2"
+          items={filterSuggestionsByTime(suggestions.tripleOver15P2 ?? [])}
+          icon="fa-fire-alt"
+          gradient="bg-gradient-to-br from-orange-500 to-amber-700"
+          badgeColor="bg-orange-500"
+          description="3 jogos com entradas fortes para pelo menos 2 golos no 2º período."
         />
 
         <SuggestionCard

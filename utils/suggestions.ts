@@ -9,6 +9,7 @@ export const SUGGESTION_RULES = {
   tripleWin: 3,
   tripleOver15P1: 3,
   doubleOver15P1: 2, // jogos seguintes aos do triplete (nunca repetidos)
+  tripleOver15P2: 3,
   quadrupleOver45: 4,
   over55: { max: 4, minProb: 55 },
   draw: { max: 2, minProb: 25 },
@@ -27,7 +28,6 @@ export const STRONG_RULES = {
     over15P1: { label: "Over 1.5 no 1.º período", min: 64 },
     btts1P: { label: "Ambas marcam no 1.º período", min: 46 },
     over15P2: { label: "Over 1.5 no 2.º período", min: 70 },
-    btts2P: { label: "Ambas marcam no 2.º período", min: 50 },
     draw: { label: "Empate aos 60 min", min: 28 },
     over45: { label: "Over 4.5 golos", min: 80 },
     over55: { label: "Over 5.5 golos", min: 66 },
@@ -93,7 +93,6 @@ function buildStrongPicks(games: GamePrediction[]): StrongPick[] {
     add(M.over15P1, g.over15P1Prob, matchup(g));
     add(M.btts1P, g.bttsP1Prob, matchup(g));
     if (typeof g.over15P2Prob === 'number') add(M.over15P2, g.over15P2Prob, matchup(g));
-    if (typeof g.bttsP2Prob === 'number') add(M.btts2P, g.bttsP2Prob, matchup(g));
     add(M.draw, g.drawTRProb, matchup(g));
     add(M.over45, g.over45Prob, matchup(g));
     add(M.over55, g.over55Prob ?? 0, matchup(g));
@@ -128,6 +127,12 @@ export function buildSuggestions(predictions: GamePrediction[]): Suggestions {
     .slice(R.tripleOver15P1, R.tripleOver15P1 + R.doubleOver15P1)
     .map((g) => label(g, g.over15P1Prob));
 
+  // Over 1.5 no 2.º período: mesma lógica do 1.º período
+  const byP2 = [...games]
+    .filter((g) => typeof g.over15P2Prob === "number")
+    .sort(byDesc((g) => g.over15P2Prob as number));
+  const tripleOver15P2 = byP2.slice(0, R.tripleOver15P2).map((g) => label(g, g.over15P2Prob as number));
+
   const quadrupleOver45 = [...games]
     .sort(byDesc((g) => g.over45Prob))
     .slice(0, R.quadrupleOver45)
@@ -152,6 +157,7 @@ export function buildSuggestions(predictions: GamePrediction[]): Suggestions {
     tripleWin,
     tripleOver15P1,
     doubleOver15P1,
+    tripleOver15P2,
     drawSuggestions,
     quadrupleOver45,
     over55Suggestions,
