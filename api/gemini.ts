@@ -616,17 +616,22 @@ function periodOutcome(lh1: number, la1: number) {
   return { home, draw, away };
 }
 
-/** Resultado exato mais provável, coerente com o favorito (a vitória pode ser no prolongamento, ex.: 3–2). */
+/**
+ * Palpite de resultado: o resultado exato mais provável entre os que respeitam
+ *  - o favorito (a vitória pode ser no prolongamento, ex.: 3–2) e
+ *  - o total de golos esperado (soma arredondada), para ser coerente com o "Total" mostrado.
+ * (O resultado mais provável "à solta" tende a ter menos golos do que a média, e parecia contradizer o total.)
+ */
 function likelyScore(lh: number, la: number, homeFav: boolean) {
-  const ph = poissonPmf(lh, 12);
-  const pa = poissonPmf(la, 12);
-  let best = { i: homeFav ? 1 : 0, j: homeFav ? 0 : 1, p: -1 };
-  for (let i = 0; i <= 12; i++) {
-    for (let j = 0; j <= 12; j++) {
-      if (homeFav ? i <= j : j <= i) continue;
-      const p = ph[i] * pa[j];
-      if (p > best.p) best = { i, j, p };
-    }
+  const target = Math.max(1, Math.round(lh + la));
+  const ph = poissonPmf(lh, 14);
+  const pa = poissonPmf(la, 14);
+  let best = { i: homeFav ? target : 0, j: homeFav ? 0 : target, p: -1 };
+  for (let i = 0; i <= target; i++) {
+    const j = target - i;
+    if (homeFav ? i <= j : j <= i) continue;
+    const p = (ph[i] ?? 0) * (pa[j] ?? 0);
+    if (p > best.p) best = { i, j, p };
   }
   return `${best.i}–${best.j}`;
 }
