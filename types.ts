@@ -34,6 +34,7 @@ export interface GamePrediction {
   awayGames?: number;
   homeB2B?: boolean; // jogou ontem
   awayB2B?: boolean;
+  favorite?: 'home' | 'away' | 'even'; // 'even' = jogo equilibrado
   scoreGuess?: string; // ex.: "3–2"
   totalLine?: number; // ex.: 6.5
   p1WinHome?: number; // % de estar a ganhar no fim do 1.º período

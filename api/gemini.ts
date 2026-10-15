@@ -32,6 +32,7 @@ const PBP_BATCH = 10;
 
 // Parâmetros do modelo estatístico (ajustáveis).
 const MODEL_CFG = {
+  evenBand: 1, // jogo "equilibrado" se a vitória da casa arredondada estiver entre 49% e 51%
   priorGamesP2: 30, // idem para o 2.º período
   p2Share: 0.34, // fração dos golos que cai no 2.º período (referência; a janela corrige)
   priorGamesP1: 30, // idem para os golos do 1.º período (mais ruidosos, mas com padrão próprio de cada equipa)
@@ -155,6 +156,7 @@ type Prediction = {
   awayGames: number;
   homeB2B: boolean; // jogou ontem
   awayB2B: boolean;
+  favorite: "home" | "away" | "even"; // "even" = jogo equilibrado, sem favorito
   scoreGuess: string; // ex.: "3–2"
   totalLine: number; // ex.: 6.5
   p1WinHome: number; // % de estar a ganhar no fim do 1.º período
@@ -616,14 +618,25 @@ function periodOutcome(lh1: number, la1: number) {
   return { home, draw, away };
 }
 
+type Favorite = "home" | "away" | "even";
+
 /**
  * Palpite de resultado: o resultado exato mais provável entre os que respeitam
  *  - o favorito (a vitória pode ser no prolongamento, ex.: 3–2) e
  *  - o total de golos esperado (soma arredondada), para ser coerente com o "Total" mostrado.
- * (O resultado mais provável "à solta" tende a ter menos golos do que a média, e parecia contradizer o total.)
+ * Em jogos equilibrados (sem favorito) o palpite é um empate aos 60 min, que se decide no prolongamento.
  */
-function likelyScore(lh: number, la: number, homeFav: boolean) {
+function likelyScore(lh: number, la: number, favorite: Favorite, pHome: number) {
   const target = Math.max(1, Math.round(lh + la));
+
+  if (favorite === "even") {
+    if (target % 2 === 0) return `${target / 2}–${target / 2}`;
+    const hi = (target + 1) / 2;
+    const lo = (target - 1) / 2;
+    return pHome >= 0.5 ? `${hi}–${lo}` : `${lo}–${hi}`;
+  }
+
+  const homeFav = favorite === "home";
   const ph = poissonPmf(lh, 14);
   const pa = poissonPmf(la, 14);
   let best = { i: homeFav ? target : 0, j: homeFav ? 0 : target, p: -1 };
@@ -675,6 +688,8 @@ function gameModel(
   const hw = decisive > 0 ? (m.hw * (1 - tie)) / decisive : (1 - tie) / 2;
   const pHome = clamp01(hw + tie * C.extraTimeHomeShare);
   const p1 = periodOutcome(lh1, la1);
+  const homePct = Math.round(pHome * 100);
+  const favorite: Favorite = Math.abs(homePct - 50) <= C.evenBand ? "even" : homePct > 50 ? "home" : "away";
 
   return {
     lh,
@@ -690,7 +705,8 @@ function gameModel(
     over45: clamp01(m.over45 * F.over45),
     over55: clamp01(m.over55 * F.over55),
     p1,
-    scoreGuess: likelyScore(lh, la, pHome >= 0.5),
+    favorite,
+    scoreGuess: likelyScore(lh, la, favorite, pHome),
     totalLine: Math.round((lh + la) * 2) / 2,
     scoreProbHome: 1 - Math.exp(-lh1),
     scoreProbAway: 1 - Math.exp(-la1),
@@ -1117,13 +1133,17 @@ function fallbackSummary(
   const homeFav = p.winProbabilityHome >= 50;
   const fav = homeFav ? g.homeAbbr : g.awayAbbr;
   const favP = homeFav ? p.winProbabilityHome : p.winProbabilityAway;
+  const verdict =
+    p.favorite === "even"
+      ? `Jogo equilibrado (${g.homeAbbr} ${p.winProbabilityHome}% / ${g.awayAbbr} ${p.winProbabilityAway}%).`
+      : `${fav} favorito (${favP}%).`;
   if ((home?.gp ?? 0) + (away?.gp ?? 0) === 0) {
-    return `Sem jogos recentes de ${g.homeAbbr} e ${g.awayAbbr}: estimativa pelas médias da liga e vantagem de jogar em casa (${fav} ${favP}%).`;
+    return `Sem jogos recentes de ${g.homeAbbr} e ${g.awayAbbr}: estimativa pelas médias da liga e vantagem de jogar em casa. ${verdict}`;
   }
   const tiredNote = [tired.home ? g.homeAbbr : "", tired.away ? g.awayAbbr : ""].filter(Boolean);
   return (
     (tiredNote.length ? `${tiredNote.join(" e ")} ${tiredNote.length > 1 ? "jogaram" : "jogou"} ontem (cansaço). ` : "") +
-    `${fav} favorito (${favP}%). Golos esperados: ${g.homeAbbr} ${f1(e.lh)}, ${g.awayAbbr} ${f1(e.la)} ` +
+    `${verdict} Golos esperados: ${g.homeAbbr} ${f1(e.lh)}, ${g.awayAbbr} ${f1(e.la)} ` +
     `(total ${f1(e.lh + e.la)}). Base: ${home?.gp ?? 0} jogo(s) de ${g.homeAbbr} e ${away?.gp ?? 0} de ${g.awayAbbr} nos seus últimos jogos.`
   );
 }
@@ -1154,6 +1174,7 @@ function buildSummaryPrompt(
       const e = expected.get(p.id)!;
       return [
         `id=${g.id} | ${g.homeAbbr} (casa) vs ${g.awayAbbr} (fora)`,
+        `  FAVORITO DO MODELO: ${p.favorite === "even" ? `NENHUM (jogo equilibrado, ${p.winProbabilityHome}% / ${p.winProbabilityAway}%)` : p.favorite === "home" ? `${g.homeAbbr} (${p.winProbabilityHome}%)` : `${g.awayAbbr} (${p.winProbabilityAway}%)`}`,
         `  Modelo: vitória casa ${p.winProbabilityHome}% / fora ${p.winProbabilityAway}%; empate aos 60 min ${p.drawTRProb}%; 2+ golos no 1.º período ${p.over15P1Prob}%; ambas marcam no 1.º período ${p.bttsP1Prob}%; 5+ golos ${p.over45Prob}%; 6+ golos ${p.over55Prob}%; golos esperados ${g.homeAbbr} ${f1(e.lh)} / ${g.awayAbbr} ${f1(e.la)}`,
         `  ${describeTeam(`CASA ${g.homeAbbr}`, form.get(g.homeAbbr))}${b2b(g.homeAbbr)}${injLine(g.homeAbbr, g.homeName)}`,
         `  ${describeTeam(`FORA ${g.awayAbbr}`, form.get(g.awayAbbr))}${b2b(g.awayAbbr)}${injLine(g.awayAbbr, g.awayName)}`,
@@ -1164,7 +1185,7 @@ function buildSummaryPrompt(
   return `És o redator do NHL Tipsterz. Os números de cada jogo (${date}) já foram calculados por um modelo estatístico com a forma dos últimos ${TEAM_GAMES} jogos de cada equipa. NÃO alteres nem recalcules percentagens.
 
 A tua tarefa: para cada jogo, escrever "analysisSummary" com 1 a 2 frases diretas em português de Portugal:
-- diz quem é o favorito e o que o justifica, usando só os números fornecidos (golos marcados/sofridos, forma, golos esperados). Escreve sempre "golos esperados", nunca "xG";
+- o favorito é EXATAMENTE o indicado em "FAVORITO DO MODELO": não nomeies outra equipa como favorita (mesmo que defenda melhor ou marque mais). Se disser "NENHUM", diz que o jogo está equilibrado e explica o que se compensa (ex.: "ambas marcam ~3.0 por jogo, mas X defende melhor, daí o equilíbrio"); se os números dão uma ligeira vantagem a um lado (ex.: 50.4% contra 49.6%), podes referi-la como "ligeira vantagem", mas sem lhe chamar favorito. Justifica usando só os números fornecidos (golos marcados/sofridos, forma, golos esperados). Escreve sempre "golos esperados", nunca "xG";
 - se uma equipa jogou ontem (2.ª noite seguida), refere o cansaço quando for relevante;
 - os números JÁ incluem o ajuste por lesões indicado (jogadores-chave e guarda-redes titular; jogadores de banco não pesam). Refere o ausente mais importante quando ele muda o favorito ou o total de golos; NÃO repitas a lista completa de lesões (aparece por baixo do resumo);
 - não inventes lesões, alinhamentos nem resultados; sem avisos genéricos.
@@ -1268,7 +1289,8 @@ function buildPredictions(
       ih ? { offLoss: ih.offLoss, defLoss: ih.defLoss } : NO_ADJ,
       ia ? { offLoss: ia.offLoss, defLoss: ia.defLoss } : NO_ADJ
     );
-    const winHome = pct(m.pHome);
+    // 1 casa decimal: um jogo "50/50" pode ser 49.6 / 50.4 (o ecrã arredonda o destaque, mas mostra o decimal)
+    const winHome = Math.round(m.pHome * 1000) / 10;
     const w1 = threeWay(m.p1);
 
     const p: Prediction = {
@@ -1281,7 +1303,7 @@ function buildPredictions(
       awayRecordL10: record(away),
       dateTime: g.startTimeUTC,
       winProbabilityHome: winHome,
-      winProbabilityAway: 100 - winHome,
+      winProbabilityAway: Math.round((100 - winHome) * 10) / 10,
       over15P1Prob: pct(m.over15P1),
       bttsP1Prob: pct(m.btts),
       drawTRProb: pct(m.tie),
@@ -1296,6 +1318,7 @@ function buildPredictions(
       awayGames: away?.gp ?? 0,
       homeB2B: tired.home,
       awayB2B: tired.away,
+      favorite: m.favorite,
       scoreGuess: m.scoreGuess,
       totalLine: m.totalLine,
       p1WinHome: w1.home,

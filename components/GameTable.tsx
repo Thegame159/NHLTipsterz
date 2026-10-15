@@ -67,6 +67,8 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
   const over45 = safeNum(game.over45Prob ?? (game as any).over55Prob);
 
   const isHomeFav = winHome >= winAway;
+  // Jogo equilibrado: nenhuma das equipas tem destaque (dados antigos, sem o campo, usam a diferença de pontos)
+  const isEven = game.favorite ? game.favorite === 'even' : Math.abs(winHome - winAway) <= 2;
   const maxProb = Math.max(winHome, winAway);
 
   const homeTeam = game.homeTeamAbbr || game.homeTeam || '';
@@ -96,7 +98,7 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
                   onError={(e) => (e.currentTarget.src = FALLBACK_LOGO)}
                 />
                 <div className="flex items-center gap-2">
-                  <span className={`font-black text-lg ${isHomeFav ? 'text-white' : 'text-slate-400'}`}>
+                  <span className={`font-black text-lg ${isEven || isHomeFav ? 'text-white' : 'text-slate-400'}`}>
                     {teamLabel(homeTeam)}
                   </span>
                   <span className="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-bold uppercase">
@@ -134,7 +136,7 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
                   onError={(e) => (e.currentTarget.src = FALLBACK_LOGO)}
                 />
                 <div className="flex items-center gap-2">
-                  <span className={`font-black text-lg ${!isHomeFav ? 'text-white' : 'text-slate-400'}`}>
+                  <span className={`font-black text-lg ${isEven || !isHomeFav ? 'text-white' : 'text-slate-400'}`}>
                     {teamLabel(awayTeam)}
                   </span>
                   <span className="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-bold uppercase">
@@ -173,7 +175,7 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
             <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border font-black text-xs min-w-[100px] justify-center ${getColorClass(maxProb)}`}>
               {Math.round(maxProb)}%
               <span className="text-[8px] opacity-60 ml-1">
-                {isHomeFav ? 'CASA' : 'FORA'}
+                {isEven ? 'EQUIL.' : isHomeFav ? 'CASA' : 'FORA'}
               </span>
             </div>
 
@@ -226,6 +228,7 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
                     {game.scoreGuess && (
                       <span>
                         Resultado: <b className="text-white">{teamLabel(homeTeam)} {game.scoreGuess} {teamLabel(awayTeam)}</b>
+                        {game.favorite === 'even' && <span className="ml-2 text-slate-500 text-xs">(jogo equilibrado, decide-se no prolongamento)</span>}
                       </span>
                     )}
                     {typeof game.totalLine === 'number' && (
