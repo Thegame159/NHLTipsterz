@@ -12,7 +12,7 @@ export const SUGGESTION_RULES = {
   tripleOver15P2: 3,
   quadrupleOver45: 4,
   over55: { max: 4, minProb: 55 },
-  draw: { max: 2, minProb: 25 },
+  draw: { max: 2, minProb: 24 },
 };
 
 /**
@@ -28,7 +28,7 @@ export const STRONG_RULES = {
     over15P1: { label: "Over 1.5 no 1.º período", min: 64 },
     btts1P: { label: "Ambas marcam no 1.º período", min: 46 },
     over15P2: { label: "Over 1.5 no 2.º período", min: 70 },
-    draw: { label: "Empate aos 60 min", min: 28 },
+    draw: { label: "Empate aos 60 min", min: 26 },
     over45: { label: "Over 4.5 golos", min: 80 },
     over55: { label: "Over 5.5 golos", min: 66 },
   },
