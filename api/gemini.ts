@@ -16,7 +16,7 @@ const MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
 const TEAM_GAMES = 7; // jogos recentes usados por equipa
 const LOOKBACK_DAYS = 21; // até onde se procuram esses jogos
 const PRESEASON_CUTOFF_DAY = 8; // a partir deste dia da época regular a pré-época deixa de contar
-const CACHE_PREFIX = "nhl:analysis:v7:";
+const CACHE_PREFIX = "nhl:analysis:v8:";
 const CACHE_TTL_MS = 2 * 60 * 60 * 1000; // 2 horas (as lesões influenciam os números)
 const GAME_CACHE_PREFIX = "nhl:game:v2:"; // golos do 1.º período de jogos já terminados (nunca mudam)
 const GAME_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -152,6 +152,8 @@ type Prediction = {
   analysisSummary: string;
   injuries: { home: string[]; away: string[] };
   // Extras para o ecrã
+  expGoalsHome: number; // golos esperados de cada equipa neste jogo
+  expGoalsAway: number;
   homeGames: number; // jogos em que a estimativa de cada equipa se baseia
   awayGames: number;
   homeB2B: boolean; // jogou ontem
@@ -1314,6 +1316,8 @@ function buildPredictions(
         home: injuryDisplay(injuryEntriesFor(injuries, g.homeName), ih),
         away: injuryDisplay(injuryEntriesFor(injuries, g.awayName), ia),
       },
+      expGoalsHome: Math.round(m.lh * 100) / 100,
+      expGoalsAway: Math.round(m.la * 100) / 100,
       homeGames: home?.gp ?? 0,
       awayGames: away?.gp ?? 0,
       homeB2B: tired.home,

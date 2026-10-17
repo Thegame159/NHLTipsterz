@@ -9,6 +9,7 @@ import MyPicksView from './components/MyPicksView';
 import StatsView from './components/StatsView';
 import BrandLogo from './components/BrandLogo';
 import UpdateBanner from './components/UpdateBanner';
+import PlayersView from './components/PlayersView';
 import { buildSuggestions } from './utils/suggestions';
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
@@ -24,7 +25,7 @@ const LOADING_MESSAGES = [
   'Preparando face-off...',
 ];
 
-type Tab = 'schedule' | 'suggestions' | 'mypicks' | 'stats';
+type Tab = 'schedule' | 'suggestions' | 'players' | 'mypicks' | 'stats';
 
 // ─── Helpers de data ─────────────────────────────────────────────────────────
 
@@ -283,11 +284,12 @@ const App: React.FC = () => {
       ) : (
         <>
           {/* Tabs */}
-          <div className="bg-[#020617]/80 backdrop-blur-3xl p-1 rounded-xl border border-white/5 mb-8 flex gap-1 shadow-xl max-w-[520px] mx-auto">
+          <div className="bg-[#020617]/80 backdrop-blur-3xl p-1 rounded-xl border border-white/5 mb-8 flex gap-1 shadow-xl max-w-[620px] mx-auto">
             {(
               [
                 { key: 'schedule',    label: 'Jogos'        },
                 { key: 'suggestions', label: 'Dicas'        },
+                { key: 'players',     label: 'Jogadores'    },
                 { key: 'mypicks',     label: 'Minhas Picks' },
                 { key: 'stats',       label: 'Stats'        },
               ] as { key: Tab; label: string }[]
@@ -328,6 +330,16 @@ const App: React.FC = () => {
                   predictions={data.predictions}
                   totalGames={data.totalGames}
                 />
+              ) : (
+                <div className="py-24 text-center text-slate-600 text-[10px] font-black uppercase tracking-widest">
+                  Escolhe uma data e clica em Analisar
+                </div>
+              )
+            )}
+
+            {activeTab === 'players' && (
+              loadedDate && data ? (
+                <PlayersView predictions={data.predictions} date={loadedDate} />
               ) : (
                 <div className="py-24 text-center text-slate-600 text-[10px] font-black uppercase tracking-widest">
                   Escolhe uma data e clica em Analisar

@@ -8,6 +8,45 @@ export interface TeamP1Stats {
   scoreProb: number; // % (modelo) de marcar no 1.º período hoje
 }
 
+export interface PlayerLogRow {
+  d: string; // data (YYYY-MM-DD)
+  o: string; // adversário (sigla)
+  h: number; // 1 = em casa
+  g: number; // golos
+  a: number; // assistências
+  prev?: number; // 1 = jogo da época passada
+}
+
+export interface PlayerCard {
+  id: number;
+  name: string;
+  pos: string;
+  probGoal: number; // % de marcar
+  probPoint: number; // % de pontuar
+  n: number; // jogos considerados (até 10)
+  goalGames: number; // jogos em que marcou
+  pointGames: number; // jogos em que pontuou
+  goalStreak: number; // jogos seguidos a marcar
+  pointStreak: number;
+  last3Goals: number;
+  last3Points: number;
+  status?: 'DTD';
+  log: PlayerLogRow[]; // mais recente primeiro
+}
+
+export interface TeamPlayers {
+  abbr: string;
+  scorers: PlayerCard[];
+  pointers: PlayerCard[];
+  candidates: number;
+}
+
+export interface GamePlayers {
+  id: string | number;
+  home: TeamPlayers;
+  away: TeamPlayers;
+}
+
 export interface GamePrediction {
   id: string;
   homeTeam: string;
@@ -30,6 +69,8 @@ export interface GamePrediction {
     away: string[];
   };
   // Extras calculados pelo servidor (opcionais, para compatibilidade com dados antigos)
+  expGoalsHome?: number; // golos esperados de cada equipa neste jogo
+  expGoalsAway?: number;
   homeGames?: number; // jogos em que a estimativa de cada equipa se baseia
   awayGames?: number;
   homeB2B?: boolean; // jogou ontem
