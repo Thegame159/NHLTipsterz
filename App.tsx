@@ -11,6 +11,7 @@ import BrandLogo from './components/BrandLogo';
 import UpdateBanner from './components/UpdateBanner';
 import PlayersView from './components/PlayersView';
 import TabIcon from './components/TabIcon';
+import TabHeader from './components/TabHeader';
 import { buildSuggestions } from './utils/suggestions';
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
@@ -315,6 +316,13 @@ const App: React.FC = () => {
             {activeTab === 'schedule' && (
               <div className="space-y-6">
                 {loadedDate && data && predictionsCount > 0 && (
+                  <TabHeader
+                    kind="schedule"
+                    title="Jogos"
+                    subtitle={`${predictionsCount} ${predictionsCount === 1 ? 'jogo' : 'jogos'} da madrugada · probabilidades do modelo`}
+                  />
+                )}
+                {loadedDate && data && predictionsCount > 0 && (
                   <GameTable predictions={data.predictions} totalGames={data.totalGames} />
                 )}
                 {(!loadedDate || predictionsCount === 0) && (
@@ -327,11 +335,14 @@ const App: React.FC = () => {
 
             {activeTab === 'suggestions' && (
               loadedDate && data ? (
-                <SuggestionsView
-                  suggestions={data.suggestions}
-                  predictions={data.predictions}
-                  totalGames={data.totalGames}
-                />
+                <>
+                  <TabHeader kind="suggestions" title="Dicas" subtitle="Escolhas fortes, combos e oportunidades do dia" />
+                  <SuggestionsView
+                    suggestions={data.suggestions}
+                    predictions={data.predictions}
+                    totalGames={data.totalGames}
+                  />
+                </>
               ) : (
                 <div className="py-24 text-center text-slate-600 text-[10px] font-black uppercase tracking-widest">
                   Escolhe uma data e clica em Analisar
