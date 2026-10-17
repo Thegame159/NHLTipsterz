@@ -10,6 +10,7 @@ import StatsView from './components/StatsView';
 import BrandLogo from './components/BrandLogo';
 import UpdateBanner from './components/UpdateBanner';
 import PlayersView from './components/PlayersView';
+import TabIcon from './components/TabIcon';
 import { buildSuggestions } from './utils/suggestions';
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
@@ -297,12 +298,13 @@ const App: React.FC = () => {
               <button
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
-                className={`flex-1 py-2.5 rounded-lg font-black text-[9px] uppercase tracking-wider transition-all ${
+                className={`flex-1 py-2 rounded-lg font-black text-[9px] uppercase tracking-wider transition-all flex flex-col items-center gap-1 ${
                   activeTab === tab.key
                     ? 'bg-orange-600 text-white'
                     : 'text-slate-500 hover:text-slate-300'
                 }`}
               >
+                <TabIcon name={tab.key} className="w-[18px] h-[18px]" />
                 {tab.label}
               </button>
             ))}
