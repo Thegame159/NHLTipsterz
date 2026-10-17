@@ -80,6 +80,7 @@ const PlayerRow: React.FC<{ card: PlayerCard; rank: number; top?: boolean }> = (
             </span>
           )}
         </div>
+        <FormStrip log={card.log} />
         <span className="text-[11px] text-slate-400 whitespace-nowrap">
           <b className="text-white">{card.stat.p}</b> pts
         </span>
@@ -106,7 +107,6 @@ const PlayerRow: React.FC<{ card: PlayerCard; rank: number; top?: boolean }> = (
             Últimos {card.n} jogos: marcou {card.goalGames} · assistiu {card.assistGames} · pontuou {card.pointGames}
           </div>
           {streak && !off && <div className="text-[11px] font-bold text-orange-400">{streak}</div>}
-          <FormStrip log={card.log} />
           {card.log.length === 0 ? (
             <p className="text-[11px] text-slate-500">Sem jogos registados.</p>
           ) : (
@@ -196,27 +196,40 @@ const TeamBlock: React.FC<{ team: TeamPlayers }> = ({ team }) => {
   );
 };
 
+const TeamChip: React.FC<{ abbr: string; align: 'left' | 'right' }> = ({ abbr, align }) => (
+  <div className={`flex items-center gap-3 min-w-0 flex-1 ${align === 'right' ? 'flex-row-reverse text-right' : ''}`}>
+    <img
+      src={getLogoUrl(abbr)}
+      alt={abbr}
+      className="w-10 h-10 sm:w-11 sm:h-11 object-contain shrink-0 bg-slate-800/80 rounded-full p-1.5 border border-slate-700"
+      loading="lazy"
+      onError={(e) => (e.currentTarget.style.visibility = 'hidden')}
+    />
+    <span className="font-black text-white text-sm sm:text-base truncate">{teamLabel(abbr)}</span>
+  </div>
+);
+
 const GameSection: React.FC<{ p: GamePrediction; g: GamePlayers }> = ({ p, g }) => {
   const [open, setOpen] = useState(false);
   return (
-    <section className="bg-slate-800/40 border border-slate-700 rounded-2xl overflow-hidden">
+    <section className={`rounded-2xl border overflow-hidden transition-colors ${open ? 'border-orange-500/40 bg-slate-800/50' : 'border-slate-700 bg-slate-800/40'}`}>
       <button
         onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center justify-between gap-3 px-5 py-4 text-left hover:bg-slate-800/60 transition-colors"
+        className="w-full flex items-center gap-3 px-4 sm:px-5 py-3.5 text-left hover:bg-slate-800/60 transition-colors"
         aria-expanded={open}
       >
-        <h3 className="font-black text-white">
-          {teamLabel(p.homeTeamAbbr)} <span className="text-slate-500 font-bold">vs</span> {teamLabel(p.awayTeamAbbr)}
-        </h3>
-        <span className="flex items-center gap-3">
-          <span className="text-[11px] font-bold text-slate-500">
+        <TeamChip abbr={p.homeTeamAbbr} align="left" />
+        <div className="flex flex-col items-center shrink-0">
+          <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">vs</span>
+          <span className="mt-0.5 text-[11px] font-black text-orange-300 bg-orange-500/10 border border-orange-500/30 rounded-full px-2.5 py-0.5">
             {new Date(p.dateTime).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}
           </span>
-          <span className="text-slate-600 text-[10px]">{open ? '▲' : '▼'}</span>
-        </span>
+        </div>
+        <TeamChip abbr={p.awayTeamAbbr} align="right" />
+        <span className="text-slate-500 text-[10px] shrink-0">{open ? '▲' : '▼'}</span>
       </button>
       {open && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 px-5 pb-5">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 px-4 sm:px-5 pb-5 pt-1 border-t border-slate-700/60">
           <TeamBlock team={g.home} />
           <TeamBlock team={g.away} />
         </div>
@@ -305,6 +318,14 @@ const PlayersView: React.FC<Props> = ({ predictions, date }) => {
         Jogadores do plantel atual ordenados por <b className="text-slate-300">pontos</b> na época. A % é a probabilidade de pontuar hoje; os 3 com maior probabilidade de cada equipa ficam em destaque (★).
         Clica num jogo para abrir e num jogador para ver os últimos 10 jogos.
       </p>
+
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-2 text-[11px] text-slate-400">
+        <span className="font-black uppercase tracking-wider text-[9px] text-slate-500">Últimos 10 jogos</span>
+        <span className="flex items-center gap-1.5"><span className="w-2 h-4 rounded-sm bg-emerald-500" /> golo</span>
+        <span className="flex items-center gap-1.5"><span className="w-2 h-4 rounded-sm bg-sky-500" /> só assistência</span>
+        <span className="flex items-center gap-1.5"><span className="w-2 h-4 rounded-sm bg-slate-700" /> sem pontos</span>
+        <span className="text-slate-600">· do mais antigo (esq.) ao mais recente (dir.)</span>
+      </div>
 
       {predictions.map((p) => {
         const g = byId.get(String(p.id));
