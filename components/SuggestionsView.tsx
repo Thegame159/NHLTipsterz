@@ -373,27 +373,6 @@ const filterTripleWin = (items: string[]) => items;
 
     
     <div className="space-y-8 pb-24">
-      <div className="bg-gradient-to-r from-blue-900/40 to-slate-900/40 border border-blue-500/20 rounded-2xl p-6 sm:p-8 flex flex-col sm:flex-row items-center gap-6">
-        <div className="bg-blue-600/20 p-4 rounded-2xl border border-blue-500/30">
-          <i className="fas fa-bolt text-4xl text-blue-400"></i>
-        </div>
-        <div>
-          <h2 className="text-2xl font-black text-white italic">
-            COMBO TIPSTERZ <span className="text-blue-500">PREMIUM</span>
-          </h2>
-          <p className="text-slate-400 text-sm max-w-lg">
-            As nossas melhores seleções baseadas em modelos estatísticos de alta confiança, processados em tempo real com as respetivas probabilidades.
-          </p>
-          <p className="text-[11px] font-black uppercase tracking-widest text-blue-400/80 mt-2">
-            {typeof totalGames === 'number' && totalGames > 0
-              ? `Hoje: ${totalGames} ${totalGames === 1 ? 'jogo' : 'jogos'}${
-                  predictions.length !== totalGames ? ` (${predictions.length} na janela noturna)` : ''
-                }`
-              : `${predictions.length} ${predictions.length === 1 ? 'jogo' : 'jogos'}`}
-          </p>
-        </div>
-      </div>
-
       {/* ESCOLHAS FORTES: só mercados claramente acima do valor típico da liga */}
       <div className="bg-slate-800/40 border border-slate-700 rounded-2xl p-6 relative overflow-hidden">
         <div className="absolute top-0 left-0 w-1 h-full bg-amber-500"></div>

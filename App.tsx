@@ -336,7 +336,15 @@ const App: React.FC = () => {
             {activeTab === 'suggestions' && (
               loadedDate && data ? (
                 <>
-                  <TabHeader kind="suggestions" title="Dicas" subtitle="Escolhas fortes, combos e oportunidades do dia" />
+                  <TabHeader kind="suggestions" title="Dicas"
+                    subtitle={
+                      typeof data.totalGames === 'number' && data.totalGames > 0
+                        ? `Hoje: ${data.totalGames} ${data.totalGames === 1 ? 'jogo' : 'jogos'}${
+                            predictionsCount !== data.totalGames ? ` (${predictionsCount} na janela noturna)` : ''
+                          } · escolhas fortes, combos e oportunidades`
+                        : 'Escolhas fortes, combos e oportunidades do dia'
+                    }
+                  />
                   <SuggestionsView
                     suggestions={data.suggestions}
                     predictions={data.predictions}
