@@ -351,6 +351,14 @@ const PlayersView: React.FC<Props> = ({ predictions, date }) => {
   const [attempt, setAttempt] = useState(0);
   const [openGames, setOpenGames] = useState<Set<string>>(new Set());
   const [focus, setFocus] = useState<Focus | null>(null);
+  const [showTop, setShowTop] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => setShowTop(window.scrollY > 500);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   useEffect(() => {
     if (predictions.length === 0) return;
@@ -465,6 +473,19 @@ const PlayersView: React.FC<Props> = ({ predictions, date }) => {
         );
       })}
       <div className="h-24" aria-hidden="true" />
+
+      {showTop && (
+        <button
+          onClick={() => {
+            setFocus(null);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+          className="fixed right-4 bottom-20 z-50 flex items-center gap-1.5 rounded-full bg-orange-600 hover:bg-orange-500 shadow-lg shadow-black/40 px-4 py-2.5 text-[11px] font-black uppercase tracking-wider text-white"
+          aria-label="Voltar ao início"
+        >
+          ↑ Início
+        </button>
+      )}
     </div>
   );
 };
