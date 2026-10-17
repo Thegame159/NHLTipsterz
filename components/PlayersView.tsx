@@ -222,6 +222,19 @@ const TeamChip: React.FC<{ abbr: string; align: 'left' | 'right' }> = ({ abbr, a
 
 type Pick = { card: PlayerCard; abbr: string; opp: string; home: boolean; gameId: string };
 
+// Disco de hóquei (desenho próprio, genérico)
+const PuckIcon: React.FC<{ className?: string }> = ({ className = 'w-6 h-6' }) => (
+  <svg viewBox="0 0 48 48" className={className} aria-hidden="true">
+    <ellipse cx="24" cy="29" rx="19" ry="9" fill="#020617" stroke="#475569" strokeWidth="1.5" />
+    <rect x="5" y="19" width="38" height="10" fill="#0f172a" />
+    <line x1="5" y1="19" x2="5" y2="29" stroke="#475569" strokeWidth="1.5" />
+    <line x1="43" y1="19" x2="43" y2="29" stroke="#475569" strokeWidth="1.5" />
+    <ellipse cx="24" cy="19" rx="19" ry="9" fill="#1e293b" stroke="#64748b" strokeWidth="1.5" />
+    <ellipse cx="24" cy="18" rx="12" ry="5" fill="none" stroke="#f97316" strokeWidth="1.2" opacity="0.8" />
+    <path d="M12 16 Q24 11 36 16" fill="none" stroke="#94a3b8" strokeWidth="1" opacity="0.5" />
+  </svg>
+);
+
 type Mode = 'goal' | 'point';
 type Focus = { gameId: string; playerId: number; tick: number };
 const probOf = (c: PlayerCard, mode: Mode) => (mode === 'goal' ? c.probGoal : c.probPoint);
@@ -263,7 +276,7 @@ const TripleCard: React.FC<{ pages: Pick[][]; mode: Mode; onPick: (x: Pick) => v
   return (
     <section className="rounded-2xl border border-orange-500/40 bg-gradient-to-br from-orange-500/10 to-slate-900/40 p-4 sm:p-5 space-y-3">
       <div className="flex items-center justify-between gap-3">
-        <h3 className="font-black text-white text-sm uppercase tracking-wider">{mode === 'goal' ? '⚽ Triplete de golos' : '🔥 Triplete de pontos'}</h3>
+        <h3 className="flex items-center gap-2 font-black text-white text-sm uppercase tracking-wider">{mode === 'goal' ? <><PuckIcon className="w-6 h-6" /> Triplete de golos</> : <>🔥 Triplete de pontos</>}</h3>
         <span className="text-[11px] font-black text-orange-300 bg-orange-500/10 border border-orange-500/30 rounded-full px-2.5 py-0.5">
           combinada {combined.toFixed(1)}%
         </span>
@@ -434,6 +447,14 @@ const PlayersView: React.FC<Props> = ({ predictions, date }) => {
 
   return (
     <div className="space-y-6">
+      <div className="flex items-center gap-3">
+        <PuckIcon className="w-12 h-12 drop-shadow-[0_2px_6px_rgba(249,115,22,0.35)]" />
+        <div>
+          <h2 className="text-lg font-black text-white leading-tight">Jogadores</h2>
+          <p className="text-[11px] text-slate-500">Plantéis atuais · golos e pontos de hoje</p>
+        </div>
+      </div>
+
       <TripleCard pages={buildTriple(predictions, byId, 'goal')} mode="goal" onPick={pick} />
       <TripleCard pages={buildTriple(predictions, byId, 'point')} mode="point" onPick={pick} />
 
