@@ -2,7 +2,7 @@
 // Aba "Jogadores": por equipa, os jogadores do plantel atual com mais pontos / golos / assistências,
 // probabilidades de hoje (golo, assistência, ponto) e os últimos 10 jogos (clica na linha para abrir).
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { GamePrediction, GamePlayers, PlayerCard, TeamPlayers } from '../types';
 import { getLogoUrl, teamLabel } from '../utils/nhlUtils';
 
@@ -42,8 +42,15 @@ const FormStrip: React.FC<{ log: PlayerCard['log'] }> = ({ log }) => (
   </div>
 );
 
-const PlayerRow: React.FC<{ card: PlayerCard; rank: number; top?: boolean }> = ({ card, rank, top }) => {
+const PlayerRow: React.FC<{ card: PlayerCard; rank: number; top?: boolean; focusTick?: number }> = ({ card, rank, top, focusTick }) => {
   const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!focusTick) return;
+    setOpen(true);
+    const t = setTimeout(() => ref.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 80);
+    return () => clearTimeout(t);
+  }, [focusTick]);
   const off = card.status === 'OUT';
 
   const streak =
@@ -56,7 +63,7 @@ const PlayerRow: React.FC<{ card: PlayerCard; rank: number; top?: boolean }> = (
       : null;
 
   return (
-    <div className={`bg-slate-900/70 border rounded-xl overflow-hidden ${off ? 'border-red-500/30' : top ? 'border-orange-500/60 bg-orange-500/5' : 'border-slate-800'}`}>
+    <div ref={ref} className={`bg-slate-900/70 border rounded-xl overflow-hidden ${focusTick ? 'ring-2 ring-orange-400/70 ' : ''}${off ? 'border-red-500/30' : top ? 'border-orange-500/60 bg-orange-500/5' : 'border-slate-800'}`}>
       <button
         onClick={() => setOpen((o) => !o)}
         className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-slate-800/40 transition-colors"
@@ -146,7 +153,7 @@ const PlayerRow: React.FC<{ card: PlayerCard; rank: number; top?: boolean }> = (
 
 const SHOWN = 5;
 
-const TeamBlock: React.FC<{ team: TeamPlayers }> = ({ team }) => {
+const TeamBlock: React.FC<{ team: TeamPlayers; focus: Focus | null }> = ({ team, focus }) => {
   const [all, setAll] = useState(false);
   const cards = byPoints(team.players);
   // destaque: os 3 com maior probabilidade de pontuar hoje (disponíveis)
@@ -157,7 +164,8 @@ const TeamBlock: React.FC<{ team: TeamPlayers }> = ({ team }) => {
       .slice(0, 3)
       .map((c) => c.id)
   );
-  const list = all ? cards : cards.filter((c, i) => i < SHOWN || top.has(c.id));
+  const fid = focus?.playerId;
+  const list = all ? cards : cards.filter((c, i) => i < SHOWN || top.has(c.id) || c.id === fid);
 
   return (
     <div className="space-y-3">
@@ -183,7 +191,7 @@ const TeamBlock: React.FC<{ team: TeamPlayers }> = ({ team }) => {
       ) : (
         <div className="space-y-2">
           {list.map((c) => (
-            <PlayerRow key={c.id} card={c} rank={cards.indexOf(c) + 1} top={top.has(c.id)} />
+            <PlayerRow key={c.id} card={c} rank={cards.indexOf(c) + 1} top={top.has(c.id)} focusTick={c.id === fid ? focus?.tick : undefined} />
           ))}
           {cards.length > list.length || all ? (
             <button onClick={() => setAll((v) => !v)} className="w-full text-[10px] font-black uppercase tracking-wider text-slate-500 hover:text-slate-300 py-1">
@@ -209,35 +217,45 @@ const TeamChip: React.FC<{ abbr: string; align: 'left' | 'right' }> = ({ abbr, a
   </div>
 );
 
-type Pick = { card: PlayerCard; abbr: string; opp: string; home: boolean };
+type Pick = { card: PlayerCard; abbr: string; opp: string; home: boolean; gameId: string };
 
 type Mode = 'goal' | 'point';
+type Focus = { gameId: string; playerId: number; tick: number };
 const probOf = (c: PlayerCard, mode: Mode) => (mode === 'goal' ? c.probGoal : c.probPoint);
 
 /** Triplete: os 3 jogadores com maior probabilidade (golo ou ponto) hoje, de jogos diferentes */
-function buildTriple(predictions: GamePrediction[], byId: Map<string, GamePlayers>, mode: Mode): Pick[] {
+function buildTriple(predictions: GamePrediction[], byId: Map<string, GamePlayers>, mode: Mode): Pick[][] {
   const all: Pick[] = [];
   for (const p of predictions) {
     const g = byId.get(String(p.id));
     if (!g) continue;
-    for (const c of g.home.players) if (c.status !== 'OUT') all.push({ card: c, abbr: p.homeTeamAbbr, opp: p.awayTeamAbbr, home: true });
-    for (const c of g.away.players) if (c.status !== 'OUT') all.push({ card: c, abbr: p.awayTeamAbbr, opp: p.homeTeamAbbr, home: false });
+    for (const c of g.home.players) if (c.status !== 'OUT') all.push({ card: c, abbr: p.homeTeamAbbr, opp: p.awayTeamAbbr, home: true, gameId: String(p.id) });
+    for (const c of g.away.players) if (c.status !== 'OUT') all.push({ card: c, abbr: p.awayTeamAbbr, opp: p.homeTeamAbbr, home: false, gameId: String(p.id) });
   }
   all.sort((a, b) => probOf(b.card, mode) - probOf(a.card, mode) || b.card.probPoint - a.card.probPoint);
-  const used = new Set<string>();
-  const out: Pick[] = [];
-  for (const x of all) {
-    const game = [x.abbr, x.opp].sort().join('-');
-    if (used.has(game)) continue;
-    used.add(game);
-    out.push(x);
-    if (out.length === 3) break;
+  const usedPlayers = new Set<number>();
+  const pages: Pick[][] = [];
+  for (let page = 0; page < 2; page++) {
+    const usedGames = new Set<string>();
+    const out: Pick[] = [];
+    for (const x of all) {
+      if (usedPlayers.has(x.card.id)) continue;
+      const game = [x.abbr, x.opp].sort().join('-');
+      if (usedGames.has(game)) continue;
+      usedGames.add(game);
+      usedPlayers.add(x.card.id);
+      out.push(x);
+      if (out.length === 3) break;
+    }
+    if (out.length >= 2) pages.push(out);
   }
-  return out;
+  return pages;
 }
 
-const TripleCard: React.FC<{ picks: Pick[]; mode: Mode }> = ({ picks, mode }) => {
-  if (picks.length < 2) return null;
+const TripleCard: React.FC<{ pages: Pick[][]; mode: Mode; onPick: (x: Pick) => void }> = ({ pages, mode, onPick }) => {
+  const [page, setPage] = useState(0);
+  if (pages.length === 0) return null;
+  const picks = pages[Math.min(page, pages.length - 1)];
   const combined = picks.reduce((acc, x) => acc * (probOf(x.card, mode) / 100), 1) * 100;
   return (
     <section className="rounded-2xl border border-orange-500/40 bg-gradient-to-br from-orange-500/10 to-slate-900/40 p-4 sm:p-5 space-y-3">
@@ -247,9 +265,29 @@ const TripleCard: React.FC<{ picks: Pick[]; mode: Mode }> = ({ picks, mode }) =>
           combinada {combined.toFixed(1)}%
         </span>
       </div>
+      {pages.length > 1 && (
+        <div className="flex gap-1.5">
+          {pages.map((_, i) => (
+            <button
+              key={i}
+              onClick={() => setPage(i)}
+              className={`rounded-lg px-3 py-1 text-[10px] font-black uppercase tracking-wider border transition-colors ${
+                page === i ? 'bg-orange-600 border-orange-500 text-white' : 'bg-slate-800/60 border-slate-700 text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Opção {i + 1}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
         {picks.map((x) => (
-          <div key={x.card.id} className="flex items-center gap-3 rounded-xl bg-slate-900/70 border border-slate-800 px-3 py-2.5">
+          <button
+            key={x.card.id}
+            onClick={() => onPick(x)}
+            title="Ver o jogador na lista do jogo"
+            className="group flex items-center gap-3 rounded-xl bg-slate-900/70 border border-slate-800 hover:border-orange-500/50 px-3 py-2.5 text-left transition-colors"
+          >
             <img
               src={getLogoUrl(x.abbr)}
               alt={x.abbr}
@@ -257,26 +295,28 @@ const TripleCard: React.FC<{ picks: Pick[]; mode: Mode }> = ({ picks, mode }) =>
               onError={(e) => (e.currentTarget.style.visibility = 'hidden')}
             />
             <div className="min-w-0 flex-1">
-              <div className="font-bold text-slate-100 truncate">{shortName(x.card.name)}</div>
+              <div className="font-bold text-slate-100 truncate group-hover:text-orange-300">
+                {shortName(x.card.name)} <span className="text-[10px] text-slate-500">↓</span>
+              </div>
               <div className="text-[10px] text-slate-500">
                 {x.home ? 'vs' : '@'} {teamLabel(x.opp)} · <b className="text-slate-300">{x.card.stat.p}</b> pts
               </div>
             </div>
             <span className={`text-xs font-black px-2 py-1 rounded border ${probColor(probOf(x.card, mode))}`}>{probOf(x.card, mode)}%</span>
-          </div>
+          </button>
         ))}
       </div>
-      <p className="text-[10px] text-slate-500">{mode === 'goal' ? 'Para marcar golo.' : 'Para pontuar (golo ou assistência).'} Um por jogo; a combinada assume jogadores independentes.</p>
+      <p className="text-[10px] text-slate-500">{mode === 'goal' ? 'Para marcar golo.' : 'Para pontuar (golo ou assistência).'} Clica num jogador para o ver na lista do jogo. Um por jogo; a combinada assume jogadores independentes.</p>
     </section>
   );
 };
 
-const GameSection: React.FC<{ p: GamePrediction; g: GamePlayers }> = ({ p, g }) => {
-  const [open, setOpen] = useState(false);
+const GameSection: React.FC<{ p: GamePrediction; g: GamePlayers; open: boolean; onToggle: () => void; focus: Focus | null }> = ({ p, g, open, onToggle, focus }) => {
+  const f = focus && focus.gameId === String(p.id) ? focus : null;
   return (
     <section className={`rounded-2xl border overflow-hidden transition-colors ${open ? 'border-orange-500/40 bg-slate-800/50' : 'border-slate-700 bg-slate-800/40'}`}>
       <button
-        onClick={() => setOpen((o) => !o)}
+        onClick={onToggle}
         className="w-full flex items-center gap-3 px-4 sm:px-5 py-3.5 text-left hover:bg-slate-800/60 transition-colors"
         aria-expanded={open}
       >
@@ -292,8 +332,8 @@ const GameSection: React.FC<{ p: GamePrediction; g: GamePlayers }> = ({ p, g }) 
       </button>
       {open && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 px-4 sm:px-5 pb-5 pt-1 border-t border-slate-700/60">
-          <TeamBlock team={g.home} />
-          <TeamBlock team={g.away} />
+          <TeamBlock team={g.home} focus={f} />
+          <TeamBlock team={g.away} focus={f} />
         </div>
       )}
     </section>
@@ -306,6 +346,8 @@ const PlayersView: React.FC<Props> = ({ predictions, date }) => {
   const [loading, setLoading] = useState(!cache.has(key) && predictions.length > 0);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [openGames, setOpenGames] = useState<Set<string>>(new Set());
+  const [focus, setFocus] = useState<Focus | null>(null);
 
   useEffect(() => {
     if (predictions.length === 0) return;
@@ -372,12 +414,17 @@ const PlayersView: React.FC<Props> = ({ predictions, date }) => {
     );
   }
 
+  const pick = (x: Pick) => {
+    setOpenGames((prev) => new Set(prev).add(x.gameId));
+    setFocus((f) => ({ gameId: x.gameId, playerId: x.card.id, tick: (f?.tick ?? 0) + 1 }));
+  };
+
   const byId = new Map<string, GamePlayers>((games ?? []).map((g) => [String(g.id), g] as [string, GamePlayers]));
 
   return (
     <div className="space-y-6">
-      <TripleCard picks={buildTriple(predictions, byId, 'goal')} mode="goal" />
-      <TripleCard picks={buildTriple(predictions, byId, 'point')} mode="point" />
+      <TripleCard pages={buildTriple(predictions, byId, 'goal')} mode="goal" onPick={pick} />
+      <TripleCard pages={buildTriple(predictions, byId, 'point')} mode="point" onPick={pick} />
 
       <p className="text-[11px] text-slate-500 leading-snug">
         Jogadores do plantel atual ordenados por <b className="text-slate-300">pontos</b> na época. A % é a probabilidade de pontuar hoje; os 3 com maior probabilidade de cada equipa ficam em destaque (★).
@@ -395,7 +442,24 @@ const PlayersView: React.FC<Props> = ({ predictions, date }) => {
       {predictions.map((p) => {
         const g = byId.get(String(p.id));
         if (!g) return null;
-        return <GameSection key={p.id} p={p} g={g} />;
+        const id = String(p.id);
+        return (
+          <GameSection
+            key={p.id}
+            p={p}
+            g={g}
+            open={openGames.has(id)}
+            focus={focus}
+            onToggle={() =>
+              setOpenGames((prev) => {
+                const next = new Set(prev);
+                if (next.has(id)) next.delete(id);
+                else next.add(id);
+                return next;
+              })
+            }
+          />
+        );
       })}
       <div className="h-24" aria-hidden="true" />
     </div>
