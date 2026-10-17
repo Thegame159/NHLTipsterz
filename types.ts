@@ -17,28 +17,40 @@ export interface PlayerLogRow {
   prev?: number; // 1 = jogo da época passada
 }
 
+export interface PlayerStat {
+  gp: number;
+  g: number;
+  a: number;
+  p: number;
+}
+
 export interface PlayerCard {
   id: number;
   name: string;
   pos: string;
-  probGoal: number; // % de marcar
+  stat: PlayerStat; // estatística mostrada (época atual, ou a passada se ainda não jogou)
+  statPrev: boolean; // true = estatística da época passada
+  probGoal: number; // % de marcar (0 se fora)
+  probAssist: number; // % de assistir
   probPoint: number; // % de pontuar
   n: number; // jogos considerados (até 10)
   goalGames: number; // jogos em que marcou
+  assistGames: number;
   pointGames: number; // jogos em que pontuou
   goalStreak: number; // jogos seguidos a marcar
   pointStreak: number;
   last3Goals: number;
   last3Points: number;
-  status?: 'DTD';
+  status?: 'DTD' | 'OUT';
+  injury?: string; // texto da lesão
   log: PlayerLogRow[]; // mais recente primeiro
 }
 
 export interface TeamPlayers {
   abbr: string;
-  scorers: PlayerCard[];
-  pointers: PlayerCard[];
-  candidates: number;
+  players: PlayerCard[];
+  injured: { name: string; status: string }[];
+  rosterSource: string;
 }
 
 export interface GamePlayers {

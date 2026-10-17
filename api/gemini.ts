@@ -866,7 +866,7 @@ async function fetchSeasonPlayers(season: string): Promise<Map<number, PlayerSta
   }
 }
 
-async function fetchRoster(abbr: string): Promise<RosterPlayer[] | null> {
+async function fetchRoster(abbr: string, season: string): Promise<RosterPlayer[] | null> {
   const key = `nhl:roster:v1:${abbr}`;
   const cached = await redis.get(key);
   if (cached) {
@@ -877,29 +877,55 @@ async function fetchRoster(abbr: string): Promise<RosterPlayer[] | null> {
     }
   }
 
-  try {
-    const res = await fetchWithTimeout(`${NHL_API}/roster/${abbr}/current`, {}, 8000);
-    if (!res.ok) return null;
-    const data = await res.json();
+  const getJson = async (url: string) => {
+    try {
+      const res = await fetchWithTimeout(url, {}, 8000);
+      return res.ok ? await res.json() : null;
+    } catch {
+      return null;
+    }
+  };
+  const nameOf = (p: any) => `${p?.firstName?.default ?? ""} ${p?.lastName?.default ?? ""}`.trim();
+  const fromGroups = (data: any): RosterPlayer[] => {
     const out: RosterPlayer[] = [];
     for (const [group, pos] of [["forwards", "F"], ["defensemen", "D"], ["goalies", "G"]] as const) {
       for (const p of Array.isArray(data?.[group]) ? data[group] : []) {
         const id = num(p?.id);
         if (!id) continue;
-        const name = `${p?.firstName?.default ?? ""} ${p?.lastName?.default ?? ""}`.trim();
-        out.push({ id, name, pos: group === "forwards" ? String(p?.positionCode ?? pos) : pos });
+        out.push({ id, name: nameOf(p), pos: group === "forwards" ? String(p?.positionCode ?? pos) : pos });
       }
     }
-    if (out.length === 0) return null;
-    await redis.setPx(key, JSON.stringify(out), ROSTER_CACHE_TTL_MS);
     return out;
-  } catch {
-    return null;
+  };
+  const fromClubStats = (data: any): RosterPlayer[] => {
+    const out: RosterPlayer[] = [];
+    for (const [group, isG] of [["skaters", false], ["goalies", true]] as const) {
+      for (const p of Array.isArray(data?.[group]) ? data[group] : []) {
+        const id = num(p?.playerId ?? p?.id);
+        if (!id) continue;
+        out.push({ id, name: nameOf(p), pos: isG ? "G" : String(p?.positionCode ?? "F") });
+      }
+    }
+    return out;
+  };
+
+  const sources: (() => Promise<RosterPlayer[]>)[] = [
+    async () => fromGroups(await getJson(`${NHL_API}/roster/${abbr}/current`)),
+    async () => fromGroups(await getJson(`${NHL_API}/roster/${abbr}/${season}`)),
+    async () => fromClubStats(await getJson(`${NHL_API}/club-stats/${abbr}/now`)),
+  ];
+  for (const run of sources) {
+    const out = await run();
+    if (out.filter((p) => p.pos !== "G").length >= 8) {
+      await redis.setPx(key, JSON.stringify(out), ROSTER_CACHE_TTL_MS);
+      return out;
+    }
   }
+  return null;
 }
 
-async function fetchRosters(abbrs: string[]): Promise<Map<string, RosterPlayer[]>> {
-  const list = await Promise.all(abbrs.map(async (a) => [a, await fetchRoster(a)] as const));
+async function fetchRosters(abbrs: string[], season: string): Promise<Map<string, RosterPlayer[]>> {
+  const list = await Promise.all(abbrs.map(async (a) => [a, await fetchRoster(a, season)] as const));
   const map = new Map<string, RosterPlayer[]>();
   for (const [a, r] of list) if (r) map.set(a, r);
   return map;
@@ -1079,7 +1105,7 @@ async function buildImpacts(
   const [cur, prev, rosters] = await Promise.all([
     fetchSeasonPlayers(season),
     fetchSeasonPlayers(prevSeasonId(season)),
-    fetchRosters(abbrs),
+    fetchRosters(abbrs, season),
   ]);
   if (!cur && !prev) return null;
   if (rosters.size === 0) return null;

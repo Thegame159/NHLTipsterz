@@ -1,12 +1,9 @@
 // api/players.ts
-// Jogadores com mais probabilidade de MARCAR e de PONTUAR (golo ou assistência) em cada jogo.
+// Aba "Jogadores": por equipa, os jogadores do PLANTEL ATUAL com mais pontos / golos / assistências
+// (estatísticas da época; no arranque da época completa com a época passada), com a probabilidade de hoje
+// de marcar / assistir / pontuar e os últimos 10 jogos de cada um. Lesionados aparecem sempre assinalados.
 //
-// Para cada equipa: escolhe os melhores candidatos (histórico da época atual + passada), vai buscar os últimos
-// 10 jogos de cada um, e calcula a probabilidade a partir de
-//   • quantos desses 10 jogos marcou / pontuou (peso maior),
-//   • o rendimento da época (peso menor, "puxa" a amostra pequena para a média do jogador),
-//   • os golos esperados da equipa neste jogo (adversário e vantagem de casa).
-// Jogadores lesionados (Out / IR) ficam de fora; "day-to-day" tem a probabilidade reduzida.
+// Plantel: /roster/{equipa}/current → /roster/{equipa}/{época} → /club-stats/{equipa}/now → estatísticas da liga.
 
 import { redis } from "./_redis.js";
 
@@ -16,11 +13,11 @@ const NHL_API = "https://api-web.nhle.com/v1";
 const STATS_REST = "https://api.nhle.com/stats/rest/en";
 
 const GAMES_PER_PLAYER = 10;
-const POOL_PER_TEAM = 8; // candidatos por equipa
-const PICKS_PER_LIST = 4; // mostrados em "marcar" e em "pontuar"
+const POOL_PER_TEAM = 10; // jogadores por equipa
+const MIN_SEASON_GAMES = 10; // abaixo disto (início de época) mostra-se a época passada
 const MAX_GAMES = 16;
-const MAX_PLAYERS = 140;
-const BATCH = 14;
+const MAX_PLAYERS = 340;
+const BATCH = 24;
 
 const CFG = {
   prevSeasonWeight: 0.6, // peso da época passada no histórico de época
@@ -31,7 +28,7 @@ const CFG = {
   ratioMin: 0.75,
   ratioMax: 1.35,
   dtdFactor: 0.5, // "day-to-day": probabilidade reduzida a metade
-  cap: { goal: 0.7, point: 0.92 },
+  cap: { goal: 0.7, assist: 0.8, point: 0.92 },
 } as const;
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
@@ -46,28 +43,39 @@ type GameReq = {
   expAway?: number;
 };
 
-type SeasonRow = { id: number; name: string; pos: string; gp: number; g: number; pts: number };
+type SeasonRow = { id: number; name: string; pos: string; gp: number; g: number; a: number; pts: number; teams: string };
 type RosterPlayer = { id: number; name: string; pos: string };
 type LogRow = { d: string; o: string; h: number; g: number; a: number; prev?: number };
+type Stat = { gp: number; g: number; a: number; p: number };
 
 type PlayerCard = {
   id: number;
   name: string;
   pos: string;
-  probGoal: number; // %
-  probPoint: number; // %
+  stat: Stat; // estatística mostrada (época atual, ou a passada se ainda não jogou)
+  statPrev: boolean; // true = estatística da época passada
+  probGoal: number; // % (0 se fora)
+  probAssist: number;
+  probPoint: number;
   n: number; // jogos considerados (até 10)
-  goalGames: number; // jogos em que marcou
-  pointGames: number; // jogos em que pontuou
-  goalStreak: number; // jogos seguidos a marcar (até ao último jogo)
+  goalGames: number;
+  assistGames: number;
+  pointGames: number;
+  goalStreak: number;
   pointStreak: number;
-  last3Goals: number; // jogos com golo nos últimos 3
+  last3Goals: number;
   last3Points: number;
-  status?: "DTD";
-  log: { d: string; o: string; h: number; g: number; a: number; prev?: number }[]; // mais recente primeiro
+  status?: "DTD" | "OUT";
+  injury?: string; // texto do estado (ex.: "Out", "Day-To-Day")
+  log: LogRow[]; // mais recente primeiro
 };
 
-type TeamPlayers = { abbr: string; scorers: PlayerCard[]; pointers: PlayerCard[]; candidates: number };
+type TeamPlayers = {
+  abbr: string;
+  players: PlayerCard[];
+  injured: { name: string; status: string }[]; // lesionados do plantel
+  rosterSource: string;
+};
 
 // ─── Utilitários ─────────────────────────────────────────────────────────────
 
@@ -115,7 +123,7 @@ const prevSeasonId = (season: string) => {
 // ─── Dados da NHL ────────────────────────────────────────────────────────────
 
 async function fetchSeasonRows(season: string): Promise<Map<number, SeasonRow> | null> {
-  const key = `nhl:players:v2:${season}`;
+  const key = `nhl:pl-leaders:v1:${season}`;
   const cached = await redis.get(key);
   if (cached) {
     try {
@@ -139,10 +147,12 @@ async function fetchSeasonRows(season: string): Promise<Map<number, SeasonRow> |
         pos: String(r?.positionCode ?? ""),
         gp: num(r?.gamesPlayed),
         g: num(r?.goals),
+        a: num(r?.assists),
         pts: num(r?.points),
+        teams: String(r?.teamAbbrevs ?? ""),
       });
     }
-    await redis.setPx(key, JSON.stringify(rows), rows.length ? 12 * 60 * 60 * 1000 : 60 * 60 * 1000);
+    await redis.setPx(key, JSON.stringify(rows), rows.length ? 60 * 60 * 1000 : 10 * 60 * 1000);
     return new Map(rows.map((p) => [p.id, p]));
   } catch (e) {
     console.error(`[players] estatísticas ${season} falharam:`, e);
@@ -150,35 +160,81 @@ async function fetchSeasonRows(season: string): Promise<Map<number, SeasonRow> |
   }
 }
 
-async function fetchRoster(abbr: string): Promise<RosterPlayer[] | null> {
-  const key = `nhl:roster:v1:${abbr}`; // mesma chave e formato usados em /api/gemini
+// ─── Plantel atual (várias fontes) ───────────────────────────────────────────
+
+const fullName = (p: any) =>
+  `${p?.firstName?.default ?? p?.firstName ?? ""} ${p?.lastName?.default ?? p?.lastName ?? ""}`.trim() ||
+  String(p?.skaterFullName ?? p?.name?.default ?? "");
+
+/** lê { forwards, defensemen, goalies } (formato de /roster) */
+function parseRosterGroups(data: any): RosterPlayer[] {
+  const out: RosterPlayer[] = [];
+  for (const [group, pos] of [["forwards", "F"], ["defensemen", "D"], ["goalies", "G"]] as const) {
+    for (const p of Array.isArray(data?.[group]) ? data[group] : []) {
+      const id = num(p?.id ?? p?.playerId);
+      if (!id) continue;
+      out.push({ id, name: fullName(p), pos: group === "forwards" ? String(p?.positionCode ?? pos) : pos });
+    }
+  }
+  return out;
+}
+
+/** lê { skaters, goalies } (formato de /club-stats) */
+function parseClubStats(data: any): RosterPlayer[] {
+  const out: RosterPlayer[] = [];
+  for (const [group, isG] of [["skaters", false], ["goalies", true]] as const) {
+    for (const p of Array.isArray(data?.[group]) ? data[group] : []) {
+      const id = num(p?.playerId ?? p?.id);
+      if (!id) continue;
+      out.push({ id, name: fullName(p), pos: isG ? "G" : String(p?.positionCode ?? "F") });
+    }
+  }
+  return out;
+}
+
+async function tryJson(url: string): Promise<any | null> {
+  try {
+    const res = await fetchWithTimeout(url, {}, 8000);
+    return res.ok ? await res.json() : null;
+  } catch {
+    return null;
+  }
+}
+
+type Roster = { players: RosterPlayer[]; source: string };
+
+async function fetchRoster(abbr: string, season: string, cur: Map<number, SeasonRow> | null): Promise<Roster | null> {
+  const key = `nhl:roster:v2:${abbr}`;
   const cached = await redis.get(key);
   if (cached) {
     try {
-      return JSON.parse(cached) as RosterPlayer[];
+      return JSON.parse(cached) as Roster;
     } catch {
       /* ignora cache inválida */
     }
   }
-  try {
-    const res = await fetchWithTimeout(`${NHL_API}/roster/${abbr}/current`, {}, 8000);
-    if (!res.ok) return null;
-    const data = await res.json();
-    const out: RosterPlayer[] = [];
-    for (const [group, pos] of [["forwards", "F"], ["defensemen", "D"], ["goalies", "G"]] as const) {
-      for (const p of Array.isArray(data?.[group]) ? data[group] : []) {
-        const id = num(p?.id);
-        if (!id) continue;
-        const name = `${p?.firstName?.default ?? ""} ${p?.lastName?.default ?? ""}`.trim();
-        out.push({ id, name, pos: group === "forwards" ? String(p?.positionCode ?? pos) : pos });
-      }
+
+  const attempts: [string, () => Promise<RosterPlayer[]>][] = [
+    ["current", async () => parseRosterGroups(await tryJson(`${NHL_API}/roster/${abbr}/current`))],
+    ["season", async () => parseRosterGroups(await tryJson(`${NHL_API}/roster/${abbr}/${season}`))],
+    ["club-stats", async () => parseClubStats(await tryJson(`${NHL_API}/club-stats/${abbr}/now`))],
+    [
+      "league-stats",
+      async () =>
+        [...(cur?.values() ?? [])]
+          .filter((r) => r.teams.split(",").map((t) => t.trim()).pop() === abbr)
+          .map((r) => ({ id: r.id, name: r.name, pos: r.pos === "D" ? "D" : "F" })),
+    ],
+  ];
+  for (const [source, run] of attempts) {
+    const players = await run();
+    if (players.filter((p) => p.pos !== "G").length >= 8) {
+      const roster = { players, source };
+      await redis.setPx(key, JSON.stringify(roster), 3 * 60 * 60 * 1000);
+      return roster;
     }
-    if (out.length === 0) return null;
-    await redis.setPx(key, JSON.stringify(out), 6 * 60 * 60 * 1000);
-    return out;
-  } catch {
-    return null;
   }
+  return null;
 }
 
 async function fetchLog(id: number, season: string, ttlMs: number): Promise<LogRow[] | null> {
@@ -253,9 +309,11 @@ function unavailability(status: string): number {
   return 0.5;
 }
 
-/** nome normalizado do jogador → indisponibilidade (0.5 = day-to-day, 1 = fora) */
-function injuredOf(map: Map<string, InjuryEntry[]> | null, teamFullName: string): Map<string, number> {
-  const out = new Map<string, number>();
+type Inj = { w: number; label: string; name: string };
+
+/** nome normalizado do jogador → lesão (w: 0.5 = day-to-day, 1 = fora) */
+function injuredOf(map: Map<string, InjuryEntry[]> | null, teamFullName: string): Map<string, Inj> {
+  const out = new Map<string, Inj>();
   if (!map) return out;
   const n = normName(teamFullName);
   let entries = map.get(n);
@@ -265,7 +323,10 @@ function injuredOf(map: Map<string, InjuryEntry[]> | null, teamFullName: string)
     entries = hits.length === 1 ? hits[0][1] : [];
   }
   for (const e of entries) {
-    if (e.name) out.set(normName(e.name), Math.max(out.get(normName(e.name)) ?? 0, unavailability(e.status)));
+    if (!e.name) continue;
+    const k = normName(e.name);
+    const w = unavailability(e.status);
+    if (w >= (out.get(k)?.w ?? 0)) out.set(k, { w, label: e.status || "Lesionado", name: e.name });
   }
   return out;
 }
@@ -282,10 +343,9 @@ function seasonPrior(p: RosterPlayer, cur?: SeasonRow, prev?: SeasonRow) {
   const pts = (cur?.pts ?? 0) + w * (prev?.pts ?? 0);
   const base = p.pos === "D" ? C.base.D : C.base.F;
   const k = C.seasonShrinkGames;
-  return {
-    gpg: (g + base.gpg * k) / (gp + k),
-    ppg: (pts + base.ppg * k) / (gp + k),
-  };
+  const gpg = (g + base.gpg * k) / (gp + k);
+  const ppg = (pts + base.ppg * k) / (gp + k);
+  return { gpg, ppg, apg: Math.max(0.02, ppg - gpg) };
 }
 
 function mergedHistory(curLog: LogRow[] | null, prevLog: LogRow[] | null): LogRow[] {
@@ -295,33 +355,38 @@ function mergedHistory(curLog: LogRow[] | null, prevLog: LogRow[] | null): LogRo
   return [...cur, ...prevLog.slice(0, need).map((r) => ({ ...r, prev: 1 }))];
 }
 
+type Prior = { gpg: number; ppg: number; apg: number };
+
 function buildCard(
   p: RosterPlayer,
   hist: LogRow[],
-  prior: { gpg: number; ppg: number },
+  prior: Prior,
+  stat: Stat,
+  statPrev: boolean,
   teamExp: number,
-  unavail: number
-): PlayerCard | null {
+  inj?: Inj
+): PlayerCard {
   const C = CFG;
   const n = hist.length;
-  if (n < 3) return null; // sem histórico suficiente
+  const out = !!inj && inj.w >= 1;
+  const dtd = !!inj && inj.w < 1;
 
   const goalGames = hist.filter((r) => r.g > 0).length;
+  const assistGames = hist.filter((r) => r.a > 0).length;
   const pointGames = hist.filter((r) => r.g + r.a > 0).length;
 
-  const priorGoal = 1 - Math.exp(-prior.gpg);
-  const priorPoint = 1 - Math.exp(-prior.ppg);
   const k = C.priorGames;
-  const pG = (goalGames + k * priorGoal) / (n + k);
-  const pP = (pointGames + k * priorPoint) / (n + k);
+  const blend = (hits: number, rate: number) => (hits + k * (1 - Math.exp(-rate))) / (n + k);
+  const pG = blend(goalGames, prior.gpg);
+  const pA = blend(assistGames, prior.apg);
+  const pP = blend(pointGames, prior.ppg);
 
   // Ajuste ao jogo de hoje: equipa com mais golos esperados → mais hipóteses para os seus jogadores
   const ratio = clamp(teamExp / C.refTeamGoals, C.ratioMin, C.ratioMax);
   const adj = (p0: number) => 1 - Math.pow(1 - p0, ratio);
 
-  const availability = unavail >= 1 ? 0 : unavail > 0 ? C.dtdFactor : 1;
-  const probGoal = Math.round(clamp(adj(pG), 0, C.cap.goal) * availability * 100);
-  const probPoint = Math.round(clamp(adj(pP), 0, C.cap.point) * availability * 100);
+  const availability = out ? 0 : dtd ? C.dtdFactor : 1;
+  const pct = (x: number, cap: number) => Math.round(clamp(adj(x), 0, cap) * availability * 100);
 
   const streak = (hit: (r: LogRow) => boolean) => {
     let s = 0;
@@ -337,16 +402,20 @@ function buildCard(
     id: p.id,
     name: p.name,
     pos: p.pos,
-    probGoal,
-    probPoint,
+    stat,
+    statPrev,
+    probGoal: pct(pG, C.cap.goal),
+    probAssist: pct(pA, C.cap.assist),
+    probPoint: pct(pP, C.cap.point),
     n,
     goalGames,
+    assistGames,
     pointGames,
     goalStreak: streak((r) => r.g > 0),
     pointStreak: streak((r) => r.g + r.a > 0),
     last3Goals: last3.filter((r) => r.g > 0).length,
     last3Points: last3.filter((r) => r.g + r.a > 0).length,
-    ...(unavail > 0 && unavail < 1 ? { status: "DTD" as const } : {}),
+    ...(inj ? { status: out ? ("OUT" as const) : ("DTD" as const), injury: inj.label } : {}),
     log: hist.map((r) => ({ d: r.d, o: r.o, h: r.h, g: r.g, a: r.a, ...(r.prev ? { prev: 1 } : {}) })),
   };
 }
@@ -366,41 +435,54 @@ export async function POST(req: Request) {
     const prevSeason = prevSeasonId(season);
     const abbrs = [...new Set(games.flatMap((g) => [g.homeAbbr, g.awayAbbr]))].filter(Boolean);
 
-    const [cur, prev, injuries, rosterList] = await Promise.all([
+    const [cur, prev, injuries] = await Promise.all([
       fetchSeasonRows(season),
       fetchSeasonRows(prevSeason),
       fetchInjuryMap(),
-      Promise.all(abbrs.map(async (a) => [a, await fetchRoster(a)] as const)),
     ]);
-    const rosters = new Map(rosterList.filter(([, r]) => r).map(([a, r]) => [a, r as RosterPlayer[]]));
-
     if (!cur && !prev) return json({ message: "Estatísticas de jogadores indisponíveis na NHL." }, 502);
+
+    const rosterList = await Promise.all(abbrs.map(async (a) => [a, await fetchRoster(a, season, cur)] as const));
+    const rosters = new Map(rosterList.filter(([, r]) => r).map(([a, r]) => [a, r as Roster]));
     if (rosters.size === 0) return json({ message: "Plantéis indisponíveis na NHL." }, 502);
 
-    // 1) candidatos por equipa
-    type Cand = { p: RosterPlayer; prior: { gpg: number; ppg: number }; unavail: number };
-    const pools = new Map<string, Cand[]>();
+    // 1) jogadores de cada equipa: os do plantel atual com mais rendimento (lesionados incluídos)
+    type Cand = { p: RosterPlayer; prior: Prior; stat: Stat; statPrev: boolean; inj?: Inj };
+    const pools = new Map<string, { cands: Cand[]; injured: { name: string; status: string }[]; source: string }>();
     for (const g of games) {
       for (const [abbr, name] of [[g.homeAbbr, g.homeName], [g.awayAbbr, g.awayName]] as const) {
         const roster = rosters.get(abbr);
         if (!roster || pools.has(abbr)) continue;
-        const inj = injuredOf(injuries, name);
-        const cands: Cand[] = roster
-          .filter((p) => p.pos !== "G")
-          .map((p) => ({
-            p,
-            prior: seasonPrior(p, cur?.get(p.id), prev?.get(p.id)),
-            unavail: inj.get(normName(p.name)) ?? 0,
-          }))
-          .filter((c) => c.unavail < 1)
+        const injMap = injuredOf(injuries, name);
+        const skaters = roster.players.filter((p) => p.pos !== "G");
+        // Estatística mostrada: a da época atual; no arranque (poucos jogos) a da época passada, igual para toda a equipa
+        const maxCurGp = Math.max(0, ...skaters.map((p) => cur?.get(p.id)?.gp ?? 0));
+        const useCur = maxCurGp >= MIN_SEASON_GAMES;
+        const cands: Cand[] = skaters
+          .map((p) => {
+            const c = cur?.get(p.id);
+            const pr = prev?.get(p.id);
+            const src = useCur ? c : pr;
+            return {
+              p,
+              prior: seasonPrior(p, c, pr),
+              stat: { gp: src?.gp ?? 0, g: src?.g ?? 0, a: src?.a ?? 0, p: src?.pts ?? 0 },
+              statPrev: !useCur,
+              inj: injMap.get(normName(p.name)),
+            };
+          })
           .sort((a, b) => b.prior.ppg - a.prior.ppg)
           .slice(0, POOL_PER_TEAM);
-        pools.set(abbr, cands);
+        const injured = roster.players
+          .map((p) => injMap.get(normName(p.name)))
+          .filter((x): x is Inj => !!x)
+          .map((x) => ({ name: x.name, status: x.label }));
+        pools.set(abbr, { cands, injured, source: roster.source });
       }
     }
 
-    // 2) últimos jogos de cada candidato (época atual; época passada só se faltar histórico)
-    const ids = [...new Set([...pools.values()].flatMap((c) => c.map((x) => x.p.id)))].slice(0, MAX_PLAYERS);
+    // 2) últimos jogos (época atual; época passada só se faltar histórico)
+    const ids = [...new Set([...pools.values()].flatMap((t) => t.cands.map((x) => x.p.id)))].slice(0, MAX_PLAYERS);
     const curLogs = new Map<number, LogRow[] | null>();
     for (let i = 0; i < ids.length; i += BATCH) {
       const batch = ids.slice(i, i + BATCH);
@@ -415,20 +497,15 @@ export async function POST(req: Request) {
       batch.forEach((id, j) => prevLogs.set(id, res[j]));
     }
 
-    // 3) probabilidades e escolha dos melhores por equipa
+    // 3) cartas por equipa (ordenadas por pontos da época; a vista pode reordenar)
     const teamResult = (abbr: string, teamExp: number): TeamPlayers => {
-      const cards: PlayerCard[] = [];
-      for (const c of pools.get(abbr) ?? []) {
-        const hist = mergedHistory(curLogs.get(c.p.id) ?? null, prevLogs.get(c.p.id) ?? null);
-        const card = buildCard(c.p, hist, c.prior, teamExp, c.unavail);
-        if (card) cards.push(card);
-      }
-      return {
-        abbr,
-        candidates: cards.length,
-        scorers: [...cards].sort((a, b) => b.probGoal - a.probGoal).slice(0, PICKS_PER_LIST),
-        pointers: [...cards].sort((a, b) => b.probPoint - a.probPoint).slice(0, PICKS_PER_LIST),
-      };
+      const t = pools.get(abbr);
+      const players = (t?.cands ?? [])
+        .map((c) =>
+          buildCard(c.p, mergedHistory(curLogs.get(c.p.id) ?? null, prevLogs.get(c.p.id) ?? null), c.prior, c.stat, c.statPrev, teamExp, c.inj)
+        )
+        .sort((a, b) => b.stat.p - a.stat.p || b.stat.g - a.stat.g || b.probPoint - a.probPoint);
+      return { abbr, players, injured: t?.injured ?? [], rosterSource: t?.source ?? "none" };
     };
 
     const out = games.map((g) => ({
@@ -440,9 +517,10 @@ export async function POST(req: Request) {
     return json({
       games: out,
       meta: {
+        season,
         players: ids.length,
         injuries: injuries ? "espn" : "unavailable",
-        note: "Probabilidade a partir dos últimos 10 jogos de cada jogador, ajustada à época e ao jogo de hoje.",
+        rosters: Object.fromEntries([...rosters].map(([a, r]) => [a, r.source])),
       },
     });
   } catch (e: any) {
