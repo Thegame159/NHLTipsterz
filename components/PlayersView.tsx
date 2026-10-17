@@ -209,6 +209,65 @@ const TeamChip: React.FC<{ abbr: string; align: 'left' | 'right' }> = ({ abbr, a
   </div>
 );
 
+type Pick = { card: PlayerCard; abbr: string; opp: string; home: boolean };
+
+/** Triplete: os 3 jogadores com maior probabilidade de pontuar hoje, de jogos diferentes */
+function buildTriple(predictions: GamePrediction[], byId: Map<string, GamePlayers>): Pick[] {
+  const all: Pick[] = [];
+  for (const p of predictions) {
+    const g = byId.get(String(p.id));
+    if (!g) continue;
+    for (const c of g.home.players) if (c.status !== 'OUT') all.push({ card: c, abbr: p.homeTeamAbbr, opp: p.awayTeamAbbr, home: true });
+    for (const c of g.away.players) if (c.status !== 'OUT') all.push({ card: c, abbr: p.awayTeamAbbr, opp: p.homeTeamAbbr, home: false });
+  }
+  all.sort((a, b) => b.card.probPoint - a.card.probPoint);
+  const used = new Set<string>();
+  const out: Pick[] = [];
+  for (const x of all) {
+    const game = [x.abbr, x.opp].sort().join('-');
+    if (used.has(game)) continue;
+    used.add(game);
+    out.push(x);
+    if (out.length === 3) break;
+  }
+  return out;
+}
+
+const TripleCard: React.FC<{ picks: Pick[] }> = ({ picks }) => {
+  if (picks.length < 2) return null;
+  const combined = picks.reduce((acc, x) => acc * (x.card.probPoint / 100), 1) * 100;
+  return (
+    <section className="rounded-2xl border border-orange-500/40 bg-gradient-to-br from-orange-500/10 to-slate-900/40 p-4 sm:p-5 space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="font-black text-white text-sm uppercase tracking-wider">🔥 Triplete de escolhas fortes</h3>
+        <span className="text-[11px] font-black text-orange-300 bg-orange-500/10 border border-orange-500/30 rounded-full px-2.5 py-0.5">
+          combinada {combined.toFixed(1)}%
+        </span>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        {picks.map((x) => (
+          <div key={x.card.id} className="flex items-center gap-3 rounded-xl bg-slate-900/70 border border-slate-800 px-3 py-2.5">
+            <img
+              src={getLogoUrl(x.abbr)}
+              alt={x.abbr}
+              className="w-9 h-9 object-contain shrink-0 bg-slate-800 rounded-full p-1 border border-slate-700"
+              onError={(e) => (e.currentTarget.style.visibility = 'hidden')}
+            />
+            <div className="min-w-0 flex-1">
+              <div className="font-bold text-slate-100 truncate">{shortName(x.card.name)}</div>
+              <div className="text-[10px] text-slate-500">
+                {x.home ? 'vs' : '@'} {teamLabel(x.opp)} · <b className="text-slate-300">{x.card.stat.p}</b> pts
+              </div>
+            </div>
+            <span className={`text-xs font-black px-2 py-1 rounded border ${probColor(x.card.probPoint)}`}>{x.card.probPoint}%</span>
+          </div>
+        ))}
+      </div>
+      <p className="text-[10px] text-slate-500">Para pontuar (golo ou assistência). Um por jogo; a combinada assume jogadores independentes.</p>
+    </section>
+  );
+};
+
 const GameSection: React.FC<{ p: GamePrediction; g: GamePlayers }> = ({ p, g }) => {
   const [open, setOpen] = useState(false);
   return (
@@ -314,6 +373,8 @@ const PlayersView: React.FC<Props> = ({ predictions, date }) => {
 
   return (
     <div className="space-y-6">
+      <TripleCard picks={buildTriple(predictions, byId)} />
+
       <p className="text-[11px] text-slate-500 leading-snug">
         Jogadores do plantel atual ordenados por <b className="text-slate-300">pontos</b> na época. A % é a probabilidade de pontuar hoje; os 3 com maior probabilidade de cada equipa ficam em destaque (★).
         Clica num jogo para abrir e num jogador para ver os últimos 10 jogos.
