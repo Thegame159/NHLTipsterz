@@ -211,8 +211,11 @@ const TeamChip: React.FC<{ abbr: string; align: 'left' | 'right' }> = ({ abbr, a
 
 type Pick = { card: PlayerCard; abbr: string; opp: string; home: boolean };
 
-/** Triplete: os 3 jogadores com maior probabilidade de pontuar hoje, de jogos diferentes */
-function buildTriple(predictions: GamePrediction[], byId: Map<string, GamePlayers>): Pick[] {
+type Mode = 'goal' | 'point';
+const probOf = (c: PlayerCard, mode: Mode) => (mode === 'goal' ? c.probGoal : c.probPoint);
+
+/** Triplete: os 3 jogadores com maior probabilidade (golo ou ponto) hoje, de jogos diferentes */
+function buildTriple(predictions: GamePrediction[], byId: Map<string, GamePlayers>, mode: Mode): Pick[] {
   const all: Pick[] = [];
   for (const p of predictions) {
     const g = byId.get(String(p.id));
@@ -220,7 +223,7 @@ function buildTriple(predictions: GamePrediction[], byId: Map<string, GamePlayer
     for (const c of g.home.players) if (c.status !== 'OUT') all.push({ card: c, abbr: p.homeTeamAbbr, opp: p.awayTeamAbbr, home: true });
     for (const c of g.away.players) if (c.status !== 'OUT') all.push({ card: c, abbr: p.awayTeamAbbr, opp: p.homeTeamAbbr, home: false });
   }
-  all.sort((a, b) => b.card.probPoint - a.card.probPoint);
+  all.sort((a, b) => probOf(b.card, mode) - probOf(a.card, mode) || b.card.probPoint - a.card.probPoint);
   const used = new Set<string>();
   const out: Pick[] = [];
   for (const x of all) {
@@ -233,13 +236,13 @@ function buildTriple(predictions: GamePrediction[], byId: Map<string, GamePlayer
   return out;
 }
 
-const TripleCard: React.FC<{ picks: Pick[] }> = ({ picks }) => {
+const TripleCard: React.FC<{ picks: Pick[]; mode: Mode }> = ({ picks, mode }) => {
   if (picks.length < 2) return null;
-  const combined = picks.reduce((acc, x) => acc * (x.card.probPoint / 100), 1) * 100;
+  const combined = picks.reduce((acc, x) => acc * (probOf(x.card, mode) / 100), 1) * 100;
   return (
     <section className="rounded-2xl border border-orange-500/40 bg-gradient-to-br from-orange-500/10 to-slate-900/40 p-4 sm:p-5 space-y-3">
       <div className="flex items-center justify-between gap-3">
-        <h3 className="font-black text-white text-sm uppercase tracking-wider">🔥 Triplete de escolhas fortes</h3>
+        <h3 className="font-black text-white text-sm uppercase tracking-wider">{mode === 'goal' ? '⚽ Triplete de golos' : '🔥 Triplete de pontos'}</h3>
         <span className="text-[11px] font-black text-orange-300 bg-orange-500/10 border border-orange-500/30 rounded-full px-2.5 py-0.5">
           combinada {combined.toFixed(1)}%
         </span>
@@ -259,11 +262,11 @@ const TripleCard: React.FC<{ picks: Pick[] }> = ({ picks }) => {
                 {x.home ? 'vs' : '@'} {teamLabel(x.opp)} · <b className="text-slate-300">{x.card.stat.p}</b> pts
               </div>
             </div>
-            <span className={`text-xs font-black px-2 py-1 rounded border ${probColor(x.card.probPoint)}`}>{x.card.probPoint}%</span>
+            <span className={`text-xs font-black px-2 py-1 rounded border ${probColor(probOf(x.card, mode))}`}>{probOf(x.card, mode)}%</span>
           </div>
         ))}
       </div>
-      <p className="text-[10px] text-slate-500">Para pontuar (golo ou assistência). Um por jogo; a combinada assume jogadores independentes.</p>
+      <p className="text-[10px] text-slate-500">{mode === 'goal' ? 'Para marcar golo.' : 'Para pontuar (golo ou assistência).'} Um por jogo; a combinada assume jogadores independentes.</p>
     </section>
   );
 };
@@ -373,7 +376,8 @@ const PlayersView: React.FC<Props> = ({ predictions, date }) => {
 
   return (
     <div className="space-y-6">
-      <TripleCard picks={buildTriple(predictions, byId)} />
+      <TripleCard picks={buildTriple(predictions, byId, 'goal')} mode="goal" />
+      <TripleCard picks={buildTriple(predictions, byId, 'point')} mode="point" />
 
       <p className="text-[11px] text-slate-500 leading-snug">
         Jogadores do plantel atual ordenados por <b className="text-slate-300">pontos</b> na época. A % é a probabilidade de pontuar hoje; os 3 com maior probabilidade de cada equipa ficam em destaque (★).
@@ -393,6 +397,7 @@ const PlayersView: React.FC<Props> = ({ predictions, date }) => {
         if (!g) return null;
         return <GameSection key={p.id} p={p} g={g} />;
       })}
+      <div className="h-24" aria-hidden="true" />
     </div>
   );
 };
