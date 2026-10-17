@@ -26,24 +26,12 @@ const probColor = (p: number) =>
   : p >= 35 ? 'text-amber-300 bg-amber-500/10 border-amber-500/30'
   : 'text-slate-300 bg-slate-700/30 border-slate-600/40';
 
-type SortKey = 'p' | 'g' | 'a' | 'prob';
-const SORTS: { key: SortKey; label: string }[] = [
-  { key: 'p', label: 'Pontos' },
-  { key: 'g', label: 'Golos' },
-  { key: 'a', label: 'Assistências' },
-  { key: 'prob', label: 'Prob. hoje' },
-];
-
-const sortCards = (cards: PlayerCard[], key: SortKey) =>
-  [...cards].sort((x, y) => {
-    if (key === 'prob') return y.probPoint - x.probPoint || y.probGoal - x.probGoal;
-    const f = (c: PlayerCard) => (key === 'p' ? c.stat.p : key === 'g' ? c.stat.g : c.stat.a);
-    return f(y) - f(x) || y.stat.p - x.stat.p || y.probPoint - x.probPoint;
-  });
+const byPoints = (cards: PlayerCard[]) =>
+  [...cards].sort((x, y) => y.stat.p - x.stat.p || y.stat.g - x.stat.g || y.probPoint - x.probPoint);
 
 // Faixa dos 10 jogos (do mais antigo para o mais recente): verde = marcou, azul = só assistência, cinza = nada
 const FormStrip: React.FC<{ log: PlayerCard['log'] }> = ({ log }) => (
-  <div className="hidden sm:flex gap-0.5" aria-hidden="true">
+  <div className="flex gap-0.5" aria-hidden="true">
     {[...log].reverse().map((r, i) => (
       <span
         key={`${r.d}-${i}`}
@@ -54,16 +42,7 @@ const FormStrip: React.FC<{ log: PlayerCard['log'] }> = ({ log }) => (
   </div>
 );
 
-const Prob: React.FC<{ label: string; value: number; off: boolean }> = ({ label, value, off }) => (
-  <div className="text-center w-11">
-    <div className={`text-[11px] font-black px-1 py-0.5 rounded border ${off ? 'text-slate-600 border-slate-800' : probColor(value)}`}>
-      {off ? '—' : `${value}%`}
-    </div>
-    <div className="text-[8px] font-black uppercase text-slate-600 mt-0.5">{label}</div>
-  </div>
-);
-
-const PlayerRow: React.FC<{ card: PlayerCard; rank: number }> = ({ card, rank }) => {
+const PlayerRow: React.FC<{ card: PlayerCard; rank: number; top?: boolean }> = ({ card, rank, top }) => {
   const [open, setOpen] = useState(false);
   const off = card.status === 'OUT';
 
@@ -77,47 +56,57 @@ const PlayerRow: React.FC<{ card: PlayerCard; rank: number }> = ({ card, rank })
       : null;
 
   return (
-    <div className={`bg-slate-900/70 border rounded-xl overflow-hidden ${off ? 'border-red-500/30' : 'border-slate-800'}`}>
+    <div className={`bg-slate-900/70 border rounded-xl overflow-hidden ${off ? 'border-red-500/30' : top ? 'border-orange-500/60 bg-orange-500/5' : 'border-slate-800'}`}>
       <button
         onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-slate-800/40 transition-colors"
+        className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-slate-800/40 transition-colors"
         aria-expanded={open}
       >
         <span className="w-4 text-[11px] font-black text-slate-600">{rank}</span>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <span className={`font-bold truncate ${off ? 'text-slate-500 line-through' : 'text-slate-100'}`}>{shortName(card.name)}</span>
-            <span className="text-[9px] font-black text-slate-500 uppercase">{card.pos}</span>
-            {card.status === 'OUT' && (
-              <span title={card.injury} className="text-[9px] font-black text-red-400 border border-red-500/30 bg-red-500/10 px-1 rounded">
-                LESIONADO · FORA
-              </span>
-            )}
-            {card.status === 'DTD' && (
-              <span title={card.injury} className="text-[9px] font-black text-amber-400 border border-amber-500/30 bg-amber-500/10 px-1 rounded">
-                DÚVIDA
-              </span>
-            )}
-          </div>
-          <div className="text-[11px] text-slate-400 mt-0.5">
-            <b className="text-slate-200">{card.stat.g}</b>G · <b className="text-slate-200">{card.stat.a}</b>A ·{' '}
-            <b className="text-white">{card.stat.p}</b>P <span className="text-slate-600">({card.stat.gp} j{card.statPrev ? ', ép. anterior' : ''})</span>
-          </div>
-          <div className="text-[10px] text-slate-500">
-            últimos {card.n}: marcou {card.goalGames} · assistiu {card.assistGames} · pontuou {card.pointGames}
-          </div>
-          {streak && !off && <div className="text-[10px] font-bold text-orange-400">{streak}</div>}
+        <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
+          <span className={`font-bold truncate ${off ? 'text-slate-500 line-through' : 'text-slate-100'}`}>{shortName(card.name)}</span>
+          <span className="text-[9px] font-black text-slate-500 uppercase">{card.pos}</span>
+          {top && (
+            <span className="text-[9px] font-black text-orange-400 border border-orange-500/40 bg-orange-500/10 px-1 rounded">★ DESTAQUE</span>
+          )}
+          {off && (
+            <span title={card.injury} className="text-[9px] font-black text-red-400 border border-red-500/30 bg-red-500/10 px-1 rounded">
+              LESIONADO
+            </span>
+          )}
+          {card.status === 'DTD' && (
+            <span title={card.injury} className="text-[9px] font-black text-amber-400 border border-amber-500/30 bg-amber-500/10 px-1 rounded">
+              DÚVIDA
+            </span>
+          )}
         </div>
-        <FormStrip log={card.log} />
-        <Prob label="Golo" value={card.probGoal} off={off} />
-        <Prob label="Assist." value={card.probAssist} off={off} />
-        <Prob label="Ponto" value={card.probPoint} off={off} />
+        <span className="text-[11px] text-slate-400 whitespace-nowrap">
+          <b className="text-white">{card.stat.p}</b> pts
+        </span>
+        <span className={`w-12 text-center text-xs font-black px-1.5 py-1 rounded border ${off ? 'text-slate-600 border-slate-800' : probColor(card.probPoint)}`}>
+          {off ? '—' : `${card.probPoint}%`}
+        </span>
         <span className="text-slate-600 text-[10px]">{open ? '▲' : '▼'}</span>
       </button>
 
       {open && (
-        <div className="border-t border-slate-800 px-3 py-2">
-          {card.injury && <p className="text-[11px] text-amber-300 mb-1">Estado: {card.injury}</p>}
+        <div className="border-t border-slate-800 px-3 py-3 space-y-2">
+          <div className="text-[11px] text-slate-400">
+            Época: <b className="text-slate-200">{card.stat.g}</b>G · <b className="text-slate-200">{card.stat.a}</b>A ·{' '}
+            <b className="text-white">{card.stat.p}</b>P em {card.stat.gp} jogos{card.statPrev ? ' (época anterior)' : ''}
+          </div>
+          {card.injury && <div className="text-[11px] text-amber-300">Estado: {card.injury}</div>}
+          {!off && (
+            <div className="text-[11px] text-slate-400">
+              Hoje: marcar <b className="text-slate-200">{card.probGoal}%</b> · assistir <b className="text-slate-200">{card.probAssist}%</b> · pontuar{' '}
+              <b className="text-slate-200">{card.probPoint}%</b>
+            </div>
+          )}
+          <div className="text-[11px] text-slate-400">
+            Últimos {card.n} jogos: marcou {card.goalGames} · assistiu {card.assistGames} · pontuou {card.pointGames}
+          </div>
+          {streak && !off && <div className="text-[11px] font-bold text-orange-400">{streak}</div>}
+          <FormStrip log={card.log} />
           {card.log.length === 0 ? (
             <p className="text-[11px] text-slate-500">Sem jogos registados.</p>
           ) : (
@@ -157,10 +146,18 @@ const PlayerRow: React.FC<{ card: PlayerCard; rank: number }> = ({ card, rank })
 
 const SHOWN = 5;
 
-const TeamBlock: React.FC<{ team: TeamPlayers; sort: SortKey }> = ({ team, sort }) => {
+const TeamBlock: React.FC<{ team: TeamPlayers }> = ({ team }) => {
   const [all, setAll] = useState(false);
-  const cards = sortCards(team.players, sort);
-  const list = all ? cards : cards.slice(0, SHOWN);
+  const cards = byPoints(team.players);
+  // destaque: os 3 com maior probabilidade de pontuar hoje (disponíveis)
+  const top = new Set(
+    [...cards]
+      .filter((c) => c.status !== 'OUT')
+      .sort((a, b) => b.probPoint - a.probPoint)
+      .slice(0, 3)
+      .map((c) => c.id)
+  );
+  const list = all ? cards : cards.filter((c, i) => i < SHOWN || top.has(c.id));
 
   return (
     <div className="space-y-3">
@@ -185,17 +182,46 @@ const TeamBlock: React.FC<{ team: TeamPlayers; sort: SortKey }> = ({ team, sort 
         <p className="text-xs text-slate-500">Sem dados de jogadores desta equipa.</p>
       ) : (
         <div className="space-y-2">
-          {list.map((c, i) => (
-            <PlayerRow key={c.id} card={c} rank={i + 1} />
+          {list.map((c) => (
+            <PlayerRow key={c.id} card={c} rank={cards.indexOf(c) + 1} top={top.has(c.id)} />
           ))}
-          {cards.length > SHOWN && (
+          {cards.length > list.length || all ? (
             <button onClick={() => setAll((v) => !v)} className="w-full text-[10px] font-black uppercase tracking-wider text-slate-500 hover:text-slate-300 py-1">
-              {all ? 'Ver menos' : `Ver mais (${cards.length - SHOWN})`}
+              {all ? 'Ver menos' : `Ver mais (${cards.length - list.length})`}
             </button>
-          )}
+          ) : null}
         </div>
       )}
     </div>
+  );
+};
+
+const GameSection: React.FC<{ p: GamePrediction; g: GamePlayers }> = ({ p, g }) => {
+  const [open, setOpen] = useState(false);
+  return (
+    <section className="bg-slate-800/40 border border-slate-700 rounded-2xl overflow-hidden">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between gap-3 px-5 py-4 text-left hover:bg-slate-800/60 transition-colors"
+        aria-expanded={open}
+      >
+        <h3 className="font-black text-white">
+          {teamLabel(p.homeTeamAbbr)} <span className="text-slate-500 font-bold">vs</span> {teamLabel(p.awayTeamAbbr)}
+        </h3>
+        <span className="flex items-center gap-3">
+          <span className="text-[11px] font-bold text-slate-500">
+            {new Date(p.dateTime).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}
+          </span>
+          <span className="text-slate-600 text-[10px]">{open ? '▲' : '▼'}</span>
+        </span>
+      </button>
+      {open && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 px-5 pb-5">
+          <TeamBlock team={g.home} />
+          <TeamBlock team={g.away} />
+        </div>
+      )}
+    </section>
   );
 };
 
@@ -205,7 +231,6 @@ const PlayersView: React.FC<Props> = ({ predictions, date }) => {
   const [loading, setLoading] = useState(!cache.has(key) && predictions.length > 0);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
-  const [sort, setSort] = useState<SortKey>('p');
 
   useEffect(() => {
     if (predictions.length === 0) return;
@@ -276,45 +301,15 @@ const PlayersView: React.FC<Props> = ({ predictions, date }) => {
 
   return (
     <div className="space-y-6">
-      <div className="space-y-2">
-        <p className="text-[11px] text-slate-500 leading-snug">
-          Plantel <b className="text-slate-300">atual</b> de cada equipa. Probabilidades de hoje a partir dos <b className="text-slate-300">últimos 10 jogos</b>, da época
-          e dos golos esperados da equipa. Faixa verde = marcou, azul = só assistência. Clica num jogador para ver os 10 jogos.
-        </p>
-        <div className="flex flex-wrap gap-1.5">
-          {SORTS.map((o) => (
-            <button
-              key={o.key}
-              onClick={() => setSort(o.key)}
-              className={`rounded-lg px-3 py-1.5 text-[10px] font-black uppercase tracking-wider border transition-colors ${
-                sort === o.key ? 'bg-orange-600 border-orange-500 text-white' : 'bg-slate-800/60 border-slate-700 text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              {o.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      <p className="text-[11px] text-slate-500 leading-snug">
+        Jogadores do plantel atual ordenados por <b className="text-slate-300">pontos</b> na época. A % é a probabilidade de pontuar hoje; os 3 com maior probabilidade de cada equipa ficam em destaque (★).
+        Clica num jogo para abrir e num jogador para ver os últimos 10 jogos.
+      </p>
 
       {predictions.map((p) => {
         const g = byId.get(String(p.id));
         if (!g) return null;
-        return (
-          <section key={p.id} className="bg-slate-800/40 border border-slate-700 rounded-2xl p-5 space-y-5">
-            <header className="flex items-center justify-between">
-              <h3 className="font-black text-white">
-                {teamLabel(p.homeTeamAbbr)} <span className="text-slate-500 font-bold">vs</span> {teamLabel(p.awayTeamAbbr)}
-              </h3>
-              <span className="text-[11px] font-bold text-slate-500">
-                {new Date(p.dateTime).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}
-              </span>
-            </header>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <TeamBlock team={g.home} sort={sort} />
-              <TeamBlock team={g.away} sort={sort} />
-            </div>
-          </section>
-        );
+        return <GameSection key={p.id} p={p} g={g} />;
       })}
     </div>
   );
