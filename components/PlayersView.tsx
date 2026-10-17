@@ -70,7 +70,8 @@ const PlayerRow: React.FC<{ card: PlayerCard; rank: number; top?: boolean; focus
         aria-expanded={open}
       >
         <span className="w-4 text-[11px] font-black text-slate-600">{rank}</span>
-        <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
+        <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
           <span className={`font-bold truncate ${off ? 'text-slate-500 line-through' : 'text-slate-100'}`}>{shortName(card.name)}</span>
           <span className="text-[9px] font-black text-slate-500 uppercase">{card.pos}</span>
           {top && (
@@ -86,6 +87,11 @@ const PlayerRow: React.FC<{ card: PlayerCard; rank: number; top?: boolean; focus
               DÚVIDA
             </span>
           )}
+        </div>
+        <div className="text-[10px] text-slate-500 mt-0.5">
+          Últimos {card.n} jogos: marcou <b className="text-slate-300">{card.goalGames}</b> · assistiu{' '}
+          <b className="text-slate-300">{card.assistGames}</b> · pontuou <b className="text-slate-300">{card.pointGames}</b>
+        </div>
         </div>
         <FormStrip log={card.log} />
         <span className="text-[11px] text-slate-400 whitespace-nowrap">
@@ -110,9 +116,6 @@ const PlayerRow: React.FC<{ card: PlayerCard; rank: number; top?: boolean; focus
               <b className="text-slate-200">{card.probPoint}%</b>
             </div>
           )}
-          <div className="text-[11px] text-slate-400">
-            Últimos {card.n} jogos: marcou {card.goalGames} · assistiu {card.assistGames} · pontuou {card.pointGames}
-          </div>
           {streak && !off && <div className="text-[11px] font-bold text-orange-400">{streak}</div>}
           {card.log.length === 0 ? (
             <p className="text-[11px] text-slate-500">Sem jogos registados.</p>
