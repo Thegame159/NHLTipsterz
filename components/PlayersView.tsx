@@ -5,6 +5,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { GamePrediction, GamePlayers, PlayerCard, TeamPlayers } from '../types';
 import { getLogoUrl, teamLabel } from '../utils/nhlUtils';
+import { ScaleKey, levelOf, hasStar, SCALE_BADGE, STAR_CLASS } from '../utils/marketScale';
 
 interface Props {
   predictions: GamePrediction[];
@@ -21,10 +22,23 @@ const shortName = (full: string) => {
 
 const ddmm = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 
-const probColor = (p: number) =>
-  p >= 55 ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30'
-  : p >= 35 ? 'text-amber-300 bg-amber-500/10 border-amber-500/30'
-  : 'text-slate-300 bg-slate-700/30 border-slate-600/40';
+// Percentagem com a cor (e ★) da escala do mercado, igual à dos outros ecrãs
+const ProbBadge: React.FC<{ value: number; scale: ScaleKey; className?: string }> = ({ value, scale, className = '' }) => {
+  const lvl = levelOf(scale, value);
+  return (
+    <span className={`relative inline-block text-center text-xs font-black rounded border ${SCALE_BADGE[lvl]} ${className}`}>
+      {value}%
+      {hasStar(scale, value) && (
+        <span
+          title="Acima da média neste mercado"
+          className={`absolute -top-2 -right-2 w-[15px] h-[15px] rounded-full bg-slate-950 border flex items-center justify-center text-[9px] leading-none ${STAR_CLASS[lvl]}`}
+        >
+          ★
+        </span>
+      )}
+    </span>
+  );
+};
 
 const byPoints = (cards: PlayerCard[]) =>
   [...cards].sort((x, y) => y.stat.p - x.stat.p || y.stat.g - x.stat.g || y.probPoint - x.probPoint);
@@ -82,6 +96,21 @@ const PlayerRow: React.FC<{ card: PlayerCard; rank: number; top?: boolean; focus
               LESIONADO
             </span>
           )}
+          {!off && card.newTeam && (
+            <span title="Já jogou por outra equipa esta época" className="text-[9px] font-black text-blue-400 border border-blue-500/30 bg-blue-500/10 px-1 rounded">
+              NOVO NA EQUIPA
+            </span>
+          )}
+          {!off && card.missed && (
+            <span title={`Falhou ${card.missed} jogos da equipa e já não consta como lesionado (inferência)`} className="text-[9px] font-black text-purple-400 border border-purple-500/30 bg-purple-500/10 px-1 rounded">
+              REGRESSO
+            </span>
+          )}
+          {!off && card.lowSample && (
+            <span title="Poucos jogos esta época: a percentagem é menos fiável" className="text-[9px] font-black text-slate-400 border border-slate-600/50 bg-slate-700/30 px-1 rounded">
+              POUCOS JOGOS
+            </span>
+          )}
           {card.status === 'DTD' && (
             <span title={card.injury} className="text-[9px] font-black text-amber-400 border border-amber-500/30 bg-amber-500/10 px-1 rounded">
               DÚVIDA
@@ -97,9 +126,11 @@ const PlayerRow: React.FC<{ card: PlayerCard; rank: number; top?: boolean; focus
         <span className="text-[11px] text-slate-400 whitespace-nowrap">
           <b className="text-white">{card.stat.p}</b> pts
         </span>
-        <span className={`w-12 text-center text-xs font-black px-1.5 py-1 rounded border ${off ? 'text-slate-600 border-slate-800' : probColor(card.probPoint)}`}>
-          {off ? '—' : `${card.probPoint}%`}
-        </span>
+        {off ? (
+          <span className="w-12 text-center text-xs font-black px-1.5 py-1 rounded border text-slate-600 border-slate-800">—</span>
+        ) : (
+          <ProbBadge value={card.probPoint} scale="pPoint" className="w-12 px-1.5 py-1" />
+        )}
         <span className="text-slate-600 text-[10px]">{open ? '▲' : '▼'}</span>
       </button>
 
@@ -268,18 +299,66 @@ function buildTriple(predictions: GamePrediction[], byId: Map<string, GamePlayer
   return pages;
 }
 
-const TripleCard: React.FC<{ pages: Pick[][]; mode: Mode; onPick: (x: Pick) => void }> = ({ pages, mode, onPick }) => {
+const copyText = async (text: string) => {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return ok;
+    } catch {
+      return false;
+    }
+  }
+};
+
+const TripleCard: React.FC<{ pages: Pick[][]; mode: Mode; onPick: (x: Pick) => void; dateLabel: string }> = ({ pages, mode, onPick, dateLabel }) => {
   const [page, setPage] = useState(0);
+  const [copied, setCopied] = useState(false);
   if (pages.length === 0) return null;
   const picks = pages[Math.min(page, pages.length - 1)];
   const combined = picks.reduce((acc, x) => acc * (probOf(x.card, mode) / 100), 1) * 100;
+
+  // Texto simples para colar (WhatsApp, Telegram…): copia sempre todas as opções
+  const buildText = () => {
+    const title = mode === 'goal' ? 'Triplete de golos' : 'Triplete de pontos';
+    const blocks = pages.map((pg, i) => {
+      const lines = pg.map((x, j) => `${j + 1}. ${shortName(x.card.name)} (${x.abbr}) ${x.home ? 'vs' : '@'} ${x.opp} — ${probOf(x.card, mode)}%`);
+      const comb = pg.reduce((acc, x) => acc * (probOf(x.card, mode) / 100), 1) * 100;
+      return `${pages.length > 1 ? `Opção ${i + 1}\n` : ''}${lines.join('\n')}\nCombinada: ~${Math.round(comb)}%`;
+    });
+    return `🏒 NHL Tipsterz · ${title}${dateLabel ? ` · ${dateLabel}` : ''}\n\n${blocks.join('\n\n')}`;
+  };
+  const doCopy = async () => {
+    if (await copyText(buildText())) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
   return (
     <section className="rounded-2xl border border-orange-500/40 bg-gradient-to-br from-orange-500/10 to-slate-900/40 p-4 sm:p-5 space-y-3">
       <div className="flex items-center justify-between gap-3">
         <h3 className="flex items-center gap-2 font-black text-white text-sm uppercase tracking-wider">{mode === 'goal' ? <><PuckIcon className="w-6 h-6" /> Triplete de golos</> : <>🔥 Triplete de pontos</>}</h3>
-        <span className="text-[11px] font-black text-orange-300 bg-orange-500/10 border border-orange-500/30 rounded-full px-2.5 py-0.5">
-          combinada {combined.toFixed(1)}%
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-black text-orange-300 bg-orange-500/10 border border-orange-500/30 rounded-full px-2.5 py-0.5">
+            combinada {combined.toFixed(1)}%
+          </span>
+          <button
+            onClick={doCopy}
+            title="Copiar as opções para colar"
+            className="text-[10px] font-black uppercase tracking-wider rounded-lg px-2.5 py-1 border bg-slate-800/60 border-slate-700 text-slate-300 hover:text-white hover:border-orange-500/50 transition-colors"
+          >
+            {copied ? '✓ Copiado' : 'Copiar'}
+          </button>
+        </div>
       </div>
       {pages.length > 1 && (
         <div className="flex gap-1.5">
@@ -318,7 +397,7 @@ const TripleCard: React.FC<{ pages: Pick[][]; mode: Mode; onPick: (x: Pick) => v
                 {x.home ? 'vs' : '@'} {teamLabel(x.opp)} · <b className="text-slate-300">{x.card.stat.p}</b> pts
               </div>
             </div>
-            <span className={`text-xs font-black px-2 py-1 rounded border ${probColor(probOf(x.card, mode))}`}>{probOf(x.card, mode)}%</span>
+            <ProbBadge value={probOf(x.card, mode)} scale={mode === 'goal' ? 'pGoal' : 'pPoint'} className="px-2 py-1" />
           </button>
         ))}
       </div>
@@ -468,6 +547,9 @@ const PlayersView: React.FC<Props> = ({ predictions, date }) => {
     setFocus((f) => ({ gameId: x.gameId, playerId: x.card.id, tick: (f?.tick ?? 0) + 1 }));
   };
 
+  const dateLabel = predictions[0]?.dateTime
+    ? new Date(predictions[0].dateTime).toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit' })
+    : '';
   const byId = new Map<string, GamePlayers>((games ?? []).map((g) => [String(g.id), g] as [string, GamePlayers]));
 
   return (
@@ -480,8 +562,8 @@ const PlayersView: React.FC<Props> = ({ predictions, date }) => {
         </div>
       </div>
 
-      <TripleCard pages={buildTriple(predictions, byId, 'goal')} mode="goal" onPick={pick} />
-      <TripleCard pages={buildTriple(predictions, byId, 'point')} mode="point" onPick={pick} />
+      <TripleCard pages={buildTriple(predictions, byId, 'goal')} mode="goal" onPick={pick} dateLabel={dateLabel} />
+      <TripleCard pages={buildTriple(predictions, byId, 'point')} mode="point" onPick={pick} dateLabel={dateLabel} />
 
       <p className="text-[11px] text-slate-500 leading-snug">
         Jogadores do plantel atual ordenados por <b className="text-slate-300">pontos</b> na época. A % é a probabilidade de pontuar hoje; os 3 com maior probabilidade de cada equipa ficam em destaque (★).

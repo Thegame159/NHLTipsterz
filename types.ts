@@ -43,6 +43,9 @@ export interface PlayerCard {
   last3Points: number;
   status?: 'DTD' | 'OUT';
   injury?: string; // texto da lesão
+  newTeam?: boolean;
+  lowSample?: boolean;
+  missed?: number;
   log: PlayerLogRow[]; // mais recente primeiro
 }
 

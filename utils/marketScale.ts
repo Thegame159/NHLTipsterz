@@ -10,7 +10,11 @@
 //  jogo > 4.5 (média ~72%): ≤65 vermelho · 66–72 laranja · 73–74 verde · 75+ forte, ★ a partir de 74
 //  jogo > 5.5 (média ~57%): ≤49 vermelho · 50–57 laranja · 58–61 verde · 62+ forte, ★ a partir de 59
 
-export type ScaleKey = "draw" | "p1" | "btts" | "p2" | "o45" | "o55";
+//  jogador pontuar (provisório): ≤34 vermelho · 35–49 laranja · 50–59 verde · 60+ forte, ★ a partir de 55
+//  jogador marcar (provisório): ≤19 vermelho · 20–29 laranja · 30–39 verde · 40+ forte, ★ a partir de 35
+//  jogador assistir (provisório): ≤21 vermelho · 22–31 laranja · 32–41 verde · 42+ forte, ★ a partir de 37
+
+export type ScaleKey = "draw" | "p1" | "btts" | "p2" | "o45" | "o55" | "pPoint" | "pGoal" | "pAssist";
 
 export const SCALES: Record<ScaleKey, { t: [number, number, number]; star: number; lo: number; hi: number }> = {
   draw: { t: [21.5, 24.5, 25.5], star: 23.5, lo: 15, hi: 30 },
@@ -19,6 +23,9 @@ export const SCALES: Record<ScaleKey, { t: [number, number, number]; star: numbe
   p2: { t: [57.5, 65.5, 67.5], star: 63.5, lo: 45, hi: 82 },
   o45: { t: [65.5, 72.5, 74.5], star: 73.5, lo: 50, hi: 92 },
   o55: { t: [49.5, 57.5, 61.5], star: 58.5, lo: 30, hi: 80 },
+  pPoint: { t: [34.5, 49.5, 59.5], star: 54.5, lo: 15, hi: 85 },
+  pGoal: { t: [19.5, 29.5, 39.5], star: 34.5, lo: 5, hi: 60 },
+  pAssist: { t: [21.5, 31.5, 41.5], star: 36.5, lo: 5, hi: 65 },
 };
 
 /** 0 vermelho · 1 laranja · 2 verde · 3 verde forte */

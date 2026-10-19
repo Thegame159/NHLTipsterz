@@ -67,6 +67,9 @@ type PlayerCard = {
   last3Points: number;
   status?: "DTD" | "OUT";
   injury?: string; // texto do estado (ex.: "Out", "Day-To-Day")
+  newTeam?: boolean; // já jogou por outra equipa esta época
+  lowSample?: boolean; // poucos jogos esta época: percentagem menos fiável
+  missed?: number; // jogos da equipa que falhou esta época (só se ≥ 3 e sem lesão ativa)
   log: LogRow[]; // mais recente primeiro
 };
 
@@ -447,7 +450,7 @@ export async function POST(req: Request) {
     if (rosters.size === 0) return json({ message: "Plantéis indisponíveis na NHL." }, 502);
 
     // 1) jogadores de cada equipa: os do plantel atual com mais rendimento (lesionados incluídos)
-    type Cand = { p: RosterPlayer; prior: Prior; stat: Stat; statPrev: boolean; inj?: Inj };
+    type Cand = { p: RosterPlayer; prior: Prior; stat: Stat; statPrev: boolean; inj?: Inj; curGp: number; teamGp: number; newTeam: boolean };
     const pools = new Map<string, { cands: Cand[]; injured: { name: string; status: string }[]; source: string }>();
     for (const g of games) {
       for (const [abbr, name] of [[g.homeAbbr, g.homeName], [g.awayAbbr, g.awayName]] as const) {
@@ -469,6 +472,9 @@ export async function POST(req: Request) {
               stat: { gp: src?.gp ?? 0, g: src?.g ?? 0, a: src?.a ?? 0, p: src?.pts ?? 0 },
               statPrev: !useCur,
               inj: injMap.get(normName(p.name)),
+              curGp: c?.gp ?? 0,
+              teamGp: maxCurGp,
+              newTeam: String(c?.teams ?? "").split(/[\s,/]+/).filter(Boolean).length > 1,
             };
           })
           .sort((a, b) => b.prior.ppg - a.prior.ppg)
@@ -501,9 +507,15 @@ export async function POST(req: Request) {
     const teamResult = (abbr: string, teamExp: number): TeamPlayers => {
       const t = pools.get(abbr);
       const players = (t?.cands ?? [])
-        .map((c) =>
-          buildCard(c.p, mergedHistory(curLogs.get(c.p.id) ?? null, prevLogs.get(c.p.id) ?? null), c.prior, c.stat, c.statPrev, teamExp, c.inj)
-        )
+        .map((c) => {
+          const card = buildCard(c.p, mergedHistory(curLogs.get(c.p.id) ?? null, prevLogs.get(c.p.id) ?? null), c.prior, c.stat, c.statPrev, teamExp, c.inj);
+          if (c.newTeam) card.newTeam = true;
+          if (c.curGp < 5) card.lowSample = true;
+          const missed = c.teamGp - c.curGp;
+          // "Regresso": falhou 3+ jogos da equipa e já não consta como lesionado (inferência, não confirmação)
+          if (!card.status && missed >= 3) card.missed = missed;
+          return card;
+        })
         .sort((a, b) => b.stat.p - a.stat.p || b.stat.g - a.stat.g || b.probPoint - a.probPoint);
       return { abbr, players, injured: t?.injured ?? [], rosterSource: t?.source ?? "none" };
     };
