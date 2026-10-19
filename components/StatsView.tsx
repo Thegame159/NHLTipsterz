@@ -321,7 +321,19 @@ function evalMarkets(sug: Suggestions, results: ApiResultsResponse): Record<stri
 
   const evalCombinada = (): PickEval[] => {
     const flex = (sug as any).combinadaFlex;
-    if (!Array.isArray(flex) || !flex.length) return [];
+    if (!Array.isArray(flex) || !flex.length) {
+      // Combinada automática (Combo de Vitórias): cada perna é a vitória do favorito
+      const legs = sug.winCombo?.legs;
+      if (!Array.isArray(legs) || !legs.length) return [];
+      return legs.map((leg): PickEval => {
+        const labelText = `${teamLabel(leg.team)} (Win)`;
+        const teams = [leg.home, leg.away].filter(Boolean);
+        const g = findGame(results, leg.home, leg.away);
+        if (!g) return { label: labelText, ok: null, teams, reason: "Jogo não encontrado na API." };
+        if (g.status !== "FINAL") return { label: labelText, ok: null, teams, reason: "Jogo ainda não terminou." };
+        return { label: labelText, ok: g.winnerAbbr === leg.team, teams };
+      });
+    }
 
     return flex.map((item: any) => {
       const teams = parseTeamsFromText(item.game);
@@ -887,7 +899,7 @@ const StatsView: React.FC = () => {
         if (r.date !== date || r.resultsStatus !== "ready") return r;
         const byMarket = side === "auto" ? r.auto.byMarket : r.mine.byMarket;
         const newMarkets: Record<string, PickEval[]> = {};
-        for (const [m, picks] of Object.entries(byMarket)) {
+        for (const [m, picks] of Object.entries(byMarket) as [string, PickEval[]][]) {
           newMarkets[m] = picks.map((p) =>
             (m === market && p.label === label)
               ? { ...p, ok: value, manual: true, reason: value === null ? "Marcado como pendente (manual)." : value ? "Marcado como certo (manual)." : "Marcado como errado (manual)." }
@@ -1084,6 +1096,11 @@ const StatsView: React.FC = () => {
                                 {autoCombinadaPicks.length > 0 && (
                                   <span className="text-amber-400/70">
                                     Auto: {autoCombinadaPicks.filter(p => p.ok === true).length}/{autoCombinadaPicks.filter(p => p.ok !== null).length} certas
+                                    {autoCombinadaPicks.some(p => p.ok === false)
+                                      ? " · perdida"
+                                      : autoCombinadaPicks.every(p => p.ok === true)
+                                      ? " · ganha"
+                                      : ""}
                                   </span>
                                 )}
                                 {mineCombinadaPicks.length > 0 && (

@@ -138,6 +138,7 @@ export interface Suggestions {
   tripleOver15P2?: string[];
   strongPicks?: StrongPick[];
   winCombo?: WinCombo | null;
+  combinadaFlex?: { game: string; pick: 'HOME' | 'AWAY' | '1X' | 'X2' }[]; // combinada manual (Minhas Picks)
 }
 
 export interface NHLAnalysisData {
