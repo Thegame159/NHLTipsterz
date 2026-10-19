@@ -74,15 +74,15 @@ type Tops = { draw: number; p1: number; btts: number; p2: number; o45: number; m
 // ─── Equipa (logo, nome, registo e jogos por baixo) ─────────────────────────
 
 const TeamBlock: React.FC<{ abbr: string; strong: boolean; record?: string; games?: number; b2b?: boolean }> = ({ abbr, strong, record, games, b2b }) => (
-  <div className="flex items-center gap-2.5 min-w-0">
+  <div className="flex items-center gap-2.5">
     <img
       src={getLogoUrl(abbr)}
       className="w-7 h-7 object-contain drop-shadow-sm shrink-0"
       alt={abbr}
       onError={(e) => (e.currentTarget.src = FALLBACK_LOGO)}
     />
-    <div className="min-w-0">
-      <div className={`font-black text-base leading-tight truncate ${strong ? 'text-white' : 'text-slate-400'}`}>{teamLabel(abbr)}</div>
+    <div>
+      <div className={`font-black text-base leading-tight whitespace-nowrap ${strong ? 'text-white' : 'text-slate-400'}`}>{teamLabel(abbr)}</div>
       <div className="flex items-center gap-1.5 mt-1">
         <span className="text-[10px] bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded font-bold uppercase">{record || '0-0-0'}</span>
         {typeof games === 'number' && (
