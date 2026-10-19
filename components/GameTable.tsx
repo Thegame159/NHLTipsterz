@@ -39,13 +39,15 @@ const getBarColor = (v: number) => {
 // Escalas próprias por mercado (o modelo varia pouco à volta da média da liga):
 //  t = [fim do vermelho, fim do laranja, fim do verde] · star = a partir daqui aparece ★ · lo/hi = extremos da barra
 //  empate (média ~22–23%): ≤21 vermelho · 22–24 laranja · 25 verde · 26+ forte, ★ a partir de 24
+//  2.º período > 1.5 (média ~62%): ≤57 vermelho · 58–65 laranja · 66–67 verde · 68+ forte, ★ a partir de 64
 //  1.º período BTTS (média ~31%): ≤27 vermelho · 28–33 laranja · 34–35 verde · 36+ forte, ★ a partir de 32
 //  1.º período > 1.5 (média ~48%): ≤43 vermelho · 44–50 laranja · 51–52 verde · 53+ forte, ★ a partir de 49
-type ScaleKey = 'draw' | 'p1' | 'btts';
+type ScaleKey = 'draw' | 'p1' | 'btts' | 'p2';
 const SCALES: Record<ScaleKey, { t: [number, number, number]; star: number; lo: number; hi: number }> = {
   draw: { t: [21.5, 24.5, 25.5], star: 23.5, lo: 15, hi: 30 },
   p1: { t: [43.5, 50.5, 52.5], star: 48.5, lo: 30, hi: 65 },
   btts: { t: [27.5, 33.5, 35.5], star: 31.5, lo: 15, hi: 50 },
+  p2: { t: [57.5, 65.5, 67.5], star: 63.5, lo: 45, hi: 82 },
 };
 const levelOf = (k: ScaleKey, v: number) => {
   const t = SCALES[k].t;
@@ -245,7 +247,7 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
         <td className="py-6 text-center"><ProbabilityCell value={over15P1} scale="p1" /></td>
         <td className="py-6 text-center"><ProbabilityCell value={bttsP1} scale="btts" /></td>
         <td className="py-6 text-center">
-          {typeof game.over15P2Prob === 'number' ? <ProbabilityCell value={game.over15P2Prob} /> : <span className="text-slate-700">–</span>}
+          {typeof game.over15P2Prob === 'number' ? <ProbabilityCell value={game.over15P2Prob} scale="p2" /> : <span className="text-slate-700">–</span>}
         </td>
         <td className="py-6 text-center pr-4"><ProbabilityCell value={over45} /></td>
       </tr>
