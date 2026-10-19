@@ -345,9 +345,10 @@ const GameTable: React.FC<Props> = ({ predictions, totalGames }) => {
       {/* Legenda das cores (relativas a cada mercado) */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[10px] text-slate-500">
         <span className="font-black uppercase tracking-widest text-[9px]">Cores</span>
-        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded border border-slate-700 bg-slate-800/60" /> normal</span>
-        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded border border-amber-500/50 bg-amber-500/20" /> acima da média</span>
-        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded border border-emerald-400/70 bg-emerald-500/30" /> forte (critério das Escolhas Fortes)</span>
+        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded border border-rose-500/40 bg-rose-500/20" /> abaixo do habitual</span>
+        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded border border-amber-500/40 bg-amber-500/20" /> habitual</span>
+        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded border border-green-500/40 bg-green-500/20" /> acima da média</span>
+        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded border border-emerald-400/70 bg-emerald-500/30 ring-1 ring-emerald-400/40" /> forte (critério das Escolhas Fortes)</span>
         <span className="text-slate-600">· cada coluna tem a sua escala: 27% de empate pesa mais que 47% em 1ºP &gt; 1.5</span>
       </div>
 
