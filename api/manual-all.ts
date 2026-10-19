@@ -9,13 +9,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     let keys: string[] = [];
     try {
-      // Uso de casting para garantir compatibilidade com o TypeScript na Vercel
-      const resultKeys = await (redis as any).keys("nhl:manual:*");
-      if (Array.isArray(resultKeys)) {
-        keys = resultKeys;
-      }
+      keys = await redis.scanAll("nhl:manual:*");
     } catch (err) {
-      console.error(`[MANUAL-ALL] Error fetching keys:`, err);
+      console.error("[MANUAL-ALL] scan falhou:", err);
     }
 
     for (const key of keys) {

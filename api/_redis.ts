@@ -86,4 +86,18 @@ export const redis = {
     }
     return null;
   },
+
+  /** Todas as chaves que correspondem ao padrão (percorre o SCAN até ao fim). */
+  async scanAll(match: string, count = 200, maxKeys = 5000): Promise<string[]> {
+    const out = new Set<string>();
+    let cursor = "0";
+    for (let i = 0; i < 100; i++) {
+      const r = await redis.scan(cursor, match, count);
+      if (!r) break;
+      cursor = r[0];
+      for (const k of r[1]) out.add(k);
+      if (cursor === "0" || out.size >= maxKeys) break;
+    }
+    return [...out];
+  },
 };

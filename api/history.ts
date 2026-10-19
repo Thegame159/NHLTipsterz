@@ -47,43 +47,90 @@ export default async function handler(
 ) {
   try {
     // =========================
-    // GET (MODO DIAGNÓSTICO)
+    // DELETE
     // =========================
-    if (req.method === "GET") {
-      let rawKeys: string[] = [];
-      try {
-        // Toca em tudo para ver o que existe na base de dados
-        const result = await (redis as any).keys("*");
-        if (Array.isArray(result)) {
-          rawKeys = result;
-        }
-      } catch (err) {
-        console.error(`[DIAGNOSTIC] Error fetching all keys:`, err);
-      }
+    if (req.method === "DELETE") {
+      const date = String(req.query.date || "").trim();
+      if (!date || !isDate(date)) return res.status(400).json({ message: "Invalid date" });
 
-      console.log(`[DIAGNOSTIC] All keys found in Redis:`, rawKeys);
-
-      // Filtra e reconstrói os items
-      const items: StoreItem[] = [];
-      for (const k of rawKeys) {
-        if (String(k).startsWith(KEY_PREFIX)) {
-          try {
-            const raw = await redis.get(k);
-            const parsed = safeJsonParse(raw);
-            if (parsed) items.push(parsed);
-          } catch {}
-        }
-      }
-
-      // Devolve também as chaves brutas no JSON para veres na consola de rede do browser!
-      return res.status(200).json({
-        ok: true,
-        diagnosticKeys: rawKeys,
-        items
-      });
+      await redis.del(keyForDate(date));
+      await redis.del(`nhl:manual:${date}`);
+      return res.status(200).json({ ok: true, deleted: date });
     }
 
-    res.setHeader("Allow", "GET");
+    // =========================
+    // POST (guardar snapshot / resultados de um lado: "auto" ou "mine")
+    // =========================
+    if (req.method === "POST") {
+      const body = typeof req.body === "string" ? safeJsonParse(req.body) : req.body || {};
+
+      const date = String((body as any)?.date || "").trim();
+      if (!date || !isDate(date)) return res.status(400).json({ message: "Invalid date" });
+
+      const side: HistorySide | undefined =
+        (body as any)?.side === "auto" || (body as any)?.side === "mine" ? (body as any).side : undefined;
+      if (!side) return res.status(400).json({ message: "Missing side" });
+
+      let existing: StoreItem = { date, auto: null, mine: null };
+      const targetKey = keyForDate(date);
+      const parsed = safeJsonParse(await redis.get(targetKey));
+      if (parsed) existing = { date, auto: parsed.auto ?? null, mine: parsed.mine ?? null };
+
+      const incomingSuggestions = (body as any)?.suggestions;
+      const incomingStats = (body as any)?.stats;
+      const incomingMarkets = (body as any)?.markets;
+      const currentSide = existing[side] ?? null;
+      const suggestionsChanged = incomingSuggestions !== undefined;
+
+      existing[side] = {
+        savedAt: suggestionsChanged ? Date.now() : currentSide?.savedAt ?? Date.now(),
+        suggestions: incomingSuggestions ?? currentSide?.suggestions ?? null,
+        // novas dicas invalidam os resultados antigos
+        stats: suggestionsChanged ? undefined : incomingStats ?? currentSide?.stats,
+        markets: suggestionsChanged ? undefined : incomingMarkets ?? currentSide?.markets,
+      };
+
+      await redis.set(targetKey, JSON.stringify(existing));
+      return res.status(200).json({ ok: true, item: existing });
+    }
+
+    // =========================
+    // GET
+    // =========================
+    if (req.method === "GET") {
+      const dateParam = String(req.query.date || "").trim();
+      const sideParam = String(req.query.side || "").trim();
+
+      // uma data + um lado → só as dicas guardadas
+      if (dateParam && isDate(dateParam) && (sideParam === "mine" || sideParam === "auto")) {
+        const parsed = safeJsonParse(await redis.get(keyForDate(dateParam)));
+        return res.status(200).json({ ok: true, suggestions: parsed?.[sideParam]?.suggestions ?? null });
+      }
+
+      // lista dos últimos dias
+      const limit = Math.min(parseInt(String(req.query.limit || "30"), 10) || 30, 200);
+
+      let keys: string[] = [];
+      try {
+        keys = await redis.scanAll(`${KEY_PREFIX}*`);
+      } catch (err) {
+        console.error("[history] scan falhou:", err);
+      }
+
+      const dates = [...new Set(keys.map((k) => String(k).slice(KEY_PREFIX.length)).filter(isDate))]
+        .sort((a, b) => (a < b ? 1 : -1))
+        .slice(0, limit);
+
+      const items: StoreItem[] = [];
+      for (const date of dates) {
+        const parsed = safeJsonParse(await redis.get(keyForDate(date)));
+        if (parsed) items.push(parsed);
+      }
+
+      return res.status(200).json({ ok: true, items });
+    }
+
+    res.setHeader("Allow", "GET, POST, DELETE");
     return res.status(405).json({ message: "Method not allowed" });
 
   } catch (e: any) {
