@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Suggestions } from "../types";
-import PlayerPicksStats from "./PlayerPicksStats";
+import { usePlayerPicks, PlayerPicksSummary, PlayerDayPicks } from "./PlayerPicksStats";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -685,6 +685,7 @@ const StatsView: React.FC = () => {
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
   const [manualByDate, setManualByDate] = useState<Record<string, ManualStore | null>>({});
   const processingRef = useRef(false);
+  const playerPicks = usePlayerPicks();
 
   const loadHistory = useCallback(async () => {
     try {
@@ -981,7 +982,7 @@ const StatsView: React.FC = () => {
         </div>
       </div>
 
-      <PlayerPicksStats />
+      <PlayerPicksSummary records={playerPicks} />
 
       <div className="space-y-3">
         {reports.map((r) => {
@@ -1038,6 +1039,8 @@ const StatsView: React.FC = () => {
                       </button>
                     </div>
                   </div>
+
+                  <PlayerDayPicks rec={playerPicks[r.date]} />
 
                   {r.resultsStatus === "loading" && (
                     <div className="flex items-center gap-3 text-slate-500">

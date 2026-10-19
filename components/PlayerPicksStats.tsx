@@ -1,11 +1,11 @@
 // components/PlayerPicksStats.tsx
 // Stats dos tripletes da aba "Jogadores": quantos jogadores sugeridos marcaram / pontuaram.
-// Vem fechado (só um resumo numa linha); abre para ver os números por opção e por dia.
+// Cada dia mostra os seus tripletes (dentro do dia aberto na aba Stats) e há um resumo numa linha.
 
 import React, { useCallback, useEffect, useState } from 'react';
 
-type PPick = { id: number; name: string; abbr: string; opp: string; prob: number; r?: 'hit' | 'miss' | 'dnp'; g?: number; a?: number };
-type PRecord = { date: string; savedAt: number; goal: PPick[][]; point: PPick[][] };
+export type PPick = { id: number; name: string; abbr: string; opp: string; prob: number; r?: 'hit' | 'miss' | 'dnp'; g?: number; a?: number };
+export type PRecord = { date: string; savedAt: number; goal: PPick[][]; point: PPick[][] };
 
 const shortName = (full: string) => {
   const parts = full.trim().split(/\s+/);
@@ -45,28 +45,7 @@ function aggregate(records: PRecord[], mode: 'goal' | 'point', option: number): 
 
 const pct = (n: number, d: number) => (d > 0 ? Math.round((n / d) * 100) : null);
 
-const Tile: React.FC<{ title: string; agg: Agg }> = ({ title, agg }) => {
-  const rate = pct(agg.hit, agg.done);
-  const expected = agg.done > 0 ? Math.round(agg.probSum / agg.done) : null;
-  return (
-    <div className="rounded-xl bg-slate-900/70 border border-slate-800 px-3 py-2.5">
-      <div className="text-[9px] font-black uppercase tracking-widest text-slate-500">{title}</div>
-      <div className="flex items-baseline gap-2 mt-0.5">
-        <span className="text-xl font-black text-white">{rate === null ? '--' : `${rate}%`}</span>
-        <span className="text-[10px] text-slate-500">
-          {agg.hit}/{agg.done} jogadores
-        </span>
-      </div>
-      <div className="text-[10px] text-slate-500">
-        {expected !== null ? `previsto ${expected}% · ` : ''}
-        trios completos {agg.fullTriples}/{agg.triples}
-        {agg.pending > 0 ? ` · ${agg.pending} pend.` : ''}
-      </div>
-    </div>
-  );
-};
-
-const Chip: React.FC<{ p: PPick; mode: 'goal' | 'point' }> = ({ p, mode }) => {
+const Chip: React.FC<{ p: PPick }> = ({ p }) => {
   const cls =
     p.r === 'hit'
       ? 'text-emerald-300 border-emerald-500/30 bg-emerald-500/10'
@@ -82,19 +61,20 @@ const Chip: React.FC<{ p: PPick; mode: 'goal' | 'point' }> = ({ p, mode }) => {
   );
 };
 
-const PlayerPicksStats: React.FC = () => {
-  const [records, setRecords] = useState<PRecord[] | null>(null);
-  const [open, setOpen] = useState(false);
-  const [showAll, setShowAll] = useState(false);
+/** Carrega os tripletes guardados (já com resultados conferidos), indexados por data. */
+export function usePlayerPicks(): Record<string, PRecord> {
+  const [map, setMap] = useState<Record<string, PRecord>>({});
 
   const load = useCallback(async () => {
     try {
       const r = await fetch(`/api/player-picks?limit=60&t=${Date.now()}`, { cache: 'no-store' });
-      if (!r.ok) return setRecords([]);
+      if (!r.ok) return;
       const data = await r.json().catch(() => null);
-      setRecords(Array.isArray(data?.items) ? data.items : []);
+      const next: Record<string, PRecord> = {};
+      for (const rec of Array.isArray(data?.items) ? (data.items as PRecord[]) : []) next[rec.date] = rec;
+      setMap(next);
     } catch {
-      setRecords([]);
+      /* sem dados de jogadores: o resto da aba continua a funcionar */
     }
   }, []);
 
@@ -105,76 +85,54 @@ const PlayerPicksStats: React.FC = () => {
     return () => window.removeEventListener('history-updated', h);
   }, [load]);
 
-  const recs = records ?? [];
-  const g1 = aggregate(recs, 'goal', 0);
-  const g2 = aggregate(recs, 'goal', 1);
-  const p1 = aggregate(recs, 'point', 0);
-  const p2 = aggregate(recs, 'point', 1);
-  const goalAll = { hit: g1.hit + g2.hit, done: g1.done + g2.done };
-  const pointAll = { hit: p1.hit + p2.hit, done: p1.done + p2.done };
-  const gr = pct(goalAll.hit, goalAll.done);
-  const pr = pct(pointAll.hit, pointAll.done);
+  return map;
+}
 
+/** Resumo numa linha de todos os dias. */
+export const PlayerPicksSummary: React.FC<{ records: Record<string, PRecord> }> = ({ records }) => {
+  const recs: PRecord[] = Object.keys(records).map((k) => records[k]);
+  const g = [aggregate(recs, 'goal', 0), aggregate(recs, 'goal', 1)];
+  const p = [aggregate(recs, 'point', 0), aggregate(recs, 'point', 1)];
+  const gHit = g[0].hit + g[1].hit, gDone = g[0].done + g[1].done;
+  const pHit = p[0].hit + p[1].hit, pDone = p[0].done + p[1].done;
+  if (gDone + pDone === 0) return null;
+  const gr = pct(gHit, gDone), pr = pct(pHit, pDone);
   return (
-    <div className="rounded-2xl border border-slate-700 bg-slate-800/40 overflow-hidden">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center justify-between gap-3 px-5 py-4 text-left hover:bg-slate-800/60 transition-colors"
-        aria-expanded={open}
-      >
-        <div className="min-w-0">
-          <div className="font-black text-white">Jogadores · tripletes</div>
-          <div className="text-[11px] text-slate-500">
-            {records === null
-              ? 'A carregar…'
-              : recs.length === 0
-              ? 'Ainda sem dados: abre a aba Jogadores num dia de jogos para começar a registar.'
-              : `Golos ${gr === null ? '--' : gr + '%'} (${goalAll.hit}/${goalAll.done}) · Pontos ${pr === null ? '--' : pr + '%'} (${pointAll.hit}/${pointAll.done})`}
-          </div>
-        </div>
-        <span className="text-slate-500 text-[10px]">{open ? '▲' : '▼'}</span>
-      </button>
-
-      {open && recs.length > 0 && (
-        <div className="px-5 pb-5 pt-1 space-y-4 border-t border-slate-700/60">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-            <Tile title="Golos · opção 1" agg={g1} />
-            <Tile title="Golos · opção 2" agg={g2} />
-            <Tile title="Pontos · opção 1" agg={p1} />
-            <Tile title="Pontos · opção 2" agg={p2} />
-          </div>
-
-          <div className="space-y-2">
-            {(showAll ? recs : recs.slice(0, 5)).map((rec) => (
-              <div key={rec.date} className="rounded-xl bg-slate-900/60 border border-slate-800 px-3 py-2.5 space-y-1.5">
-                <div className="text-[11px] font-black text-slate-300">{rec.date}</div>
-                {(['goal', 'point'] as const).map((mode) =>
-                  rec[mode].map((list, i) => (
-                    <div key={`${mode}-${i}`} className="flex flex-wrap items-center gap-1.5">
-                      <span className="w-24 text-[9px] font-black uppercase tracking-wider text-slate-500">
-                        {mode === 'goal' ? 'Golos' : 'Pontos'} · {i + 1}
-                      </span>
-                      {list.map((p) => (
-                        <Chip key={p.id} p={p} mode={mode} />
-                      ))}
-                    </div>
-                  ))
-                )}
-              </div>
-            ))}
-            {recs.length > 5 && (
-              <button onClick={() => setShowAll((v) => !v)} className="w-full text-[10px] font-black uppercase tracking-wider text-slate-500 hover:text-slate-300 py-1">
-                {showAll ? 'Ver menos' : `Ver mais dias (${recs.length - 5})`}
-              </button>
-            )}
-          </div>
-          <p className="text-[10px] text-slate-600">
-            "previsto" é a média das probabilidades que a app deu; "trios completos" são os dias em que os 3 acertaram. n/j = não jogou (não conta).
-          </p>
-        </div>
-      )}
+    <div className="rounded-xl border border-slate-700 bg-slate-800/40 px-4 py-2.5 text-[11px] text-slate-400">
+      <span className="font-black uppercase tracking-widest text-[9px] text-slate-500 mr-2">Jogadores (tripletes)</span>
+      Golos <b className="text-white">{gr === null ? '--' : `${gr}%`}</b> ({gHit}/{gDone}) · Pontos{' '}
+      <b className="text-white">{pr === null ? '--' : `${pr}%`}</b> ({pHit}/{pDone})
     </div>
   );
 };
 
-export default PlayerPicksStats;
+/** Os tripletes de um dia (para mostrar dentro do dia aberto). */
+export const PlayerDayPicks: React.FC<{ rec: PRecord | undefined }> = ({ rec }) => {
+  if (!rec) return null;
+  const rows = (['goal', 'point'] as const).flatMap((mode) => rec[mode].map((list, i) => ({ mode, i, list })));
+  if (rows.length === 0) return null;
+  const all = rows.flatMap((r) => r.list);
+  const done = all.filter((p) => p.r === 'hit' || p.r === 'miss');
+  const hits = done.filter((p) => p.r === 'hit').length;
+
+  return (
+    <div className="bg-slate-900/40 border border-orange-500/20 rounded-2xl p-4 space-y-2">
+      <div className="flex items-center justify-between">
+        <h4 className="text-xs font-black uppercase tracking-widest text-orange-300/80">Jogadores · tripletes</h4>
+        <span className="text-[10px] font-black text-slate-500">
+          {done.length > 0 ? `${hits}/${done.length} acertos` : 'por conferir'}
+        </span>
+      </div>
+      {rows.map(({ mode, i, list }) => (
+        <div key={`${mode}-${i}`} className="flex flex-wrap items-center gap-1.5">
+          <span className="w-24 text-[9px] font-black uppercase tracking-wider text-slate-500">
+            {mode === 'goal' ? 'Golos' : 'Pontos'} · {i + 1}
+          </span>
+          {list.map((p) => (
+            <Chip key={p.id} p={p} />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+};
