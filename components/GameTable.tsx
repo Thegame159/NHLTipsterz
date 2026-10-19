@@ -137,9 +137,9 @@ const GameRow: React.FC<{ game: GamePrediction; tops: Tops }> = ({ game, tops })
         className="group border-b border-slate-800/50 hover:bg-blue-500/5 transition-colors cursor-pointer"
       >
         {/* COLUNA: Jogo */}
-        <td className="py-4 pl-4 pr-2">
+        <td className="relative py-4 pl-4 pr-12 w-[1%] whitespace-nowrap">
           <div className="flex items-start gap-3">
-            <div className="min-w-0">
+            <div>
               <span className="text-[10px] font-bold text-slate-500 mb-2 flex items-center gap-1.5">
                 <i className="far fa-clock"></i>
                 {formatTime(game.dateTime)}
@@ -152,7 +152,9 @@ const GameRow: React.FC<{ game: GamePrediction; tops: Tops }> = ({ game, tops })
             </div>
             <span
               aria-hidden
-              className={`ml-auto self-center shrink-0 w-6 h-6 flex items-center justify-center rounded-md border border-orange-500/40 bg-orange-500/10 text-orange-400 text-sm font-black transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+              className={`absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center rounded-full border text-[10px] leading-none transition-all duration-200 ${
+                isExpanded ? 'rotate-180 border-orange-500/60 text-orange-400 bg-orange-500/10' : 'border-slate-600 text-slate-400 group-hover:border-orange-500/50 group-hover:text-orange-400'
+              }`}
             >
               ▾
             </span>
@@ -367,13 +369,13 @@ const GameTable: React.FC<Props> = ({ predictions, totalGames }) => {
       </div>
 
       {/* Legenda */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[10px] text-slate-500">
-        <span className="flex items-center gap-1.5"><span className="text-amber-300">★</span> acima da média do mercado</span>
-        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-rose-500/60"></span>abaixo</span>
-        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-amber-500/60"></span>normal</span>
-        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-green-500/60"></span>acima</span>
-        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-400/70"></span>muito acima</span>
-        <span className="flex items-center gap-1.5"><span className="font-black tracking-widest text-amber-200 text-[8px]">▲ TOP</span> valor mais alto do dia na coluna</span>
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-[11px] font-semibold text-slate-400">
+        <span className="flex items-center gap-1.5"><span className="text-amber-300 text-xs">★</span> acima da média do mercado</span>
+        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded border border-rose-500/60 bg-rose-500/30"></span>abaixo</span>
+        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded border border-amber-500/60 bg-amber-500/30"></span>normal</span>
+        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded border border-green-500/60 bg-green-500/30"></span>acima</span>
+        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded border border-emerald-400/70 bg-emerald-400/40"></span>muito acima</span>
+        <span className="flex items-center gap-1.5"><span className="font-black tracking-widest text-amber-200 text-[9px]">▲ TOP</span> valor mais alto do dia na coluna</span>
       </div>
 
       {/* Estado vazio */}
@@ -385,32 +387,32 @@ const GameTable: React.FC<Props> = ({ predictions, totalGames }) => {
         <div className="w-full overflow-x-auto rounded-2xl border border-slate-800 bg-slate-800/20 shadow-2xl backdrop-blur-sm">
           <table className="w-full text-left border-collapse min-w-[990px]">
             <thead>
-              <tr className="bg-slate-900/60 border-b border-slate-800">
-                <th className="py-4 pl-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">
+              <tr className="bg-slate-900/80 border-b border-slate-700">
+                <th className="py-4 pl-4 pr-4 w-[1%] text-[10px] font-black text-slate-300 uppercase tracking-widest">
                   Jogo
                 </th>
-                <th className="py-4 pl-3 text-left text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                <th className="py-4 pl-3 text-left text-[10px] font-black text-slate-300 uppercase tracking-widest">
                   Prob. Vitória
                 </th>
-                <th className="py-4 text-center text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                <th className="py-4 text-center text-[10px] font-black text-slate-300 uppercase tracking-widest">
                   Empate OT
-                  <span className="block mt-1 text-[10px] font-bold tracking-normal text-slate-400">(22%)</span>
+                  <span className="block mt-1 text-[10px] font-bold tracking-normal text-slate-300">(22%)</span>
                 </th>
-                <th className="py-4 text-center text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                <th className="py-4 text-center text-[10px] font-black text-slate-300 uppercase tracking-widest">
                   1ºP &gt; 1.5
-                  <span className="block mt-1 text-[10px] font-bold tracking-normal text-slate-400">(48%)</span>
+                  <span className="block mt-1 text-[10px] font-bold tracking-normal text-slate-300">(48%)</span>
                 </th>
-                <th className="py-4 text-center text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                <th className="py-4 text-center text-[10px] font-black text-slate-300 uppercase tracking-widest">
                   1ºP BTTS
-                  <span className="block mt-1 text-[10px] font-bold tracking-normal text-slate-400">(31%)</span>
+                  <span className="block mt-1 text-[10px] font-bold tracking-normal text-slate-300">(31%)</span>
                 </th>
-                <th className="py-4 text-center text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                <th className="py-4 text-center text-[10px] font-black text-slate-300 uppercase tracking-widest">
                   2ºP &gt; 1.5
-                  <span className="block mt-1 text-[10px] font-bold tracking-normal text-slate-400">(62%)</span>
+                  <span className="block mt-1 text-[10px] font-bold tracking-normal text-slate-300">(62%)</span>
                 </th>
-                <th className="py-4 text-center pr-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                <th className="py-4 text-center pr-4 text-[10px] font-black text-slate-300 uppercase tracking-widest">
                   Jogo &gt; 4.5
-                  <span className="block mt-1 text-[10px] font-bold tracking-normal text-slate-400">(72%)</span>
+                  <span className="block mt-1 text-[10px] font-bold tracking-normal text-slate-300">(72%)</span>
                 </th>
               </tr>
             </thead>
