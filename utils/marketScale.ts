@@ -15,20 +15,46 @@ export type Tier = "low" | "normal" | "watch" | "strong";
 
 const M = STRONG_RULES.markets;
 
-// low: abaixo disto é vermelho · watch: a partir daqui é verde · strong: critério das Escolhas Fortes
-// lo/hi: extremos da barra (a barra enche entre estes dois valores, em vez de 0–100%).
-const SCALE: Record<MarketKey, { low: number; watch: number; strong: number; lo: number; hi: number }> = {
-  win: { low: 45, watch: 54, strong: M.win.min, lo: 35, hi: 75 },
-  draw: { low: 21, watch: 24.5, strong: M.draw.min, lo: 15, hi: 30 },
-  over15P1: { low: 40, watch: 55, strong: M.over15P1.min, lo: 30, hi: 75 },
-  btts1P: { low: 26, watch: 38, strong: M.btts1P.min, lo: 15, hi: 55 },
-  over15P2: { low: 55, watch: 66, strong: M.over15P2.min, lo: 45, hi: 82 },
-  over45: { low: 65, watch: 74, strong: M.over45.min, lo: 50, hi: 92 },
-  over55: { low: 40, watch: 55, strong: M.over55.min, lo: 30, hi: 78 },
+// Referência de cada mercado = taxa de um jogo médio da liga (a API calcula-a com os jogos reais recentes).
+// Os limites são múltiplos dessa referência, medidos na dispersão real do modelo:
+//   low ≈ percentil 10 · watch ≈ percentil 75 · strong ≈ percentil 90 (e nunca acima do critério das Escolhas Fortes)
+// Se a API ainda não enviou a referência, usam-se valores típicos da NHL.
+export type LeagueBaseline = { draw: number; over15P1: number; btts1P: number; over15P2: number; over45: number; over55: number };
+
+const DEFAULT_BASE: LeagueBaseline = { draw: 22.5, over15P1: 48, btts1P: 31, over15P2: 62, over45: 72, over55: 57 };
+let base: LeagueBaseline = DEFAULT_BASE;
+
+export function setLeagueBaseline(b?: LeagueBaseline) {
+  base = b ? { ...DEFAULT_BASE, ...b } : DEFAULT_BASE;
+}
+
+// razões low / watch / strong face à referência
+const RATIOS: Record<Exclude<MarketKey, "win">, [number, number, number]> = {
+  draw: [0.93, 1.02, 1.05],
+  over15P1: [0.91, 1.04, 1.08],
+  btts1P: [0.88, 1.05, 1.10],
+  over15P2: [0.91, 1.04, 1.08],
+  over45: [0.89, 1.05, 1.09],
+  over55: [0.84, 1.08, 1.15],
 };
 
+type Scale = { low: number; watch: number; strong: number; lo: number; hi: number };
+
+function scaleOf(market: MarketKey): Scale {
+  if (market === "win") return { low: 45, watch: 54, strong: M.win.min, lo: 35, hi: 75 };
+  const b = base[market];
+  const [l, w, s] = RATIOS[market];
+  return {
+    low: b * l,
+    watch: b * w,
+    strong: Math.min(b * s, M[market].min),
+    lo: b * 0.7,
+    hi: Math.min(100, b * 1.3),
+  };
+}
+
 export function tierOf(market: MarketKey, value: number): Tier {
-  const s = SCALE[market];
+  const s = scaleOf(market);
   if (value >= s.strong) return "strong";
   if (value >= s.watch) return "watch";
   if (value < s.low) return "low";
@@ -37,7 +63,7 @@ export function tierOf(market: MarketKey, value: number): Tier {
 
 /** Largura da barra (6–100%) face ao intervalo típico do mercado. */
 export function barPct(market: MarketKey, value: number): number {
-  const s = SCALE[market];
+  const s = scaleOf(market);
   const p = ((value - s.lo) / (s.hi - s.lo)) * 100;
   return Math.max(6, Math.min(100, p));
 }

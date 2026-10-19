@@ -146,4 +146,5 @@ export interface NHLAnalysisData {
   suggestions: Suggestions;
   lastUpdated: string;
   totalGames?: number; // jogos do dia (antes do filtro da janela noturna)
+  leagueBaseline?: { draw: number; over15P1: number; btts1P: number; over15P2: number; over45: number; over55: number };
 }

@@ -1,5 +1,6 @@
 // src/App.tsx
 
+import { setLeagueBaseline } from './utils/marketScale';
 import React, { useState, useRef } from 'react';
 import { fetchNHLAnalysis } from './services/geminiService';
 import { NHLAnalysisData, GamePrediction } from './types';
@@ -106,8 +107,10 @@ const App: React.FC = () => {
       // As dicas são calculadas sobre os jogos visíveis
       const suggestionsList = buildSuggestions(filteredPredictions);
 
+      setLeagueBaseline(analysisData?.leagueBaseline);
       setProgress(100);
       setData({
+        leagueBaseline: analysisData?.leagueBaseline,
         predictions: filteredPredictions,
         suggestions: suggestionsList,
         lastUpdated: analysisData?.lastUpdated || new Date().toISOString(),
@@ -373,6 +376,7 @@ const App: React.FC = () => {
                 <MyPicksView
                   predictions={data.predictions}
                   selectedDate={loadedDate}
+                  autoSuggestions={data.suggestions}
                 />
               ) : (
                 <div className="py-24 text-center text-slate-600 text-[10px] font-black uppercase tracking-widest">

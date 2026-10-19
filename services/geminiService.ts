@@ -76,10 +76,17 @@ function normalizeToUiShape(raw: any): NHLAnalysisData {
       ? raw.lastUpdated
       : new Date().toISOString();
 
+  const lb = raw.leagueBaseline;
+  const leagueBaseline =
+    lb && typeof lb === "object" && Object.values(lb).every((v) => typeof v === "number")
+      ? (lb as NHLAnalysisData["leagueBaseline"])
+      : undefined;
+
   return {
     predictions,
     suggestions,
     lastUpdated,
+    ...(leagueBaseline ? { leagueBaseline } : {}),
   };
 }
 

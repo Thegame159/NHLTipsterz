@@ -16,7 +16,7 @@ const MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
 const TEAM_GAMES = 7; // jogos recentes usados por equipa
 const LOOKBACK_DAYS = 21; // até onde se procuram esses jogos
 const PRESEASON_CUTOFF_DAY = 8; // a partir deste dia da época regular a pré-época deixa de contar
-const CACHE_PREFIX = "nhl:analysis:v8:";
+const CACHE_PREFIX = "nhl:analysis:v9:";
 const CACHE_TTL_MS = 2 * 60 * 60 * 1000; // 2 horas (as lesões influenciam os números)
 const GAME_CACHE_PREFIX = "nhl:game:v2:"; // golos do 1.º período de jogos já terminados (nunca mudam)
 const GAME_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -174,6 +174,7 @@ type Prediction = {
 
 type AnalysisPayload = {
   predictions: Prediction[];
+  leagueBaseline?: LeagueCtx["baseline"];
   lastUpdated: string;
   meta: {
     source: "model";
@@ -541,6 +542,8 @@ type LeagueCtx = {
   mu1: number; // idem, só no 1.º período
   mu2: number; // idem, só no 2.º período
   factors: { tie: number; over15P1: number; btts: number; over15P2: number; btts2: number; over45: number; over55: number };
+  /** Taxa (%) de um jogo médio da liga em cada mercado, já calibrada com os jogos reais recentes. Serve de referência para as cores da tabela. */
+  baseline: { draw: number; over15P1: number; btts1P: number; over15P2: number; over45: number; over55: number };
 };
 
 function buildLeagueCtx(lg: LeagueRates): LeagueCtx {
@@ -563,18 +566,37 @@ function buildLeagueCtx(lg: LeagueRates): LeagueCtx {
     (rate(count, n) * n + prior * C.rateBlendGames) / (n + C.rateBlendGames);
   const ratio = (target: number, model: number) => (model > 0 ? target / model : 1);
 
+  const target = {
+    tie: blend(lg.ties, lg.games, C.regTieRate),
+    over15P1: blend(lg.p1Over15, lg.p1Games, base.over15P1),
+    btts: blend(lg.p1Btts, lg.p1Games, base.btts),
+    over15P2: blend(lg.p2Over15, lg.p2Games, base.over15P2),
+    btts2: blend(lg.p2Btts, lg.p2Games, base.btts2),
+    over45: blend(lg.over45, lg.games, base.over45),
+    over55: blend(lg.over55, lg.games, base.over55),
+  };
+  const pc = (x: number) => Math.round(x * 1000) / 10;
+
   return {
     mu,
     mu1,
     mu2,
     factors: {
-      tie: ratio(blend(lg.ties, lg.games, C.regTieRate), base.tie),
-      over15P1: ratio(blend(lg.p1Over15, lg.p1Games, base.over15P1), base.over15P1),
-      btts: ratio(blend(lg.p1Btts, lg.p1Games, base.btts), base.btts),
-      over15P2: ratio(blend(lg.p2Over15, lg.p2Games, base.over15P2), base.over15P2),
-      btts2: ratio(blend(lg.p2Btts, lg.p2Games, base.btts2), base.btts2),
-      over45: ratio(blend(lg.over45, lg.games, base.over45), base.over45),
-      over55: ratio(blend(lg.over55, lg.games, base.over55), base.over55),
+      tie: ratio(target.tie, base.tie),
+      over15P1: ratio(target.over15P1, base.over15P1),
+      btts: ratio(target.btts, base.btts),
+      over15P2: ratio(target.over15P2, base.over15P2),
+      btts2: ratio(target.btts2, base.btts2),
+      over45: ratio(target.over45, base.over45),
+      over55: ratio(target.over55, base.over55),
+    },
+    baseline: {
+      draw: pc(target.tie),
+      over15P1: pc(target.over15P1),
+      btts1P: pc(target.btts),
+      over15P2: pc(target.over15P2),
+      over45: pc(target.over45),
+      over55: pc(target.over55),
     },
   };
 }
@@ -1491,6 +1513,7 @@ export async function POST(req: Request) {
 
     const payload: AnalysisPayload = {
       predictions,
+      leagueBaseline: ctx.baseline,
       lastUpdated: new Date().toISOString(),
       meta: {
         source: "model",
