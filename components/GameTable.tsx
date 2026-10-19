@@ -422,18 +422,23 @@ const GameTable: React.FC<Props> = ({ predictions, totalGames }) => {
                 </th>
                 <th className="py-4 text-center text-[10px] font-black text-slate-500 uppercase tracking-widest">
                   Empate OT
+                  <span className="block mt-1 text-[10px] font-bold tracking-normal text-slate-400">(22%)</span>
                 </th>
                 <th className="py-4 text-center text-[10px] font-black text-slate-500 uppercase tracking-widest">
                   1ºP &gt; 1.5
+                  <span className="block mt-1 text-[10px] font-bold tracking-normal text-slate-400">(48%)</span>
                 </th>
                 <th className="py-4 text-center text-[10px] font-black text-slate-500 uppercase tracking-widest">
                   1ºP BTTS
+                  <span className="block mt-1 text-[10px] font-bold tracking-normal text-slate-400">(31%)</span>
                 </th>
                 <th className="py-4 text-center text-[10px] font-black text-slate-500 uppercase tracking-widest">
                   2ºP &gt; 1.5
+                  <span className="block mt-1 text-[10px] font-bold tracking-normal text-slate-400">(62%)</span>
                 </th>
                 <th className="py-4 text-center pr-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">
                   Jogo &gt; 4.5
+                  <span className="block mt-1 text-[10px] font-bold tracking-normal text-slate-400">(72%)</span>
                 </th>
               </tr>
             </thead>
