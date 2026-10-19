@@ -37,7 +37,7 @@ const getBarColor = (v: number) => {
   return 'bg-gradient-to-r from-emerald-500 to-green-600';
 };
 
-const ProbabilityCell: React.FC<{ value?: number; scale?: ScaleKey }> = ({ value, scale }) => {
+const ProbabilityCell: React.FC<{ value?: number; scale?: ScaleKey; top?: boolean }> = ({ value, scale, top }) => {
   const val = safeNum(value);
   const lvl = scale ? levelOf(scale, val) : 0;
   const badgeCls = scale ? SCALE_BADGE[lvl] : getColorClass(val);
@@ -46,7 +46,7 @@ const ProbabilityCell: React.FC<{ value?: number; scale?: ScaleKey }> = ({ value
   return (
     <div className="flex flex-col items-center justify-center min-w-[80px]">
       <div className="relative">
-        <div className={`px-4 py-1.5 rounded-lg border font-black text-sm mb-1.5 ${badgeCls}`}>
+        <div className={`px-4 py-1.5 rounded-lg border font-black text-sm mb-1.5 ${badgeCls} ${top ? 'outline outline-2 outline-offset-2 outline-amber-200/30' : ''}`}>
           {Math.round(val)}%
         </div>
         {scale && hasStar(scale, val) && (
@@ -64,13 +64,51 @@ const ProbabilityCell: React.FC<{ value?: number; scale?: ScaleKey }> = ({ value
           style={{ width: `${barW}%` }}
         />
       </div>
+      <div className={`mt-1 text-[8px] font-black tracking-widest text-amber-200 ${top ? '' : 'invisible'}`}>▲ TOP</div>
     </div>
   );
 };
 
+type Tops = { draw: number; p1: number; btts: number; p2: number; o45: number; multi: boolean };
+
+// ─── Equipa (logo, nome, registo e jogos por baixo) ─────────────────────────
+
+const TeamBlock: React.FC<{ abbr: string; strong: boolean; record?: string; games?: number; b2b?: boolean }> = ({ abbr, strong, record, games, b2b }) => (
+  <div className="flex items-center gap-2.5 min-w-0">
+    <img
+      src={getLogoUrl(abbr)}
+      className="w-7 h-7 object-contain drop-shadow-sm shrink-0"
+      alt={abbr}
+      onError={(e) => (e.currentTarget.src = FALLBACK_LOGO)}
+    />
+    <div className="min-w-0">
+      <div className={`font-black text-base leading-tight truncate ${strong ? 'text-white' : 'text-slate-400'}`}>{teamLabel(abbr)}</div>
+      <div className="flex items-center gap-1.5 mt-1">
+        <span className="text-[10px] bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded font-bold uppercase">{record || '0-0-0'}</span>
+        {typeof games === 'number' && (
+          <span
+            title={`Estimativa baseada nos últimos ${games} jogo(s)`}
+            className="text-[10px] bg-slate-800/60 text-slate-500 px-1.5 py-0.5 rounded font-bold"
+          >
+            {games}J
+          </span>
+        )}
+        {b2b && (
+          <span
+            title="Jogou ontem (2.ª noite seguida)"
+            className="text-[10px] bg-amber-500/15 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-black uppercase"
+          >
+            B2B
+          </span>
+        )}
+      </div>
+    </div>
+  </div>
+);
+
 // ─── Linha de jogo ───────────────────────────────────────────────────────────
 
-const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
+const GameRow: React.FC<{ game: GamePrediction; tops: Tops }> = ({ game, tops }) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
   // Leitura segura de valores numéricos
@@ -88,6 +126,9 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
 
   const homeTeam = game.homeTeamAbbr || game.homeTeam || '';
   const awayTeam = game.awayTeamAbbr || game.awayTeam || '';
+  const favTeam = isHomeFav ? homeTeam : awayTeam;
+  const dogTeam = isHomeFav ? awayTeam : homeTeam;
+  const isTop = (v: number, max: number) => tops.multi && v > 0 && v === max;
 
   return (
     <>
@@ -96,105 +137,43 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
         className="group border-b border-slate-800/50 hover:bg-blue-500/5 transition-colors cursor-pointer"
       >
         {/* COLUNA: Jogo */}
-        <td className="py-6 pl-4">
-          <div className="flex flex-col">
-            <span className="text-[10px] font-bold text-slate-500 mb-3 flex items-center gap-1.5">
-              <i className="far fa-clock"></i>
-              {formatTime(game.dateTime)}
-            </span>
-
-            <div className="space-y-4">
-              {/* CASA */}
+        <td className="py-4 pl-4 pr-2">
+          <div className="flex items-start gap-3">
+            <div className="min-w-0">
+              <span className="text-[10px] font-bold text-slate-500 mb-2 flex items-center gap-1.5">
+                <i className="far fa-clock"></i>
+                {formatTime(game.dateTime)}
+              </span>
               <div className="flex items-center gap-3">
-                <img
-                  src={getLogoUrl(homeTeam)}
-                  className="w-7 h-7 object-contain drop-shadow-sm"
-                  alt={homeTeam}
-                  onError={(e) => (e.currentTarget.src = FALLBACK_LOGO)}
-                />
-                <div className="flex items-center gap-2">
-                  <span className={`font-black text-lg ${isEven || isHomeFav ? 'text-white' : 'text-slate-400'}`}>
-                    {teamLabel(homeTeam)}
-                  </span>
-                  <span className="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-bold uppercase">
-                    {game.homeRecordL10 || '0-0-0'}
-                  </span>
-                  {typeof game.homeGames === 'number' && (
-                    <span
-                      title={`Estimativa baseada nos últimos ${game.homeGames} jogo(s)`}
-                      className="text-[10px] bg-slate-800/60 text-slate-500 px-1.5 py-0.5 rounded font-bold"
-                    >
-                      {game.homeGames}J
-                    </span>
-                  )}
-                  {game.homeB2B && (
-                    <span
-                      title="Jogou ontem (2.ª noite seguida)"
-                      className="text-[10px] bg-amber-500/15 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-black uppercase"
-                    >
-                      B2B
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              <div className="pl-2.5">
-                <span className="text-slate-600 font-bold text-xs">vs</span>
-              </div>
-
-              {/* VISITANTE */}
-              <div className="flex items-center gap-3">
-                <img
-                  src={getLogoUrl(awayTeam)}
-                  className="w-7 h-7 object-contain drop-shadow-sm"
-                  alt={awayTeam}
-                  onError={(e) => (e.currentTarget.src = FALLBACK_LOGO)}
-                />
-                <div className="flex items-center gap-2">
-                  <span className={`font-black text-lg ${isEven || !isHomeFav ? 'text-white' : 'text-slate-400'}`}>
-                    {teamLabel(awayTeam)}
-                  </span>
-                  <span className="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-bold uppercase">
-                    {game.awayRecordL10 || '0-0-0'}
-                  </span>
-                  {typeof game.awayGames === 'number' && (
-                    <span
-                      title={`Estimativa baseada nos últimos ${game.awayGames} jogo(s)`}
-                      className="text-[10px] bg-slate-800/60 text-slate-500 px-1.5 py-0.5 rounded font-bold"
-                    >
-                      {game.awayGames}J
-                    </span>
-                  )}
-                  {game.awayB2B && (
-                    <span
-                      title="Jogou ontem (2.ª noite seguida)"
-                      className="text-[10px] bg-amber-500/15 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-black uppercase"
-                    >
-                      B2B
-                    </span>
-                  )}
-                </div>
+                <TeamBlock abbr={homeTeam} strong={isEven || isHomeFav} record={game.homeRecordL10} games={game.homeGames} b2b={game.homeB2B} />
+                <span className="text-slate-600 font-bold text-xs shrink-0">vs</span>
+                <TeamBlock abbr={awayTeam} strong={isEven || !isHomeFav} record={game.awayRecordL10} games={game.awayGames} b2b={game.awayB2B} />
               </div>
             </div>
+            <span
+              aria-hidden
+              className={`ml-auto self-center shrink-0 w-6 h-6 flex items-center justify-center rounded-md border border-orange-500/40 bg-orange-500/10 text-orange-400 text-sm font-black transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+            >
+              ▾
+            </span>
           </div>
         </td>
 
-        {/* COLUNA: Prob. Vitória */}
-        <td className="text-right py-6 pr-8">
-          <div className="flex flex-col items-end gap-1">
-            <div className="flex gap-4 text-[10px] font-bold text-slate-500 uppercase mb-2">
-              <span>Casa: {winHome.toFixed(1)}%</span>
-              <span>Fora: {winAway.toFixed(1)}%</span>
-            </div>
-
-            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border font-black text-xs min-w-[100px] justify-center ${getColorClass(maxProb)}`}>
+        {/* COLUNA: Prob. Vitória (favorito em pílula, barra e o outro lado por baixo) */}
+        <td className="py-4 pl-3 pr-6">
+          <div className="flex flex-col items-start gap-1.5">
+            <div className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg border font-black text-sm ${getColorClass(maxProb)}`}>
+              <img
+                src={getLogoUrl(favTeam)}
+                className="w-5 h-5 object-contain shrink-0"
+                alt={favTeam}
+                onError={(e) => (e.currentTarget.src = FALLBACK_LOGO)}
+              />
               {Math.round(maxProb)}%
-              <span className="text-[8px] opacity-60 ml-1">
-                {isEven ? 'EQUIL.' : isHomeFav ? 'CASA' : 'FORA'}
-              </span>
+              <span className="text-[8px] opacity-70">{isEven ? 'EQUIL.' : isHomeFav ? 'CASA' : 'FORA'}</span>
             </div>
 
-            <div className="w-full h-1 bg-slate-800 rounded-full mt-2 max-w-[100px] overflow-hidden">
+            <div className="w-full h-1 bg-slate-800 rounded-full max-w-[130px] overflow-hidden">
               <div
                 className={`h-full transition-all duration-700 ${
                   maxProb <= 30 ? 'bg-rose-500' :
@@ -206,21 +185,26 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
               />
             </div>
 
-            {/* Seta indicadora de expansão */}
-            <span className={`text-slate-500 text-[10px] mt-1 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''} inline-block`}>
-              ▶
-            </span>
+            <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-500">
+              <img
+                src={getLogoUrl(dogTeam)}
+                className="w-3.5 h-3.5 object-contain shrink-0 opacity-80"
+                alt={dogTeam}
+                onError={(e) => (e.currentTarget.src = FALLBACK_LOGO)}
+              />
+              {teamLabel(dogTeam)} {100 - Math.round(maxProb)}%
+            </div>
           </div>
         </td>
 
         {/* COLUNAS: Probabilidades */}
-        <td className="py-6 text-center"><ProbabilityCell value={drawProb} scale="draw" /></td>
-        <td className="py-6 text-center"><ProbabilityCell value={over15P1} scale="p1" /></td>
-        <td className="py-6 text-center"><ProbabilityCell value={bttsP1} scale="btts" /></td>
-        <td className="py-6 text-center">
-          {typeof game.over15P2Prob === 'number' ? <ProbabilityCell value={game.over15P2Prob} scale="p2" /> : <span className="text-slate-700">–</span>}
+        <td className="py-4 text-center"><ProbabilityCell value={drawProb} scale="draw" top={isTop(drawProb, tops.draw)} /></td>
+        <td className="py-4 text-center"><ProbabilityCell value={over15P1} scale="p1" top={isTop(over15P1, tops.p1)} /></td>
+        <td className="py-4 text-center"><ProbabilityCell value={bttsP1} scale="btts" top={isTop(bttsP1, tops.btts)} /></td>
+        <td className="py-4 text-center">
+          {typeof game.over15P2Prob === 'number' ? <ProbabilityCell value={game.over15P2Prob} scale="p2" top={isTop(game.over15P2Prob, tops.p2)} /> : <span className="text-slate-700">–</span>}
         </td>
-        <td className="py-6 text-center pr-4"><ProbabilityCell value={over45} scale="o45" /></td>
+        <td className="py-4 text-center pr-4"><ProbabilityCell value={over45} scale="o45" top={isTop(over45, tops.o45)} /></td>
       </tr>
 
       {/* PAINEL EXPANDIDO */}
@@ -358,6 +342,15 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
 
 const GameTable: React.FC<Props> = ({ predictions, totalGames }) => {
   const gamesList = predictions || [];
+  const maxOf = (f: (g: GamePrediction) => number) => Math.max(0, ...gamesList.map(f));
+  const tops: Tops = {
+    draw: maxOf((g) => safeNum(g.drawTRProb ?? (g as any).drawProb)),
+    p1: maxOf((g) => safeNum(g.over15P1Prob)),
+    btts: maxOf((g) => safeNum(g.bttsP1Prob)),
+    p2: maxOf((g) => safeNum(g.over15P2Prob)),
+    o45: maxOf((g) => safeNum(g.over45Prob ?? (g as any).over55Prob)),
+    multi: gamesList.length > 1,
+  };
 
   return (
     <div className="space-y-8 pb-8">
@@ -373,6 +366,16 @@ const GameTable: React.FC<Props> = ({ predictions, totalGames }) => {
         </span>
       </div>
 
+      {/* Legenda */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[10px] text-slate-500">
+        <span className="flex items-center gap-1.5"><span className="text-amber-300">★</span> acima da média do mercado</span>
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-rose-500/60"></span>abaixo</span>
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-amber-500/60"></span>normal</span>
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-green-500/60"></span>acima</span>
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-400/70"></span>muito acima</span>
+        <span className="flex items-center gap-1.5"><span className="font-black tracking-widest text-amber-200 text-[8px]">▲ TOP</span> valor mais alto do dia na coluna</span>
+      </div>
+
       {/* Estado vazio */}
       {gamesList.length === 0 ? (
         <div className="w-full rounded-2xl border border-slate-800 bg-slate-800/20 py-16 text-center">
@@ -386,7 +389,7 @@ const GameTable: React.FC<Props> = ({ predictions, totalGames }) => {
                 <th className="py-4 pl-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">
                   Jogo
                 </th>
-                <th className="py-4 text-right pr-8 text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                <th className="py-4 pl-3 text-left text-[10px] font-black text-slate-500 uppercase tracking-widest">
                   Prob. Vitória
                 </th>
                 <th className="py-4 text-center text-[10px] font-black text-slate-500 uppercase tracking-widest">
@@ -413,7 +416,7 @@ const GameTable: React.FC<Props> = ({ predictions, totalGames }) => {
             </thead>
             <tbody>
               {gamesList.map((game, idx) => (
-                <GameRow key={game.id ?? idx} game={game} />
+                <GameRow key={game.id ?? idx} game={game} tops={tops} />
               ))}
             </tbody>
           </table>
