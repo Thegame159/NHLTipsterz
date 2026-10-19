@@ -74,7 +74,7 @@ type Tops = { draw: number; p1: number; btts: number; p2: number; o45: number; m
 // ─── Equipa (logo, nome, registo e jogos por baixo) ─────────────────────────
 
 const TeamBlock: React.FC<{ abbr: string; strong: boolean; record?: string; games?: number; b2b?: boolean }> = ({ abbr, strong, record, games, b2b }) => (
-  <div className="flex items-center gap-2.5">
+  <div className="flex items-center gap-2.5 shrink-0">
     <img
       src={getLogoUrl(abbr)}
       className="w-7 h-7 object-contain drop-shadow-sm shrink-0"
@@ -137,26 +137,38 @@ const GameRow: React.FC<{ game: GamePrediction; tops: Tops }> = ({ game, tops })
         className="group border-b border-slate-800/50 hover:bg-blue-500/5 transition-colors cursor-pointer"
       >
         {/* COLUNA: Jogo */}
-        <td className="relative py-4 pl-4 pr-12 w-[1%] whitespace-nowrap">
+        <td className="relative py-4 pl-4 pr-14 w-[1%] whitespace-nowrap">
           <div className="flex items-start gap-3">
             <div>
               <span className="text-[10px] font-bold text-slate-500 mb-2 flex items-center gap-1.5">
                 <i className="far fa-clock"></i>
                 {formatTime(game.dateTime)}
               </span>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-4 w-max">
                 <TeamBlock abbr={homeTeam} strong={isEven || isHomeFav} record={game.homeRecordL10} games={game.homeGames} b2b={game.homeB2B} />
-                <span className="text-slate-600 font-bold text-xs shrink-0">vs</span>
+                <span aria-label="vs" role="img" className="shrink-0 mx-1 w-10 h-10 flex items-center justify-center rounded-full border border-slate-700 bg-slate-900">
+                  <svg width="34" height="34" viewBox="0 0 32 32" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="5" y1="3.5" x2="19.5" y2="24.5" stroke="#f97316" strokeWidth="2.4" />
+                    <line x1="5" y1="3.5" x2="7" y2="6.4" stroke="#e2e8f0" strokeWidth="3" />
+                    <path d="M18.2 22.6 L21.2 26.6 Q22 28 24 28 L29 28 L29 25.6 L24.6 25.6 L22 21.4 Z" fill="#f97316" stroke="#f97316" strokeWidth="1" />
+                    <line x1="27" y1="3.5" x2="12.5" y2="24.5" stroke="#fbbf24" strokeWidth="2.4" />
+                    <line x1="27" y1="3.5" x2="25" y2="6.4" stroke="#e2e8f0" strokeWidth="3" />
+                    <path d="M13.8 22.6 L10.8 26.6 Q10 28 8 28 L3 28 L3 25.6 L7.4 25.6 L10 21.4 Z" fill="#fbbf24" stroke="#fbbf24" strokeWidth="1" />
+                    <ellipse cx="16" cy="30" rx="3" ry="1.2" fill="#e2e8f0" />
+                  </svg>
+                </span>
                 <TeamBlock abbr={awayTeam} strong={isEven || !isHomeFav} record={game.awayRecordL10} games={game.awayGames} b2b={game.awayB2B} />
               </div>
             </div>
             <span
               aria-hidden
-              className={`absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center rounded-full border text-[10px] leading-none transition-all duration-200 ${
+              className={`absolute right-3 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center rounded-full border transition-all duration-200 ${
                 isExpanded ? 'rotate-180 border-orange-500/60 text-orange-400 bg-orange-500/10' : 'border-slate-600 text-slate-400 group-hover:border-orange-500/50 group-hover:text-orange-400'
               }`}
             >
-              ▾
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="2,3.5 5,6.5 8,3.5" />
+              </svg>
             </span>
           </div>
         </td>
