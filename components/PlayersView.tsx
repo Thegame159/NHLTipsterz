@@ -344,11 +344,28 @@ const TripleCard: React.FC<{ pages: Pick[][]; mode: Mode; onPick: (x: Pick) => v
     }
   };
   return (
-    <section className="rounded-2xl border border-orange-500/40 bg-gradient-to-br from-orange-500/10 to-slate-900/40 p-4 sm:p-5 space-y-3">
+    <section className="rounded-xl border border-orange-500/40 bg-gradient-to-br from-orange-500/10 to-slate-900/40 p-3 space-y-2">
       <div className="flex items-center justify-between gap-3">
-        <h3 className="flex items-center gap-2 font-black text-white text-sm uppercase tracking-wider">{mode === 'goal' ? <><PuckIcon className="w-6 h-6" /> Triplete de golos</> : <>🔥 Triplete de pontos</>}</h3>
+        <div className="flex items-center gap-3 flex-wrap">
+          <h3 className="flex items-center gap-2 font-black text-white text-sm uppercase tracking-wider">{mode === 'goal' ? <><PuckIcon className="w-5 h-5" /> Triplete de golos</> : <>🔥 Triplete de pontos</>}</h3>
+          {pages.length > 1 && (
+            <div className="flex gap-1">
+              {pages.map((_, i) => (
+                <button
+                  key={i}
+                  onClick={() => setPage(i)}
+                  className={`rounded-md px-2 py-0.5 text-[10px] font-black uppercase tracking-wider border transition-colors ${
+                    page === i ? 'bg-orange-600 border-orange-500 text-white' : 'bg-slate-800/60 border-slate-700 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Opção {i + 1}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <div className="flex items-center gap-2">
-          <span className="text-[11px] font-black text-orange-300 bg-orange-500/10 border border-orange-500/30 rounded-full px-2.5 py-0.5">
+          <span className="text-[11px] font-black text-orange-300 bg-orange-500/10 border border-orange-500/30 rounded-full px-2 py-0.5">
             combinada {combined.toFixed(1)}%
           </span>
           <button
@@ -360,44 +377,29 @@ const TripleCard: React.FC<{ pages: Pick[][]; mode: Mode; onPick: (x: Pick) => v
           </button>
         </div>
       </div>
-      {pages.length > 1 && (
-        <div className="flex gap-1.5">
-          {pages.map((_, i) => (
-            <button
-              key={i}
-              onClick={() => setPage(i)}
-              className={`rounded-lg px-3 py-1 text-[10px] font-black uppercase tracking-wider border transition-colors ${
-                page === i ? 'bg-orange-600 border-orange-500 text-white' : 'bg-slate-800/60 border-slate-700 text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              Opção {i + 1}
-            </button>
-          ))}
-        </div>
-      )}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
         {picks.map((x) => (
           <button
             key={x.card.id}
             onClick={() => onPick(x)}
             title="Ver o jogador na lista do jogo"
-            className="group flex items-center gap-3 rounded-xl bg-slate-900/70 border border-slate-800 hover:border-orange-500/50 px-3 py-2.5 text-left transition-colors"
+            className="group flex items-center gap-2.5 rounded-lg bg-slate-900/70 border border-slate-800 hover:border-orange-500/50 px-2.5 py-1.5 text-left transition-colors"
           >
             <img
               src={getLogoUrl(x.abbr)}
               alt={x.abbr}
-              className="w-9 h-9 object-contain shrink-0 bg-slate-800 rounded-full p-1 border border-slate-700"
+              className="w-7 h-7 object-contain shrink-0 bg-slate-800 rounded-full p-0.5 border border-slate-700"
               onError={(e) => (e.currentTarget.style.visibility = 'hidden')}
             />
             <div className="min-w-0 flex-1">
-              <div className="font-bold text-slate-100 truncate group-hover:text-orange-300">
+              <div className="font-bold text-sm text-slate-100 truncate group-hover:text-orange-300">
                 {shortName(x.card.name)} <span className="text-[10px] text-slate-500">↓</span>
               </div>
               <div className="text-[10px] text-slate-500">
                 {x.home ? 'vs' : '@'} {teamLabel(x.opp)} · <b className="text-slate-300">{x.card.stat.p}</b> pts
               </div>
             </div>
-            <ProbBadge value={probOf(x.card, mode)} scale={mode === 'goal' ? 'pGoal' : 'pPoint'} className="px-2 py-1" />
+            <ProbBadge value={probOf(x.card, mode)} scale={mode === 'goal' ? 'pGoal' : 'pPoint'} className="px-1.5 py-0.5" />
           </button>
         ))}
       </div>
