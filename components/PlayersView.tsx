@@ -365,6 +365,31 @@ const PlayersView: React.FC<Props> = ({ predictions, date }) => {
   const [openGames, setOpenGames] = useState<Set<string>>(new Set());
   const [focus, setFocus] = useState<Focus | null>(null);
   const [showTop, setShowTop] = useState(false);
+  const savedKey = useRef('');
+
+  // Guarda os tripletes do dia (só a primeira vez; o servidor ignora repetições) para a aba Stats
+  useEffect(() => {
+    if (!games || games.length === 0) return;
+    if (savedKey.current === key) return;
+    const map = new Map<string, GamePlayers>(games.map((g) => [String(g.id), g] as [string, GamePlayers]));
+    const toPayload = (mode: Mode) =>
+      buildTriple(predictions, map, mode).map((page) =>
+        page.map((x) => ({ id: x.card.id, name: x.card.name, abbr: x.abbr, opp: x.opp, prob: probOf(x.card, mode) }))
+      );
+    const goal = toPayload('goal');
+    const point = toPayload('point');
+    if (goal.length === 0 && point.length === 0) return;
+    savedKey.current = key;
+    fetch('/api/player-picks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date, goal, point }),
+    })
+      .then((r) => {
+        if (r.ok) window.dispatchEvent(new Event('history-updated'));
+      })
+      .catch(() => {});
+  }, [games, key]);
 
   useEffect(() => {
     const onScroll = () => setShowTop(window.scrollY > 500);

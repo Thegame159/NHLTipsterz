@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Suggestions } from "../types";
+import PlayerPicksStats from "./PlayerPicksStats";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -979,6 +980,8 @@ const StatsView: React.FC = () => {
           </div>
         </div>
       </div>
+
+      <PlayerPicksStats />
 
       <div className="space-y-3">
         {reports.map((r) => {
