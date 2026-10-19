@@ -1,83 +1,59 @@
 // utils/marketScale.ts
-// Cores da tabela de jogos relativas a CADA mercado (mantém a paleta colorida de sempre).
+// Escalas de cor próprias de cada mercado, partilhadas pelo ecrã Jogos e pelo ecrã Dicas.
+// O modelo varia pouco à volta da média da liga, por isso cada mercado tem os seus limites.
 //
-// Um empate com 27% é um valor alto (a média anda nos 23%), enquanto 1.º período > 1.5 com 47% é normal.
-// Por isso a cor não depende do número em bruto, mas de onde ele fica face ao que é típico no mercado:
-//   low     → vermelho   (abaixo do habitual nesse mercado)
-//   normal  → âmbar      (dentro do habitual)
-//   watch   → verde      (acima da média: vale a pena olhar)
-//   strong  → verde forte, com brilho (atinge o critério das Escolhas Fortes)
+//  t = [fim do vermelho, fim do laranja, fim do verde] · star = a partir daqui aparece ★ · lo/hi = extremos da barra
+//  empate (média ~22–23%): ≤21 vermelho · 22–24 laranja · 25 verde · 26+ forte, ★ a partir de 24
+//  1.º período > 1.5 (média ~48%): ≤43 vermelho · 44–50 laranja · 51–52 verde · 53+ forte, ★ a partir de 49
+//  1.º período BTTS (média ~31%): ≤27 vermelho · 28–33 laranja · 34–35 verde · 36+ forte, ★ a partir de 32
+//  2.º período > 1.5 (média ~62%): ≤57 vermelho · 58–65 laranja · 66–67 verde · 68+ forte, ★ a partir de 64
+//  jogo > 4.5 (média ~72%): ≤65 vermelho · 66–72 laranja · 73–74 verde · 75+ forte, ★ a partir de 74
+//  jogo > 5.5 (média ~57%): ≤49 vermelho · 50–57 laranja · 58–61 verde · 62+ forte, ★ a partir de 59
 
-import { STRONG_RULES } from "./suggestions";
+export type ScaleKey = "draw" | "p1" | "btts" | "p2" | "o45" | "o55";
 
-export type MarketKey = "win" | "draw" | "over15P1" | "btts1P" | "over15P2" | "over45" | "over55";
-export type Tier = "low" | "normal" | "watch" | "strong";
-
-const M = STRONG_RULES.markets;
-
-// Referência de cada mercado = taxa de um jogo médio da liga (a API calcula-a com os jogos reais recentes).
-// Os limites são múltiplos dessa referência, medidos na dispersão real do modelo:
-//   low ≈ bem abaixo da média · watch = a partir da média (verde) · strong ≈ percentil 90 (e nunca acima do critério das Escolhas Fortes)
-// Se a API ainda não enviou a referência, usam-se valores típicos da NHL.
-export type LeagueBaseline = { draw: number; over15P1: number; btts1P: number; over15P2: number; over45: number; over55: number };
-
-const DEFAULT_BASE: LeagueBaseline = { draw: 22.5, over15P1: 48, btts1P: 31, over15P2: 62, over45: 72, over55: 57 };
-let base: LeagueBaseline = DEFAULT_BASE;
-
-export function setLeagueBaseline(b?: LeagueBaseline) {
-  base = b ? { ...DEFAULT_BASE, ...b } : DEFAULT_BASE;
-}
-
-// razões low / watch / strong face à referência
-const RATIOS: Record<Exclude<MarketKey, "win">, [number, number, number]> = {
-  draw: [0.92, 0.98, 1.06],
-  over15P1: [0.90, 0.97, 1.05],
-  btts1P: [0.88, 0.97, 1.06],
-  over15P2: [0.91, 0.97, 1.04],
-  over45: [0.91, 0.97, 1.04],
-  over55: [0.85, 0.97, 1.08],
+export const SCALES: Record<ScaleKey, { t: [number, number, number]; star: number; lo: number; hi: number }> = {
+  draw: { t: [21.5, 24.5, 25.5], star: 23.5, lo: 15, hi: 30 },
+  p1: { t: [43.5, 50.5, 52.5], star: 48.5, lo: 30, hi: 65 },
+  btts: { t: [27.5, 33.5, 35.5], star: 31.5, lo: 15, hi: 50 },
+  p2: { t: [57.5, 65.5, 67.5], star: 63.5, lo: 45, hi: 82 },
+  o45: { t: [65.5, 72.5, 74.5], star: 73.5, lo: 50, hi: 92 },
+  o55: { t: [49.5, 57.5, 61.5], star: 58.5, lo: 30, hi: 80 },
 };
 
-type Scale = { low: number; watch: number; strong: number; lo: number; hi: number };
-
-function scaleOf(market: MarketKey): Scale {
-  if (market === "win") return { low: 45, watch: 54, strong: M.win.min, lo: 35, hi: 75 };
-  const b = base[market];
-  const [l, w, s] = RATIOS[market];
-  return {
-    low: b * l,
-    watch: b * w,
-    strong: Math.min(b * s, M[market].min),
-    lo: b * 0.7,
-    hi: Math.min(100, b * 1.3),
-  };
-}
-
-export function tierOf(market: MarketKey, value: number): Tier {
-  const s = scaleOf(market);
-  if (value >= s.strong) return "strong";
-  if (value >= s.watch) return "watch";
-  if (value < s.low) return "low";
-  return "normal";
-}
-
-/** Largura da barra (6–100%) face ao intervalo típico do mercado. */
-export function barPct(market: MarketKey, value: number): number {
-  const s = scaleOf(market);
-  const p = ((value - s.lo) / (s.hi - s.lo)) * 100;
-  return Math.max(6, Math.min(100, p));
-}
-
-export const TIER_BADGE: Record<Tier, string> = {
-  low: "text-rose-400 border-rose-500/30 bg-rose-500/10",
-  normal: "text-amber-400 border-amber-500/30 bg-amber-500/10",
-  watch: "text-green-400 border-green-500/30 bg-green-500/10",
-  strong: "text-emerald-300 border-emerald-400/60 bg-emerald-500/15 ring-1 ring-emerald-400/40 shadow-[0_0_12px_rgba(16,185,129,0.3)]",
+/** 0 vermelho · 1 laranja · 2 verde · 3 verde forte */
+export const levelOf = (k: ScaleKey, v: number): number => {
+  const t = SCALES[k].t;
+  return v < t[0] ? 0 : v < t[1] ? 1 : v < t[2] ? 2 : 3;
 };
 
-export const TIER_BAR: Record<Tier, string> = {
-  low: "bg-gradient-to-r from-rose-500 to-red-500",
-  normal: "bg-gradient-to-r from-yellow-500 to-amber-500",
-  watch: "bg-gradient-to-r from-green-500 to-emerald-500",
-  strong: "bg-gradient-to-r from-emerald-400 to-green-500",
+export const hasStar = (k: ScaleKey, v: number): boolean => v >= SCALES[k].star;
+
+export const SCALE_BADGE = [
+  "text-rose-400 border-rose-500/30 bg-rose-500/10",
+  "text-amber-400 border-amber-500/30 bg-amber-500/10",
+  "text-green-400 border-green-500/30 bg-green-500/10",
+  "text-emerald-300 border-emerald-400/60 bg-emerald-500/15 ring-1 ring-emerald-400/40 shadow-[0_0_12px_rgba(16,185,129,0.3)]",
+];
+
+export const SCALE_BAR = [
+  "bg-gradient-to-r from-rose-500 to-red-500",
+  "bg-gradient-to-r from-yellow-500 to-amber-500",
+  "bg-gradient-to-r from-green-500 to-emerald-500",
+  "bg-gradient-to-r from-emerald-400 to-green-500",
+];
+
+export const STAR_CLASS = [
+  "border-rose-400 text-rose-300",
+  "border-amber-400 text-amber-300",
+  "border-emerald-400 text-emerald-300",
+  "border-emerald-400 text-emerald-300",
+];
+
+export const barWidth = (k: ScaleKey, v: number): number => {
+  const s = SCALES[k];
+  return Math.max(6, Math.min(100, ((v - s.lo) / (s.hi - s.lo)) * 100));
 };
+
+/** Mantida só por compatibilidade (a escala já não depende da média enviada pela API). */
+export function setLeagueBaseline(_b?: unknown) {}

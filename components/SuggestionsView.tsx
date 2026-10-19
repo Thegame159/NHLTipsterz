@@ -2,7 +2,45 @@ import React from "react";
 
 
 import { Suggestions, GamePrediction as Prediction } from "../types";
-import { STRONG_RULES, COMBO_RULES } from "../utils/suggestions";
+import { STRONG_RULES, COMBO_RULES, SUGGESTION_RULES } from "../utils/suggestions";
+import { ScaleKey, levelOf, hasStar, SCALE_BADGE, STAR_CLASS } from "../utils/marketScale";
+
+// Percentagem com a cor (e ★) da escala do mercado, igual à do ecrã Jogos.
+// Sem `scale` (ex.: vitória) usa as cores gerais.
+const PercBadge: React.FC<{ value: number | string; scale?: ScaleKey; className?: string }> = ({ value, scale, className = "" }) => {
+  const v = typeof value === "number" ? value : parseFloat(String(value).replace(",", "."));
+  const label = typeof value === "number" ? `${value}%` : String(value);
+  if (!scale || !Number.isFinite(v)) {
+    return (
+      <span className={`relative text-xs font-black text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 ${className}`}>
+        {label}
+      </span>
+    );
+  }
+  const lvl = levelOf(scale, v);
+  return (
+    <span className={`relative text-xs font-black px-2 py-0.5 rounded border ${SCALE_BADGE[lvl]} ${className}`}>
+      {label}
+      {hasStar(scale, v) && (
+        <span
+          title="Acima da média neste mercado"
+          className={`absolute -top-2 -right-2 w-[15px] h-[15px] rounded-full bg-slate-950 border flex items-center justify-center text-[9px] leading-none ${STAR_CLASS[lvl]}`}
+        >
+          ★
+        </span>
+      )}
+    </span>
+  );
+};
+
+const MARKET_SCALE: Record<string, ScaleKey | undefined> = {
+  [STRONG_RULES.markets.over15P1.label]: "p1",
+  [STRONG_RULES.markets.btts1P.label]: "btts",
+  [STRONG_RULES.markets.over15P2.label]: "p2",
+  [STRONG_RULES.markets.draw.label]: "draw",
+  [STRONG_RULES.markets.over45.label]: "o45",
+  [STRONG_RULES.markets.over55.label]: "o55",
+};
 
 interface Props {
   suggestions: Suggestions;
@@ -270,7 +308,8 @@ const SuggestionItem: React.FC<{
   badgeColor: string;
   index: number;
   showFullNames?: boolean;
-}> = ({ text, badgeColor, index, showFullNames }) => {
+  scale?: ScaleKey;
+}> = ({ text, badgeColor, index, showFullNames, scale }) => {
  const { core, perc } = cleanSuggestionLabel(text);
 
 // ⚠️ Extrair equipas do texto original (ANTES da conversão)
@@ -311,11 +350,7 @@ const teamMatches = parseTeamsFromText(text);
 </span>
       </div>
 
-      {perc && (
-        <div className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-[10px] font-black text-emerald-400">
-          {perc}
-        </div>
-      )}
+      {perc && <PercBadge value={perc} scale={scale} />}
     </div>
   );
 };
@@ -327,7 +362,8 @@ const SuggestionCard: React.FC<{
   gradient: string;
   badgeColor: string;
   description: string;
-}> = ({ title, items, icon, gradient, badgeColor, description }) => (
+  scale?: ScaleKey;
+}> = ({ title, items, icon, gradient, badgeColor, description, scale }) => (
   <div className="relative overflow-hidden bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 shadow-xl transition-all hover:scale-[1.01] hover:shadow-blue-500/10">
     <div className={`absolute top-0 right-0 w-32 h-32 -mr-8 -mt-8 opacity-10 rounded-full blur-3xl ${gradient}`}></div>
 
@@ -351,6 +387,7 @@ const SuggestionCard: React.FC<{
     badgeColor={badgeColor}
     index={idx}
     showFullNames={title === "Triplete de Vitórias"}
+    scale={scale}
   />
 ))
         ) : (
@@ -395,9 +432,7 @@ const filterTripleWin = (items: string[]) => items;
                   <span className="bg-amber-500/20 text-amber-300 text-[10px] font-black px-2 py-0.5 rounded border border-amber-500/30 uppercase tracking-widest">
                     {pick.market}
                   </span>
-                  <span className="text-xs font-black text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                    {pick.prob}%
-                  </span>
+                  <PercBadge value={pick.prob} scale={MARKET_SCALE[pick.market]} />
                 </div>
                 <div className="flex items-center gap-3">
                   <div className="flex -space-x-2">
@@ -451,6 +486,7 @@ const filterTripleWin = (items: string[]) => items;
           gradient="bg-gradient-to-br from-red-500 to-rose-700"
           badgeColor="bg-red-500"
           description="3 jogos com entradas fortes para pelo menos 2 golos no 1º período."
+          scale="p1"
         />
 
         <SuggestionCard
@@ -460,6 +496,7 @@ const filterTripleWin = (items: string[]) => items;
           gradient="bg-gradient-to-br from-blue-500 to-indigo-700"
           badgeColor="bg-blue-500"
           description="Seleção secundária de alta confiança para golos rápidos."
+          scale="p1"
         />
 
         <SuggestionCard
@@ -469,6 +506,7 @@ const filterTripleWin = (items: string[]) => items;
           gradient="bg-gradient-to-br from-orange-500 to-amber-700"
           badgeColor="bg-orange-500"
           description="3 jogos com entradas fortes para pelo menos 2 golos no 2º período."
+          scale="p2"
         />
 
         <SuggestionCard
@@ -478,6 +516,7 @@ const filterTripleWin = (items: string[]) => items;
           gradient="bg-gradient-to-br from-emerald-500 to-teal-700"
           badgeColor="bg-emerald-500"
           description="Série de 4 jogos com forte tendência ofensiva para 5+ golos."
+          scale="o45"
         />
 
         <div className="md:col-span-2 bg-slate-800/40 border border-slate-700 rounded-2xl p-6 relative overflow-hidden group">
@@ -499,11 +538,7 @@ const filterTripleWin = (items: string[]) => items;
                       <span className="bg-indigo-500/20 text-indigo-300 text-[10px] font-black px-2 py-0.5 rounded border border-indigo-500/30 uppercase tracking-widest">
                         Draw Candidate
                       </span>
-                      {perc && (
-                        <span className="text-xs font-black text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                          {perc}
-                        </span>
-                      )}
+                      {perc && <PercBadge value={perc} scale="draw" />}
                     </div>
 
                     <div className="flex items-center gap-3 mb-3">
@@ -538,51 +573,32 @@ const filterTripleWin = (items: string[]) => items;
           </div>
         </div>
 
-        <div className="bg-slate-800/40 border border-slate-700 rounded-2xl p-6 flex flex-col">
-          <h3 className="text-lg font-bold flex items-center mb-4 text-pink-400">
+        <div className="bg-slate-800/40 border border-slate-700 rounded-2xl p-6">
+          <h3 className="text-xl font-bold flex items-center mb-1 text-pink-400">
             <i className="fas fa-plus-circle mr-3"></i>
             Over 5.5 Plus
           </h3>
+          <p className="text-xs text-slate-400 mb-5 font-medium leading-tight">
+            Jogos com elevado potencial de chuva de golos (6+ golos).
+          </p>
 
-          <div className="flex flex-wrap gap-2 mt-auto">
-         {filterSuggestionsByTime(suggestions.over55Suggestions).map((item, idx) => {
-  const { core, perc } = cleanSuggestionLabel(item);
-  const teamMatches = parseTeamsFromText(core);
-
-  return (
-    <div
-      key={idx}
-      className="bg-pink-500/5 hover:bg-pink-500/10 text-pink-300 px-3 py-2 rounded-xl text-[11px] font-bold border border-pink-500/20 transition-all flex items-center gap-2"
-    >
-      <div className="flex -space-x-1.5">
-        {teamMatches.map((abbr, i) => (
-          <img
-            key={`${abbr}-${i}`}
-            src={getLogoUrl(abbr)}
-            className="w-4 h-4 object-contain bg-slate-900 rounded-full p-0.5 border border-slate-700"
-            alt={abbr}
-            loading="lazy"
-            decoding="async"
-            onError={(e) => (e.currentTarget.style.display = "none")}
-          />
-        ))}
-      </div>
-
-      <span>{core}</span>
-
-      {perc && (
-        <span className="text-[9px] opacity-70 ml-1">
-          {perc}
-        </span>
-      )}
-    </div>
-  );
-})}
-            {suggestions.over55Suggestions.length === 0 && <span className="text-slate-600 text-sm italic">Nenhuma sugestão adicional.</span>}
+          <div className="space-y-3">
+            {filterSuggestionsByTime(suggestions.over55Suggestions).map((item, idx) => (
+              <SuggestionItem
+                key={`over55-${idx}`}
+                text={item}
+                badgeColor="bg-pink-500"
+                index={idx}
+                scale="o55"
+              />
+            ))}
+            {suggestions.over55Suggestions.length === 0 && (
+              <p className="text-slate-500 italic text-sm py-4">Nenhuma sugestão adicional.</p>
+            )}
           </div>
 
-          <p className="text-[10px] text-slate-500 mt-4 leading-tight uppercase tracking-wider font-bold">
-            Jogos com elevado potencial de chuva de golos.
+          <p className="text-[10px] text-slate-500 mt-4 leading-tight">
+            Só entram jogos com {SUGGESTION_RULES.over55.minProb}% ou mais.
           </p>
         </div>
       </div>
