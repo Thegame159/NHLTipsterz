@@ -30,12 +30,12 @@ export function setLeagueBaseline(b?: LeagueBaseline) {
 
 // razões low / watch / strong face à referência
 const RATIOS: Record<Exclude<MarketKey, "win">, [number, number, number]> = {
-  draw: [0.92, 0.99, 1.08],
-  over15P1: [0.90, 0.99, 1.07],
-  btts1P: [0.88, 0.99, 1.09],
-  over15P2: [0.91, 0.99, 1.06],
-  over45: [0.90, 0.99, 1.07],
-  over55: [0.85, 1.0, 1.12],
+  draw: [0.92, 0.98, 1.06],
+  over15P1: [0.90, 0.97, 1.05],
+  btts1P: [0.88, 0.97, 1.06],
+  over15P2: [0.91, 0.97, 1.04],
+  over45: [0.91, 0.97, 1.04],
+  over55: [0.85, 0.97, 1.08],
 };
 
 type Scale = { low: number; watch: number; strong: number; lo: number; hi: number };
