@@ -401,7 +401,7 @@ const GameTable: React.FC<Props> = ({ predictions, totalGames }) => {
                 <th className="py-4 pl-4 pr-4 w-[1%] text-[10px] font-black text-slate-300 uppercase tracking-widest">
                   Jogo
                 </th>
-                <th className="py-4 pl-3 text-left text-[10px] font-black text-slate-300 uppercase tracking-widest">
+                <th className="py-4 pl-3 pr-6 w-[1%] text-left text-[10px] font-black text-slate-300 uppercase tracking-widest">
                   Prob. Vitória
                 </th>
                 <th className="py-4 text-center text-[10px] font-black text-slate-300 uppercase tracking-widest">
