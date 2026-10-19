@@ -15,6 +15,8 @@ type ApiResultGame = {
   regHome: number;
   p1Away: number;
   p1Home: number;
+  p2Away?: number; // resultados antigos podem não ter o 2.º período
+  p2Home?: number;
   winnerAbbr: string | null;
 };
 
@@ -288,7 +290,7 @@ function findGame(results: ApiResultsResponse, a: string, b: string): ApiResultG
 // ─── Eval markets ─────────────────────────────────────────────────────────────
 
 function evalMarkets(sug: Suggestions, results: ApiResultsResponse): Record<string, PickEval[]> {
-  const evalGamePick = (text: string, fn: (g: ApiResultGame) => boolean): PickEval => {
+  const evalGamePick = (text: string, fn: (g: ApiResultGame) => boolean, hasData?: (g: ApiResultGame) => boolean): PickEval => {
     const cleaned = normalizeGameText(text);
     let teams = parseTeamsFromText(cleaned);
     if (teams.length < 2) {
@@ -302,6 +304,7 @@ function evalMarkets(sug: Suggestions, results: ApiResultsResponse): Record<stri
     const g = findGame(results, teams[0], teams[1]);
     if (!g) return { label: text, ok: null, teams, reason: "Jogo não encontrado na API." };
     if (g.status !== "FINAL") return { label: text, ok: null, teams, reason: "Jogo ainda não terminou." };
+    if (hasData && !hasData(g)) return { label: text, ok: null, teams, reason: "Dados do período indisponíveis." };
     return { label: text, ok: fn(g), teams };
   };
 
@@ -357,6 +360,9 @@ function evalMarkets(sug: Suggestions, results: ApiResultsResponse): Record<stri
     "Vitória (incl. OT)": (sug.tripleWin || []).map(evalWinTeam),
     "Over 1.5 P1 (Triplete)": (sug.tripleOver15P1 || []).map((t) => evalGamePick(t, (g) => g.p1Away + g.p1Home >= 2)),
     "Over 1.5 P1 (Dupla)": (sug.doubleOver15P1 || []).map((t) => evalGamePick(t, (g) => g.p1Away + g.p1Home >= 2)),
+    "Over 1.5 P2 (Triplete)": (sug.tripleOver15P2 || []).map((t) =>
+      evalGamePick(t, (g) => (g.p2Away ?? 0) + (g.p2Home ?? 0) >= 2, (g) => typeof g.p2Away === "number" && typeof g.p2Home === "number")
+    ),
     "Empate TR": (sug.drawSuggestions || []).map((d) => evalGamePick(d.game, (g) => g.regAway === g.regHome)),
     "Over 4.5": (sug.quadrupleOver45 || []).map((t) => evalGamePick(t, (g) => g.finalAway + g.finalHome >= 5)),
     "Over 5.5": (sug.over55Suggestions || []).map((t) => evalGamePick(t, (g) => g.finalAway + g.finalHome >= 6)),
@@ -622,6 +628,7 @@ const MarketBlock: React.FC<{
     "Vitória (incl. OT)": "fa-award",
     "Over 1.5 P1 (Triplete)": "fa-fire-alt",
     "Over 1.5 P1 (Dupla)": "fa-bolt",
+    "Over 1.5 P2 (Triplete)": "fa-fire-alt",
     "Empate TR": "fa-handshake",
     "Over 4.5": "fa-hockey-puck",
     "Over 5.5": "fa-plus-circle",

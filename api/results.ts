@@ -52,6 +52,8 @@ type GameResult = {
   regHome: number;
   p1Away: number;
   p1Home: number;
+  p2Away: number;
+  p2Home: number;
   winnerAbbr: string | null;
 };
 
@@ -96,19 +98,22 @@ function deriveResultFromGameData(
 
   let p1Away = 0;
   let p1Home = 0;
+  let p2Away = 0;
+  let p2Home = 0;
 
   for (const play of plays) {
-    if (
-      play?.typeDescKey === "goal" &&
-      play?.periodDescriptor?.number === 1
-    ) {
-      const scoringTeamId = play?.details?.eventOwnerTeamId;
+    if (play?.typeDescKey !== "goal") continue;
+    const period = play?.periodDescriptor?.number;
+    const scoringTeamId = play?.details?.eventOwnerTeamId;
+    const isAway = scoringTeamId === data?.awayTeam?.id;
+    const isHome = scoringTeamId === data?.homeTeam?.id;
 
-      if (scoringTeamId === data?.awayTeam?.id) {
-        p1Away++;
-      } else if (scoringTeamId === data?.homeTeam?.id) {
-        p1Home++;
-      }
+    if (period === 1) {
+      if (isAway) p1Away++;
+      else if (isHome) p1Home++;
+    } else if (period === 2) {
+      if (isAway) p2Away++;
+      else if (isHome) p2Home++;
     }
   }
 
@@ -147,6 +152,8 @@ function deriveResultFromGameData(
     regHome,
     p1Away,
     p1Home,
+    p2Away,
+    p2Home,
     winnerAbbr,
   };
 }
@@ -210,6 +217,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             regHome: 0,
             p1Away: 0,
             p1Home: 0,
+            p2Away: 0,
+            p2Home: 0,
             winnerAbbr: null,
           } satisfies GameResult;
         }
