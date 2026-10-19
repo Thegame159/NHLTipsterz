@@ -36,17 +36,48 @@ const getBarColor = (v: number) => {
   return 'bg-gradient-to-r from-emerald-500 to-green-600';
 };
 
-const ProbabilityCell: React.FC<{ value?: number }> = ({ value }) => {
+// Empate: escala própria (a média anda nos ~22–23%): ≤21 vermelho · 22–24 laranja · 25 verde · 26+ forte
+const drawLevel = (v: number) => (v < 21.5 ? 0 : v < 24.5 ? 1 : v < 25.5 ? 2 : 3);
+// ★ de destaque: a partir de 23,5% (24% já é de ter em conta)
+const drawStar = (v: number) => v >= 23.5;
+const DRAW_BADGE = [
+  'text-rose-400 border-rose-500/30 bg-rose-500/10',
+  'text-amber-400 border-amber-500/30 bg-amber-500/10',
+  'text-green-400 border-green-500/30 bg-green-500/10',
+  'text-emerald-300 border-emerald-400/60 bg-emerald-500/15 ring-1 ring-emerald-400/40 shadow-[0_0_12px_rgba(16,185,129,0.3)]',
+];
+const DRAW_BAR = [
+  'bg-gradient-to-r from-rose-500 to-red-500',
+  'bg-gradient-to-r from-yellow-500 to-amber-500',
+  'bg-gradient-to-r from-green-500 to-emerald-500',
+  'bg-gradient-to-r from-emerald-400 to-green-500',
+];
+
+const ProbabilityCell: React.FC<{ value?: number; draw?: boolean }> = ({ value, draw }) => {
   const val = safeNum(value);
+  const lvl = drawLevel(val);
+  const badgeCls = draw ? DRAW_BADGE[lvl] : getColorClass(val);
+  const barCls = draw ? DRAW_BAR[lvl] : getBarColor(val);
+  const barW = draw ? Math.max(6, Math.min(100, ((val - 15) / 15) * 100)) : val;
   return (
     <div className="flex flex-col items-center justify-center min-w-[80px]">
-      <div className={`px-4 py-1.5 rounded-lg border font-black text-sm mb-1.5 ${getColorClass(val)}`}>
-        {Math.round(val)}%
+      <div className="relative">
+        <div className={`px-4 py-1.5 rounded-lg border font-black text-sm mb-1.5 ${badgeCls}`}>
+          {Math.round(val)}%
+        </div>
+        {draw && drawStar(val) && (
+          <span
+            title="Empate acima da média"
+            className={`absolute -top-2 -right-2 w-[18px] h-[18px] rounded-full bg-slate-950 border flex items-center justify-center text-[10px] leading-none ${lvl >= 2 ? 'border-emerald-400 text-emerald-300' : 'border-amber-400 text-amber-300'}`}
+          >
+            ★
+          </span>
+        )}
       </div>
       <div className="w-full h-1 bg-slate-800 rounded-full overflow-hidden max-w-[60px]">
         <div
-          className={`h-full ${getBarColor(val)} transition-all duration-700`}
-          style={{ width: `${val}%` }}
+          className={`h-full ${barCls} transition-all duration-700`}
+          style={{ width: `${barW}%` }}
         />
       </div>
     </div>
@@ -199,7 +230,7 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
         </td>
 
         {/* COLUNAS: Probabilidades */}
-        <td className="py-6 text-center"><ProbabilityCell value={drawProb} /></td>
+        <td className="py-6 text-center"><ProbabilityCell value={drawProb} draw /></td>
         <td className="py-6 text-center"><ProbabilityCell value={over15P1} /></td>
         <td className="py-6 text-center"><ProbabilityCell value={bttsP1} /></td>
         <td className="py-6 text-center">
