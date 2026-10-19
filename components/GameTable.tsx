@@ -36,10 +36,19 @@ const getBarColor = (v: number) => {
   return 'bg-gradient-to-r from-emerald-500 to-green-600';
 };
 
-// Empate: escala própria (a média anda nos ~22–23%): ≤21 vermelho · 22–24 laranja · 25 verde · 26+ forte
-const drawLevel = (v: number) => (v < 21.5 ? 0 : v < 24.5 ? 1 : v < 25.5 ? 2 : 3);
-// ★ de destaque: a partir de 23,5% (24% já é de ter em conta)
-const drawStar = (v: number) => v >= 23.5;
+// Escalas próprias por mercado (o modelo varia pouco à volta da média da liga):
+//  t = [fim do vermelho, fim do laranja, fim do verde] · star = a partir daqui aparece ★ · lo/hi = extremos da barra
+//  empate (média ~22–23%): ≤21 vermelho · 22–24 laranja · 25 verde · 26+ forte, ★ a partir de 24
+//  1.º período > 1.5 (média ~48%): ≤43 vermelho · 44–50 laranja · 51–52 verde · 53+ forte, ★ a partir de 49
+type ScaleKey = 'draw' | 'p1';
+const SCALES: Record<ScaleKey, { t: [number, number, number]; star: number; lo: number; hi: number }> = {
+  draw: { t: [21.5, 24.5, 25.5], star: 23.5, lo: 15, hi: 30 },
+  p1: { t: [43.5, 50.5, 52.5], star: 48.5, lo: 30, hi: 65 },
+};
+const levelOf = (k: ScaleKey, v: number) => {
+  const t = SCALES[k].t;
+  return v < t[0] ? 0 : v < t[1] ? 1 : v < t[2] ? 2 : 3;
+};
 const DRAW_BADGE = [
   'text-rose-400 border-rose-500/30 bg-rose-500/10',
   'text-amber-400 border-amber-500/30 bg-amber-500/10',
@@ -53,21 +62,21 @@ const DRAW_BAR = [
   'bg-gradient-to-r from-emerald-400 to-green-500',
 ];
 
-const ProbabilityCell: React.FC<{ value?: number; draw?: boolean }> = ({ value, draw }) => {
+const ProbabilityCell: React.FC<{ value?: number; scale?: ScaleKey }> = ({ value, scale }) => {
   const val = safeNum(value);
-  const lvl = drawLevel(val);
-  const badgeCls = draw ? DRAW_BADGE[lvl] : getColorClass(val);
-  const barCls = draw ? DRAW_BAR[lvl] : getBarColor(val);
-  const barW = draw ? Math.max(6, Math.min(100, ((val - 15) / 15) * 100)) : val;
+  const lvl = scale ? levelOf(scale, val) : 0;
+  const badgeCls = scale ? DRAW_BADGE[lvl] : getColorClass(val);
+  const barCls = scale ? DRAW_BAR[lvl] : getBarColor(val);
+  const barW = scale ? Math.max(6, Math.min(100, ((val - SCALES[scale].lo) / (SCALES[scale].hi - SCALES[scale].lo)) * 100)) : val;
   return (
     <div className="flex flex-col items-center justify-center min-w-[80px]">
       <div className="relative">
         <div className={`px-4 py-1.5 rounded-lg border font-black text-sm mb-1.5 ${badgeCls}`}>
           {Math.round(val)}%
         </div>
-        {draw && drawStar(val) && (
+        {scale && val >= SCALES[scale].star && (
           <span
-            title="Empate acima da média"
+            title="Acima da média neste mercado"
             className={`absolute -top-2 -right-2 w-[18px] h-[18px] rounded-full bg-slate-950 border flex items-center justify-center text-[10px] leading-none ${lvl >= 2 ? 'border-emerald-400 text-emerald-300' : 'border-amber-400 text-amber-300'}`}
           >
             ★
@@ -230,8 +239,8 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
         </td>
 
         {/* COLUNAS: Probabilidades */}
-        <td className="py-6 text-center"><ProbabilityCell value={drawProb} draw /></td>
-        <td className="py-6 text-center"><ProbabilityCell value={over15P1} /></td>
+        <td className="py-6 text-center"><ProbabilityCell value={drawProb} scale="draw" /></td>
+        <td className="py-6 text-center"><ProbabilityCell value={over15P1} scale="p1" /></td>
         <td className="py-6 text-center"><ProbabilityCell value={bttsP1} /></td>
         <td className="py-6 text-center">
           {typeof game.over15P2Prob === 'number' ? <ProbabilityCell value={game.over15P2Prob} /> : <span className="text-slate-700">–</span>}
