@@ -1,6 +1,5 @@
 // src/components/GameTable.tsx
 
-import { MarketKey, tierOf, barPct, TIER_BADGE, TIER_BAR } from '../utils/marketScale';
 import React, { useState } from 'react';
 import { GamePrediction } from '../types';
 import {
@@ -23,18 +22,31 @@ const safeNum = (v: any): number => {
 
 // ─── Célula de probabilidade ────────────────────────────────────────────────
 
-const ProbabilityCell: React.FC<{ value?: number; market: MarketKey }> = ({ value, market }) => {
+const getColorClass = (v: number) => {
+  if (v <= 30) return 'text-rose-400 border-rose-500/30 bg-rose-500/10';
+  if (v <= 49) return 'text-amber-400 border-amber-500/30 bg-amber-500/10';
+  if (v <= 69) return 'text-green-400 border-green-500/30 bg-green-500/10';
+  return 'text-emerald-400 border-emerald-600/40 bg-emerald-500/10';
+};
+
+const getBarColor = (v: number) => {
+  if (v <= 30) return 'bg-gradient-to-r from-rose-500 to-red-500';
+  if (v <= 49) return 'bg-gradient-to-r from-yellow-500 to-amber-500';
+  if (v <= 69) return 'bg-gradient-to-r from-green-500 to-emerald-500';
+  return 'bg-gradient-to-r from-emerald-500 to-green-600';
+};
+
+const ProbabilityCell: React.FC<{ value?: number }> = ({ value }) => {
   const val = safeNum(value);
-  const tier = tierOf(market, val);
   return (
     <div className="flex flex-col items-center justify-center min-w-[80px]">
-      <div className={`px-4 py-1.5 rounded-lg border font-black text-sm mb-1.5 ${TIER_BADGE[tier]}`}>
+      <div className={`px-4 py-1.5 rounded-lg border font-black text-sm mb-1.5 ${getColorClass(val)}`}>
         {Math.round(val)}%
       </div>
       <div className="w-full h-1 bg-slate-800 rounded-full overflow-hidden max-w-[60px]">
         <div
-          className={`h-full ${TIER_BAR[tier]} transition-all duration-700`}
-          style={{ width: `${barPct(market, val)}%` }}
+          className={`h-full ${getBarColor(val)} transition-all duration-700`}
+          style={{ width: `${val}%` }}
         />
       </div>
     </div>
@@ -58,7 +70,6 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
   // Jogo equilibrado: nenhuma das equipas tem destaque (dados antigos, sem o campo, usam a diferença de pontos)
   const isEven = game.favorite ? game.favorite === 'even' : Math.abs(winHome - winAway) <= 2;
   const maxProb = Math.max(winHome, winAway);
-  const winTier = isEven ? 'normal' : tierOf('win', maxProb);
 
   const homeTeam = game.homeTeamAbbr || game.homeTeam || '';
   const awayTeam = game.awayTeamAbbr || game.awayTeam || '';
@@ -161,7 +172,7 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
               <span>Fora: {winAway.toFixed(1)}%</span>
             </div>
 
-            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border font-black text-xs min-w-[100px] justify-center ${TIER_BADGE[winTier]}`}>
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border font-black text-xs min-w-[100px] justify-center ${getColorClass(maxProb)}`}>
               {Math.round(maxProb)}%
               <span className="text-[8px] opacity-60 ml-1">
                 {isEven ? 'EQUIL.' : isHomeFav ? 'CASA' : 'FORA'}
@@ -170,8 +181,13 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
 
             <div className="w-full h-1 bg-slate-800 rounded-full mt-2 max-w-[100px] overflow-hidden">
               <div
-                className={`h-full transition-all duration-700 ${TIER_BAR[winTier]}`}
-                style={{ width: `${barPct('win', maxProb)}%` }}
+                className={`h-full transition-all duration-700 ${
+                  maxProb <= 30 ? 'bg-rose-500' :
+                  maxProb <= 49 ? 'bg-amber-500' :
+                  maxProb <= 69 ? 'bg-green-500' :
+                  'bg-emerald-500'
+                }`}
+                style={{ width: `${maxProb}%` }}
               />
             </div>
 
@@ -183,13 +199,13 @@ const GameRow: React.FC<{ game: GamePrediction }> = ({ game }) => {
         </td>
 
         {/* COLUNAS: Probabilidades */}
-        <td className="py-6 text-center"><ProbabilityCell value={drawProb} market="draw" /></td>
-        <td className="py-6 text-center"><ProbabilityCell value={over15P1} market="over15P1" /></td>
-        <td className="py-6 text-center"><ProbabilityCell value={bttsP1} market="btts1P" /></td>
+        <td className="py-6 text-center"><ProbabilityCell value={drawProb} /></td>
+        <td className="py-6 text-center"><ProbabilityCell value={over15P1} /></td>
+        <td className="py-6 text-center"><ProbabilityCell value={bttsP1} /></td>
         <td className="py-6 text-center">
-          {typeof game.over15P2Prob === 'number' ? <ProbabilityCell value={game.over15P2Prob} market="over15P2" /> : <span className="text-slate-700">–</span>}
+          {typeof game.over15P2Prob === 'number' ? <ProbabilityCell value={game.over15P2Prob} /> : <span className="text-slate-700">–</span>}
         </td>
-        <td className="py-6 text-center pr-4"><ProbabilityCell value={over45} market="over45" /></td>
+        <td className="py-6 text-center pr-4"><ProbabilityCell value={over45} /></td>
       </tr>
 
       {/* PAINEL EXPANDIDO */}
@@ -340,16 +356,6 @@ const GameTable: React.FC<Props> = ({ predictions, totalGames }) => {
           {gamesList.length} {gamesList.length === 1 ? 'jogo' : 'jogos'}
           {typeof totalGames === 'number' && totalGames > gamesList.length ? ` (de ${totalGames} hoje)` : ''}
         </span>
-      </div>
-
-      {/* Legenda das cores (relativas a cada mercado) */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[10px] text-slate-500">
-        <span className="font-black uppercase tracking-widest text-[9px]">Cores</span>
-        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded border border-rose-500/40 bg-rose-500/20" /> abaixo do habitual</span>
-        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded border border-amber-500/40 bg-amber-500/20" /> habitual</span>
-        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded border border-green-500/40 bg-green-500/20" /> acima da média</span>
-        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded border border-emerald-400/70 bg-emerald-500/30 ring-1 ring-emerald-400/40" /> forte (critério das Escolhas Fortes)</span>
-        <span className="text-slate-600">· cada coluna tem a sua escala: 27% de empate pesa mais que 47% em 1ºP &gt; 1.5</span>
       </div>
 
       {/* Estado vazio */}
