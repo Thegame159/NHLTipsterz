@@ -174,8 +174,8 @@ const GameRow: React.FC<{ game: GamePrediction; tops: Tops }> = ({ game, tops })
 
         {/* COLUNA: Prob. Vitória (favorito em pílula, barra e o outro lado por baixo) */}
         <td className="py-4 pl-3 pr-6">
-          <div className="flex flex-col items-start gap-1.5">
-            <div className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg border font-black text-sm ${getColorClass(maxProb)}`}>
+          <div className="flex flex-col items-stretch gap-1.5 w-[130px]">
+            <div className={`flex items-center justify-center gap-2 px-2.5 py-1.5 rounded-lg border font-black text-sm ${getColorClass(maxProb)}`}>
               <img
                 src={getLogoUrl(favTeam)}
                 className="w-5 h-5 object-contain shrink-0"
@@ -183,10 +183,9 @@ const GameRow: React.FC<{ game: GamePrediction; tops: Tops }> = ({ game, tops })
                 onError={(e) => (e.currentTarget.src = FALLBACK_LOGO)}
               />
               {Math.round(maxProb)}%
-              <span className="text-[8px] opacity-70">{isEven ? 'EQUIL.' : isHomeFav ? 'CASA' : 'FORA'}</span>
             </div>
 
-            <div className="w-full h-1 bg-slate-800 rounded-full max-w-[130px] overflow-hidden">
+            <div className="w-full h-1 bg-slate-800 rounded-full overflow-hidden">
               <div
                 className={`h-full transition-all duration-700 ${
                   maxProb <= 30 ? 'bg-rose-500' :

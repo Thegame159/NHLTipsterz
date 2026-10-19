@@ -254,11 +254,6 @@ const App: React.FC = () => {
               🔄
             </button>
           </div>
-
-          <div className="bg-orange-600/5 px-3 py-1.5 rounded-lg border border-orange-600/10 flex items-center gap-2">
-            <div className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse" />
-            <span className="text-[9px] font-black text-slate-400">LIVE</span>
-          </div>
         </div>
       </header>
 
