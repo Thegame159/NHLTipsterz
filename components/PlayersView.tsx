@@ -4,7 +4,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { GamePrediction, GamePlayers, PlayerCard, TeamPlayers } from '../types';
-import { getLogoUrl, teamLabel } from '../utils/nhlUtils';
+import { getLogoUrl, retryLightLogo, teamLabel } from '../utils/nhlUtils';
 import { ScaleKey, levelOf, hasStar, SCALE_BADGE, STAR_CLASS } from '../utils/marketScale';
 
 interface Props {
@@ -209,7 +209,7 @@ const TeamBlock: React.FC<{ team: TeamPlayers; focus: Focus | null }> = ({ team,
           alt={team.abbr}
           className="w-7 h-7 object-contain bg-slate-800 rounded-full p-1 border border-slate-700"
           loading="lazy"
-          onError={(e) => (e.currentTarget.style.display = 'none')}
+          onError={(e) => { if (!retryLightLogo(e.currentTarget)) { e.currentTarget.style.display = 'none'; } }}
         />
         <span className="font-black text-white">{teamLabel(team.abbr)}</span>
       </div>
@@ -245,7 +245,7 @@ const TeamChip: React.FC<{ abbr: string; align: 'left' | 'right' }> = ({ abbr, a
       alt={abbr}
       className="w-10 h-10 sm:w-11 sm:h-11 object-contain shrink-0 bg-slate-800/80 rounded-full p-1.5 border border-slate-700"
       loading="lazy"
-      onError={(e) => (e.currentTarget.style.visibility = 'hidden')}
+      onError={(e) => { if (!retryLightLogo(e.currentTarget)) { e.currentTarget.style.visibility = 'hidden'; } }}
     />
     <span className="font-black text-white text-sm sm:text-base truncate">{teamLabel(abbr)}</span>
   </div>
@@ -389,7 +389,7 @@ const TripleCard: React.FC<{ pages: Pick[][]; mode: Mode; onPick: (x: Pick) => v
               src={getLogoUrl(x.abbr)}
               alt={x.abbr}
               className="w-7 h-7 object-contain shrink-0 bg-slate-800 rounded-full p-0.5 border border-slate-700"
-              onError={(e) => (e.currentTarget.style.visibility = 'hidden')}
+              onError={(e) => { if (!retryLightLogo(e.currentTarget)) { e.currentTarget.style.visibility = 'hidden'; } }}
             />
             <div className="min-w-0 flex-1">
               <div className="font-bold text-sm text-slate-100 truncate group-hover:text-orange-300">

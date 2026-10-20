@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { GamePrediction, Suggestions } from "../types";
+import { retryLightLogo } from "../utils/nhlUtils";
 
 interface Props {
   predictions: GamePrediction[];
@@ -45,7 +46,7 @@ const getLogoUrl = (abbr: string) => {
   };
   const normalized = (abbr || "").trim().toUpperCase();
   const code = map[normalized] || normalized.toLowerCase();
-  return `https://a.espncdn.com/i/teamlogos/nhl/500/${code}.png`;
+  return `https://a.espncdn.com/i/teamlogos/nhl/500-dark/${code}.png`;
 };
 
 const normalizeGameText = (s: string) => {
@@ -203,7 +204,7 @@ const IconDropdown: React.FC<{
                       alt={abbr}
                       loading="lazy"
                       decoding="async"
-                      onError={(e) => (e.currentTarget.style.display = "none")}
+                      onError={(e) => { if (!retryLightLogo(e.currentTarget)) { e.currentTarget.style.display = "none"; } }}
                       style={{ zIndex: 10 - i }}
                     />
                   ))}
@@ -250,7 +251,7 @@ const IconDropdown: React.FC<{
                         alt={abbr}
                         loading="lazy"
                         decoding="async"
-                        onError={(e) => (e.currentTarget.style.display = "none")}
+                        onError={(e) => { if (!retryLightLogo(e.currentTarget)) { e.currentTarget.style.display = "none"; } }}
                         style={{ zIndex: 10 - i }}
                       />
                     ))}
@@ -299,7 +300,7 @@ const PickLine: React.FC<{
                 alt={abbr}
                 loading="lazy"
                 decoding="async"
-                onError={(e) => (e.currentTarget.style.display = "none")}
+                onError={(e) => { if (!retryLightLogo(e.currentTarget)) { e.currentTarget.style.display = "none"; } }}
                 style={{ zIndex: 10 - i }}
               />
             ))}
@@ -797,7 +798,7 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
                           <img
                             src={logo}
                             className="w-8 h-8 bg-slate-800 rounded-full p-1 border border-slate-700 shadow"
-                            onError={(e) => (e.currentTarget.style.display = "none")}
+                            onError={(e) => { if (!retryLightLogo(e.currentTarget)) { e.currentTarget.style.display = "none"; } }}
                           />
                           <div>
                             <span className="text-slate-200 font-bold text-sm">

@@ -26,7 +26,16 @@ export const getLogoUrl = (abbr: string): string => {
 
   const normalized = abbr?.toUpperCase();
   const code = map[normalized] ?? normalized?.toLowerCase();
-  return `https://a.espncdn.com/i/teamlogos/nhl/500/${code}.png`;
+  return `https://a.espncdn.com/i/teamlogos/nhl/500-dark/${code}.png`;
+};
+
+// Se a versão "dark" do logo não existir, volta ao logo normal. Devolve true se trocou.
+export const retryLightLogo = (img: HTMLImageElement): boolean => {
+  if (img.src.includes('/500-dark/')) {
+    img.src = img.src.replace('/500-dark/', '/500/');
+    return true;
+  }
+  return false;
 };
 
 export const FALLBACK_LOGO = 'https://a.espncdn.com/i/teamlogos/nhl/500/scoreboard/nhl.png';

@@ -5,6 +5,7 @@ import { GamePrediction } from '../types';
 import { ScaleKey, levelOf, hasStar, barWidth, SCALE_BADGE, SCALE_BAR } from '../utils/marketScale';
 import {
   getLogoUrl,
+  retryLightLogo,
   FALLBACK_LOGO,
   teamLabel,
   formatTime,
@@ -79,7 +80,7 @@ const TeamBlock: React.FC<{ abbr: string; strong: boolean; record?: string; game
       src={getLogoUrl(abbr)}
       className="w-7 h-7 object-contain drop-shadow-sm shrink-0"
       alt={abbr}
-      onError={(e) => (e.currentTarget.src = FALLBACK_LOGO)}
+      onError={(e) => { if (!retryLightLogo(e.currentTarget)) { e.currentTarget.src = FALLBACK_LOGO; } }}
     />
     <div>
       <div className={`font-black text-base leading-tight whitespace-nowrap ${strong ? 'text-white' : 'text-slate-400'}`}>{teamLabel(abbr)}</div>
@@ -180,7 +181,7 @@ const GameRow: React.FC<{ game: GamePrediction; tops: Tops }> = ({ game, tops })
                 src={getLogoUrl(favTeam)}
                 className="w-5 h-5 object-contain shrink-0"
                 alt={favTeam}
-                onError={(e) => (e.currentTarget.src = FALLBACK_LOGO)}
+                onError={(e) => { if (!retryLightLogo(e.currentTarget)) { e.currentTarget.src = FALLBACK_LOGO; } }}
               />
               {Math.round(maxProb)}%
             </div>
@@ -202,7 +203,7 @@ const GameRow: React.FC<{ game: GamePrediction; tops: Tops }> = ({ game, tops })
                 src={getLogoUrl(dogTeam)}
                 className="w-3.5 h-3.5 object-contain shrink-0 opacity-80"
                 alt={dogTeam}
-                onError={(e) => (e.currentTarget.src = FALLBACK_LOGO)}
+                onError={(e) => { if (!retryLightLogo(e.currentTarget)) { e.currentTarget.src = FALLBACK_LOGO; } }}
               />
               {teamLabel(dogTeam)} {100 - Math.round(maxProb)}%
             </div>

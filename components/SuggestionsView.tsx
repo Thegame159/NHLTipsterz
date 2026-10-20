@@ -4,6 +4,7 @@ import React from "react";
 import { Suggestions, GamePrediction as Prediction } from "../types";
 import { STRONG_RULES, COMBO_RULES, SUGGESTION_RULES } from "../utils/suggestions";
 import { ScaleKey, levelOf, hasStar, SCALE_BADGE, STAR_CLASS } from "../utils/marketScale";
+import { retryLightLogo } from "../utils/nhlUtils";
 
 // Percentagem com a cor (e ★) da escala do mercado, igual à do ecrã Jogos.
 // Sem `scale` (ex.: vitória) usa as cores gerais.
@@ -125,7 +126,7 @@ const getLogoUrl = (abbr: string) => {
   };
   const normalizedAbbr = abbr?.trim().toUpperCase();
   const code = map[normalizedAbbr] || normalizedAbbr?.toLowerCase();
-  return `https://a.espncdn.com/i/teamlogos/nhl/500/${code}.png`;
+  return `https://a.espncdn.com/i/teamlogos/nhl/500-dark/${code}.png`;
   };
   const TEAM_SHORT_NAMES: Record<string, string> = {
   ANA: "Ducks",
@@ -375,7 +376,7 @@ const teamMatches = parseTeamsFromText(text);
                 alt={abbr}
                 loading="lazy"
                 decoding="async"
-                onError={(e) => (e.currentTarget.style.display = "none")}
+                onError={(e) => { if (!retryLightLogo(e.currentTarget)) { e.currentTarget.style.display = "none"; } }}
                 style={{ zIndex: 10 - i }}
               />
             ))}
@@ -489,7 +490,7 @@ const filterTripleWin = (items: string[]) => items;
                         alt={abbr}
                         loading="lazy"
                         decoding="async"
-                        onError={(e) => (e.currentTarget.style.display = "none")}
+                        onError={(e) => { if (!retryLightLogo(e.currentTarget)) { e.currentTarget.style.display = "none"; } }}
                       />
                     ))}
                   </div>
@@ -599,7 +600,7 @@ const filterTripleWin = (items: string[]) => items;
                               alt={abbr}
                               loading="lazy"
                               decoding="async"
-                              onError={(e) => (e.currentTarget.style.display = "none")}
+                              onError={(e) => { if (!retryLightLogo(e.currentTarget)) { e.currentTarget.style.display = "none"; } }}
                             />
                           ))}
                         </div>
@@ -678,7 +679,7 @@ const filterTripleWin = (items: string[]) => items;
                   alt={leg.team}
                   loading="lazy"
                   decoding="async"
-                  onError={(e) => (e.currentTarget.style.display = "none")}
+                  onError={(e) => { if (!retryLightLogo(e.currentTarget)) { e.currentTarget.style.display = "none"; } }}
                 />
                 <div className="flex-1 min-w-0">
                   <p className="font-bold text-slate-100 leading-tight truncate">{teamLabel(leg.team)}</p>

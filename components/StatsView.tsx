@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Suggestions } from "../types";
 import { usePlayerPicks, PlayerPicksSummary, PlayerDayPicks } from "./PlayerPicksStats";
+import { retryLightLogo } from "../utils/nhlUtils";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -205,7 +206,7 @@ const getLogoUrl = (abbr: string) => {
   };
   const normalized = (abbr || "").trim().toUpperCase();
   const code = map[normalized] || normalized.toLowerCase();
-  return `https://a.espncdn.com/i/teamlogos/nhl/500/${code}.png`;
+  return `https://a.espncdn.com/i/teamlogos/nhl/500-dark/${code}.png`;
 };
 
 // ─── Manual API ───────────────────────────────────────────────────────────────
@@ -432,7 +433,7 @@ const TeamLogo: React.FC<{ abbr: string; size?: string }> = ({ abbr, size = "w-6
     alt={abbr}
     loading="lazy"
     decoding="async"
-    onError={(e) => (e.currentTarget.style.display = "none")}
+    onError={(e) => { if (!retryLightLogo(e.currentTarget)) { e.currentTarget.style.display = "none"; } }}
   />
 );
 

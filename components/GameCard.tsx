@@ -3,7 +3,7 @@
 import React from 'react';
 import { GamePrediction } from '../types';
 import ProbabilityBadge from './ProbabilityBadge';
-import { getLogoUrl, FALLBACK_LOGO, teamLabel, formatTime } from '../utils/nhlUtils';
+import { getLogoUrl, retryLightLogo, FALLBACK_LOGO, teamLabel, formatTime } from '../utils/nhlUtils';
 
 interface Props {
   prediction: GamePrediction;
@@ -37,6 +37,7 @@ const GameCard: React.FC<Props> = ({ prediction }) => {
               loading="lazy"
               onError={(e) => {
                 const t = e.currentTarget;
+                if (retryLightLogo(t)) return;
                 if (!t.src.includes('scoreboard')) t.src = FALLBACK_LOGO;
               }}
             />
@@ -69,6 +70,7 @@ const GameCard: React.FC<Props> = ({ prediction }) => {
               loading="lazy"
               onError={(e) => {
                 const t = e.currentTarget;
+                if (retryLightLogo(t)) return;
                 if (!t.src.includes('scoreboard')) t.src = FALLBACK_LOGO;
               }}
             />
