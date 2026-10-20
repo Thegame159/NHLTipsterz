@@ -1,5 +1,10 @@
 // src/utils/nhlUtils.ts
 
+// Equipas cuja versão "dark" da ESPN não fica bem: usam o logo normal.
+const NORMAL_LOGO_TEAMS = new Set(['tor', 'van']);
+export const logoUrlFor = (code: string): string =>
+  `https://a.espncdn.com/i/teamlogos/nhl/${NORMAL_LOGO_TEAMS.has(code) ? '500' : '500-dark'}/${code}.png`;
+
 export const getLogoUrl = (abbr: string): string => {
   const map: Record<string, string> = {
     TBL: 'tb',   TB: 'tb',
@@ -26,7 +31,7 @@ export const getLogoUrl = (abbr: string): string => {
 
   const normalized = abbr?.toUpperCase();
   const code = map[normalized] ?? normalized?.toLowerCase();
-  return `https://a.espncdn.com/i/teamlogos/nhl/500-dark/${code}.png`;
+  return logoUrlFor(code);
 };
 
 // Se a versão "dark" do logo não existir, volta ao logo normal. Devolve true se trocou.

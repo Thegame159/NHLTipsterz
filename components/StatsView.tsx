@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Suggestions } from "../types";
 import { usePlayerPicks, PlayerPicksSummary, PlayerDayPicks } from "./PlayerPicksStats";
-import { retryLightLogo } from "../utils/nhlUtils";
+import { retryLightLogo, logoUrlFor } from "../utils/nhlUtils";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -206,7 +206,7 @@ const getLogoUrl = (abbr: string) => {
   };
   const normalized = (abbr || "").trim().toUpperCase();
   const code = map[normalized] || normalized.toLowerCase();
-  return `https://a.espncdn.com/i/teamlogos/nhl/500-dark/${code}.png`;
+  return logoUrlFor(code);
 };
 
 // ─── Manual API ───────────────────────────────────────────────────────────────

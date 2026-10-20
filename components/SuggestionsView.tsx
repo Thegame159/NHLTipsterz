@@ -4,7 +4,7 @@ import React from "react";
 import { Suggestions, GamePrediction as Prediction } from "../types";
 import { STRONG_RULES, COMBO_RULES, SUGGESTION_RULES } from "../utils/suggestions";
 import { ScaleKey, levelOf, hasStar, SCALE_BADGE, STAR_CLASS } from "../utils/marketScale";
-import { retryLightLogo } from "../utils/nhlUtils";
+import { retryLightLogo, logoUrlFor } from "../utils/nhlUtils";
 
 // Percentagem com a cor (e ★) da escala do mercado, igual à do ecrã Jogos.
 // Sem `scale` (ex.: vitória) usa as cores gerais.
@@ -126,7 +126,7 @@ const getLogoUrl = (abbr: string) => {
   };
   const normalizedAbbr = abbr?.trim().toUpperCase();
   const code = map[normalizedAbbr] || normalizedAbbr?.toLowerCase();
-  return `https://a.espncdn.com/i/teamlogos/nhl/500-dark/${code}.png`;
+  return logoUrlFor(code);
   };
   const TEAM_SHORT_NAMES: Record<string, string> = {
   ANA: "Ducks",

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { GamePrediction, Suggestions } from "../types";
-import { retryLightLogo } from "../utils/nhlUtils";
+import { retryLightLogo, logoUrlFor } from "../utils/nhlUtils";
 
 interface Props {
   predictions: GamePrediction[];
@@ -46,7 +46,7 @@ const getLogoUrl = (abbr: string) => {
   };
   const normalized = (abbr || "").trim().toUpperCase();
   const code = map[normalized] || normalized.toLowerCase();
-  return `https://a.espncdn.com/i/teamlogos/nhl/500-dark/${code}.png`;
+  return logoUrlFor(code);
 };
 
 const normalizeGameText = (s: string) => {
