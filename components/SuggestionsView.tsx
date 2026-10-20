@@ -7,19 +7,54 @@ import { ScaleKey, levelOf, hasStar, SCALE_BADGE, STAR_CLASS } from "../utils/ma
 
 // Percentagem com a cor (e ★) da escala do mercado, igual à do ecrã Jogos.
 // Sem `scale` (ex.: vitória) usa as cores gerais.
-const PercBadge: React.FC<{ value: number | string; scale?: ScaleKey; className?: string }> = ({ value, scale, className = "" }) => {
+const TOP_RING = "outline outline-2 outline-offset-2 outline-amber-200/30";
+
+// "▲ TOP": valor mais alto do dia nesse mercado (igual ao ecrã Jogos).
+const TopTag: React.FC = () => (
+  <span className="text-[8px] font-black tracking-widest text-amber-200 whitespace-nowrap">▲ TOP</span>
+);
+
+// Marca como TOP o(s) valor(es) máximo(s) de uma lista (só se houver mais de 1 valor).
+const topFlags = (values: number[]): boolean[] => {
+  const valid = values.filter((v) => Number.isFinite(v));
+  if (valid.length < 2) return values.map(() => false);
+  const max = Math.max(...valid);
+  return values.map((v) => Number.isFinite(v) && v === max);
+};
+
+const percNumber = (text: string): number => parseFloat(cleanSuggestionLabel(text).perc.replace("%", ""));
+
+// Percentagem com a cor (e ★) da escala do mercado, igual à do ecrã Jogos.
+// Sem `scale` (ex.: vitória) usa as cores gerais.
+const PercBadge: React.FC<{ value: number | string; scale?: ScaleKey; className?: string; top?: boolean; stack?: boolean }> = ({ value, scale, className = "", top = false, stack = false }) => {
   const v = typeof value === "number" ? value : parseFloat(String(value).replace(",", "."));
   const label = typeof value === "number" ? `${value}%` : String(value);
+  const wrap = (badge: React.ReactNode) =>
+    top ? (
+      stack ? (
+        <span className="inline-flex flex-col items-end gap-0.5 shrink-0">
+          {badge}
+          <TopTag />
+        </span>
+      ) : (
+        <span className="inline-flex items-center gap-2 shrink-0">
+          <TopTag />
+          {badge}
+        </span>
+      )
+    ) : (
+      <>{badge}</>
+    );
   if (!scale || !Number.isFinite(v)) {
-    return (
-      <span className={`relative text-xs font-black text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 ${className}`}>
+    return wrap(
+      <span className={`relative text-xs font-black text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 ${top ? TOP_RING : ""} ${className}`}>
         {label}
       </span>
     );
   }
   const lvl = levelOf(scale, v);
-  return (
-    <span className={`relative text-xs font-black px-2 py-0.5 rounded border ${SCALE_BADGE[lvl]} ${className}`}>
+  return wrap(
+    <span className={`relative text-xs font-black px-2 py-0.5 rounded border ${SCALE_BADGE[lvl]} ${top ? TOP_RING : ""} ${className}`}>
       {label}
       {hasStar(scale, v) && (
         <span
@@ -309,7 +344,8 @@ const SuggestionItem: React.FC<{
   index: number;
   showFullNames?: boolean;
   scale?: ScaleKey;
-}> = ({ text, badgeColor, index, showFullNames, scale }) => {
+  top?: boolean;
+}> = ({ text, badgeColor, index, showFullNames, scale, top }) => {
  const { core, perc } = cleanSuggestionLabel(text);
 
 // ⚠️ Extrair equipas do texto original (ANTES da conversão)
@@ -350,7 +386,7 @@ const teamMatches = parseTeamsFromText(text);
 </span>
       </div>
 
-      {perc && <PercBadge value={perc} scale={scale} />}
+      {perc && <PercBadge value={perc} scale={scale} top={top} stack />}
     </div>
   );
 };
@@ -382,6 +418,7 @@ const SuggestionCard: React.FC<{
         {items.length > 0 ? (
           items.map((item, idx) => (
   <SuggestionItem
+    top={topFlags(items.map(percNumber))[idx]}
     key={`${title}-${idx}`}
     text={item}
     badgeColor={badgeColor}
@@ -410,6 +447,10 @@ const filterTripleWin = (items: string[]) => items;
 
     
     <div className="space-y-8 pb-24">
+      <p className="text-[10px] text-slate-500 font-bold -mb-4">
+        <span className="font-black tracking-widest text-amber-200 text-[9px]">▲ TOP</span> = valor mais alto do dia nesse mercado
+      </p>
+
       {/* ESCOLHAS FORTES: só mercados claramente acima do valor típico da liga */}
       <div className="bg-slate-800/40 border border-slate-700 rounded-2xl p-6 relative overflow-hidden">
         <div className="absolute top-0 left-0 w-1 h-full bg-amber-500"></div>
@@ -423,7 +464,11 @@ const filterTripleWin = (items: string[]) => items;
 
         {(suggestions.strongPicks ?? []).length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {(suggestions.strongPicks ?? []).map((pick, idx) => (
+            {(suggestions.strongPicks ?? []).map((pick, idx) => {
+              // TOP: o valor mais alto do dia nesse mercado (só com mais de 1 jogo no dia)
+              const marketMax = Math.max(...(suggestions.strongPicks ?? []).filter((x) => x.market === pick.market).map((x) => Number(x.prob)));
+              const isTop = (predictions?.length ?? 0) > 1 && Number(pick.prob) === marketMax;
+              return (
               <div
                 key={`${pick.game}-${pick.market}-${idx}`}
                 className="bg-slate-900/80 p-4 rounded-2xl border border-slate-700/50 hover:bg-slate-900 transition-all"
@@ -432,7 +477,7 @@ const filterTripleWin = (items: string[]) => items;
                   <span className="bg-amber-500/20 text-amber-300 text-[10px] font-black px-2 py-0.5 rounded border border-amber-500/30 uppercase tracking-widest">
                     {pick.market}
                   </span>
-                  <PercBadge value={pick.prob} scale={MARKET_SCALE[pick.market]} />
+                  <PercBadge value={pick.prob} scale={MARKET_SCALE[pick.market]} top={isTop} />
                 </div>
                 <div className="flex items-center gap-3">
                   <div className="flex -space-x-2">
@@ -456,7 +501,8 @@ const filterTripleWin = (items: string[]) => items;
                   </div>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <div className="text-center py-6 text-slate-500">
@@ -528,8 +574,9 @@ const filterTripleWin = (items: string[]) => items;
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {suggestions.drawSuggestions.length > 0 ? (
-              suggestions.drawSuggestions.map((s, idx) => {
+              suggestions.drawSuggestions.map((s, idx, arr) => {
                 const { core, perc } = cleanSuggestionLabel(s.game);
+                const drawTop = topFlags(arr.map((x) => percNumber(x.game)))[idx];
                 const teamMatches = parseTeamsFromText(core);
 
                 return (
@@ -538,7 +585,7 @@ const filterTripleWin = (items: string[]) => items;
                       <span className="bg-indigo-500/20 text-indigo-300 text-[10px] font-black px-2 py-0.5 rounded border border-indigo-500/30 uppercase tracking-widest">
                         Draw Candidate
                       </span>
-                      {perc && <PercBadge value={perc} scale="draw" />}
+                      {perc && <PercBadge value={perc} scale="draw" top={drawTop} />}
                     </div>
 
                     <div className="flex items-center gap-3 mb-3">
@@ -583,8 +630,9 @@ const filterTripleWin = (items: string[]) => items;
           </p>
 
           <div className="space-y-3">
-            {filterSuggestionsByTime(suggestions.over55Suggestions).map((item, idx) => (
+            {filterSuggestionsByTime(suggestions.over55Suggestions).map((item, idx, arr) => (
               <SuggestionItem
+                top={topFlags(arr.map(percNumber))[idx]}
                 key={`over55-${idx}`}
                 text={item}
                 badgeColor="bg-pink-500"
