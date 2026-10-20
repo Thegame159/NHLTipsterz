@@ -706,15 +706,27 @@ const StatsView: React.FC = () => {
   const processingRef = useRef(false);
   const playerPicks = usePlayerPicks();
 
+  const [historyStatus, setHistoryStatus] = useState<"loading" | "ok" | "error">("loading");
+
   const loadHistory = useCallback(async () => {
-    try {
-      const r = await fetch(`/api/history?limit=120&t=${Date.now()}`, { cache: "no-store" });
-      if (!r.ok) { setHistoryItems([]); return; }
-      const data = await r.json().catch(() => null);
-      setHistoryItems(Array.isArray(data?.items) ? data.items : []);
-    } catch {
-      setHistoryItems([]);
+    // até 3 tentativas; se falhar não apaga o que já está no ecrã
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const r = await fetch(`/api/history?limit=120&t=${Date.now()}`, { cache: "no-store" });
+        if (r.ok) {
+          const data = await r.json().catch(() => null);
+          if (Array.isArray(data?.items)) {
+            setHistoryItems(data.items);
+            setHistoryStatus("ok");
+            return;
+          }
+        }
+      } catch {
+        // tenta de novo
+      }
+      await new Promise((res) => setTimeout(res, 1200 * (attempt + 1)));
     }
+    setHistoryStatus("error");
   }, []);
 
   const loadAllManual = useCallback(async () => {
@@ -946,6 +958,26 @@ const StatsView: React.FC = () => {
   }, [openDate, editDate]);
 
   if (!dates.length) {
+    if (historyStatus === "loading") {
+      return (
+        <div className="py-20 text-center text-slate-500 text-[10px] font-black uppercase tracking-widest animate-pulse">
+          A carregar histórico…
+        </div>
+      );
+    }
+    if (historyStatus === "error") {
+      return (
+        <div className="py-20 text-center space-y-4">
+          <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest">Não consegui carregar o histórico.</p>
+          <button
+            onClick={() => { setHistoryStatus("loading"); loadHistory(); }}
+            className="text-[10px] font-black uppercase tracking-wider rounded-lg px-3 py-1.5 border bg-slate-800/60 border-slate-700 text-slate-300 hover:text-white hover:border-orange-500/50 transition-colors"
+          >
+            Tentar de novo
+          </button>
+        </div>
+      );
+    }
     return (
       <div className="py-20 text-center text-slate-600 text-[10px] font-black uppercase tracking-widest">
         Ainda não há histórico. Faz "Analisar" e guarda as tuas picks.

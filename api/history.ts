@@ -121,11 +121,8 @@ export default async function handler(
         .sort((a, b) => (a < b ? 1 : -1))
         .slice(0, limit);
 
-      const items: StoreItem[] = [];
-      for (const date of dates) {
-        const parsed = safeJsonParse(await redis.get(keyForDate(date)));
-        if (parsed) items.push(parsed);
-      }
+      const rows = await Promise.all(dates.map(async (date) => safeJsonParse(await redis.get(keyForDate(date)))));
+      const items: StoreItem[] = rows.filter(Boolean) as StoreItem[];
 
       return res.status(200).json({ ok: true, items });
     }

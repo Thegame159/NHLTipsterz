@@ -394,33 +394,33 @@ const GameTable: React.FC<Props> = ({ predictions, totalGames }) => {
           <p className="text-slate-500 text-sm">Sem jogos disponíveis para esta data.</p>
         </div>
       ) : (
-        <div className="w-full overflow-x-auto rounded-2xl border border-slate-800 bg-slate-800/20 shadow-2xl backdrop-blur-sm">
+        <div className="w-full overflow-x-auto [@media(min-width:1040px)]:overflow-visible rounded-2xl border border-slate-800 bg-slate-800/20 shadow-2xl">
           <table className="w-full text-left border-collapse min-w-[990px]">
             <thead>
-              <tr className="bg-slate-900/80 border-b border-slate-700">
-                <th className="py-4 pl-4 pr-4 w-[1%] text-[10px] font-black text-slate-300 uppercase tracking-widest">
+              <tr>
+                <th className="sticky top-0 z-20 bg-slate-900 shadow-[inset_0_-1px_0_#334155,0_0_0_0.5px_#0f172a] first:rounded-tl-2xl last:rounded-tr-2xl py-4 pl-4 pr-4 w-[1%] text-[10px] font-black text-slate-300 uppercase tracking-widest">
                   Jogo
                 </th>
-                <th className="py-4 pl-3 pr-6 w-[1%] text-left text-[10px] font-black text-slate-300 uppercase tracking-widest">
+                <th className="sticky top-0 z-20 bg-slate-900 shadow-[inset_0_-1px_0_#334155,0_0_0_0.5px_#0f172a] first:rounded-tl-2xl last:rounded-tr-2xl py-4 pl-3 pr-6 w-[1%] text-left text-[10px] font-black text-slate-300 uppercase tracking-widest">
                   Prob. Vitória
                 </th>
-                <th className="py-4 text-center text-[10px] font-black text-slate-300 uppercase tracking-widest">
+                <th className="sticky top-0 z-20 bg-slate-900 shadow-[inset_0_-1px_0_#334155,0_0_0_0.5px_#0f172a] first:rounded-tl-2xl last:rounded-tr-2xl py-4 text-center text-[10px] font-black text-slate-300 uppercase tracking-widest">
                   Empate OT
                   <span className="block mt-1 text-[10px] font-bold tracking-normal text-slate-300">(22%)</span>
                 </th>
-                <th className="py-4 text-center text-[10px] font-black text-slate-300 uppercase tracking-widest">
+                <th className="sticky top-0 z-20 bg-slate-900 shadow-[inset_0_-1px_0_#334155,0_0_0_0.5px_#0f172a] first:rounded-tl-2xl last:rounded-tr-2xl py-4 text-center text-[10px] font-black text-slate-300 uppercase tracking-widest">
                   1ºP &gt; 1.5
                   <span className="block mt-1 text-[10px] font-bold tracking-normal text-slate-300">(48%)</span>
                 </th>
-                <th className="py-4 text-center text-[10px] font-black text-slate-300 uppercase tracking-widest">
+                <th className="sticky top-0 z-20 bg-slate-900 shadow-[inset_0_-1px_0_#334155,0_0_0_0.5px_#0f172a] first:rounded-tl-2xl last:rounded-tr-2xl py-4 text-center text-[10px] font-black text-slate-300 uppercase tracking-widest">
                   1ºP BTTS
                   <span className="block mt-1 text-[10px] font-bold tracking-normal text-slate-300">(31%)</span>
                 </th>
-                <th className="py-4 text-center text-[10px] font-black text-slate-300 uppercase tracking-widest">
+                <th className="sticky top-0 z-20 bg-slate-900 shadow-[inset_0_-1px_0_#334155,0_0_0_0.5px_#0f172a] first:rounded-tl-2xl last:rounded-tr-2xl py-4 text-center text-[10px] font-black text-slate-300 uppercase tracking-widest">
                   2ºP &gt; 1.5
                   <span className="block mt-1 text-[10px] font-bold tracking-normal text-slate-300">(62%)</span>
                 </th>
-                <th className="py-4 text-center pr-4 text-[10px] font-black text-slate-300 uppercase tracking-widest">
+                <th className="sticky top-0 z-20 bg-slate-900 shadow-[inset_0_-1px_0_#334155,0_0_0_0.5px_#0f172a] first:rounded-tl-2xl last:rounded-tr-2xl py-4 text-center pr-4 text-[10px] font-black text-slate-300 uppercase tracking-widest">
                   Jogo &gt; 4.5
                   <span className="block mt-1 text-[10px] font-bold tracking-normal text-slate-300">(72%)</span>
                 </th>
