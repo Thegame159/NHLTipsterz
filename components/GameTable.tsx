@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { GamePrediction } from '../types';
-import { ScaleKey, levelOf, hasStar, barWidth, SCALE_BADGE, SCALE_BAR } from '../utils/marketScale';
+import { ScaleKey, levelOf, hasStar, winHasStar, barWidth, SCALE_BADGE, SCALE_BAR } from '../utils/marketScale';
 import {
   getLogoUrl,
   retryLightLogo,
@@ -70,7 +70,7 @@ const ProbabilityCell: React.FC<{ value?: number; scale?: ScaleKey; top?: boolea
   );
 };
 
-type Tops = { draw: number; p1: number; btts: number; p2: number; o45: number; multi: boolean };
+type Tops = { win: number; draw: number; p1: number; btts: number; p2: number; o45: number; multi: boolean };
 
 // ─── Equipa (logo, nome, registo e jogos por baixo) ─────────────────────────
 
@@ -130,6 +130,7 @@ const GameRow: React.FC<{ game: GamePrediction; tops: Tops }> = ({ game, tops })
   const favTeam = isHomeFav ? homeTeam : awayTeam;
   const dogTeam = isHomeFav ? awayTeam : homeTeam;
   const isTop = (v: number, max: number) => tops.multi && v > 0 && v === max;
+  const winTop = isTop(Math.round(maxProb), tops.win);
 
   return (
     <>
@@ -176,14 +177,24 @@ const GameRow: React.FC<{ game: GamePrediction; tops: Tops }> = ({ game, tops })
         {/* COLUNA: Prob. Vitória (favorito em pílula, barra e o outro lado por baixo) */}
         <td className="py-4 pl-3 pr-6">
           <div className="flex flex-col items-stretch gap-1.5 w-[130px]">
-            <div className={`flex items-center justify-center gap-2 px-2.5 py-1.5 rounded-lg border font-black text-sm ${getColorClass(maxProb)}`}>
-              <img
-                src={getLogoUrl(favTeam)}
-                className="w-5 h-5 object-contain shrink-0"
-                alt={favTeam}
-                onError={(e) => { if (!retryLightLogo(e.currentTarget)) { e.currentTarget.src = FALLBACK_LOGO; } }}
-              />
-              {Math.round(maxProb)}%
+            <div className="relative">
+              <div className={`flex items-center justify-center gap-2 px-2.5 py-1.5 rounded-lg border font-black text-sm ${getColorClass(maxProb)} ${winTop ? 'outline outline-2 outline-offset-2 outline-amber-200/30' : ''}`}>
+                <img
+                  src={getLogoUrl(favTeam)}
+                  className="w-5 h-5 object-contain shrink-0"
+                  alt={favTeam}
+                  onError={(e) => { if (!retryLightLogo(e.currentTarget)) { e.currentTarget.src = FALLBACK_LOGO; } }}
+                />
+                {Math.round(maxProb)}%
+              </div>
+              {winHasStar(Math.round(maxProb)) && (
+                <span
+                  title="Acima da média neste mercado"
+                  className="absolute -top-2 -right-2 w-[18px] h-[18px] rounded-full bg-slate-950 border border-emerald-400 text-emerald-300 flex items-center justify-center text-[10px] leading-none"
+                >
+                  ★
+                </span>
+              )}
             </div>
 
             <div className="w-full h-1 bg-slate-800 rounded-full overflow-hidden">
@@ -198,7 +209,7 @@ const GameRow: React.FC<{ game: GamePrediction; tops: Tops }> = ({ game, tops })
               />
             </div>
 
-            <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-500">
+            <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-500 whitespace-nowrap">
               <img
                 src={getLogoUrl(dogTeam)}
                 className="w-3.5 h-3.5 object-contain shrink-0 opacity-80"
@@ -207,6 +218,7 @@ const GameRow: React.FC<{ game: GamePrediction; tops: Tops }> = ({ game, tops })
               />
               {teamLabel(dogTeam)} {100 - Math.round(maxProb)}%
             </div>
+            {winTop && <div className="text-[8px] font-black tracking-widest text-amber-200 text-center">▲ TOP</div>}
           </div>
         </td>
 
@@ -357,6 +369,7 @@ const GameTable: React.FC<Props> = ({ predictions, totalGames }) => {
   const gamesList = predictions || [];
   const maxOf = (f: (g: GamePrediction) => number) => Math.max(0, ...gamesList.map(f));
   const tops: Tops = {
+    win: maxOf((g) => Math.round(Math.max(safeNum(g.winProbabilityHome), safeNum(g.winProbabilityAway)))),
     draw: maxOf((g) => safeNum(g.drawTRProb ?? (g as any).drawProb)),
     p1: maxOf((g) => safeNum(g.over15P1Prob)),
     btts: maxOf((g) => safeNum(g.bttsP1Prob)),

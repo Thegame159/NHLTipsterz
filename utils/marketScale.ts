@@ -34,6 +34,10 @@ export const levelOf = (k: ScaleKey, v: number): number => {
   return v < t[0] ? 0 : v < t[1] ? 1 : v < t[2] ? 2 : 3;
 };
 
+/** Vitória não tem escala de cores própria; a ★ usa o mesmo mínimo das Escolhas Fortes. */
+export const WIN_STAR = 62;
+export const winHasStar = (v: number): boolean => v >= WIN_STAR;
+
 export const hasStar = (k: ScaleKey, v: number): boolean => v >= SCALES[k].star;
 
 export const SCALE_BADGE = [

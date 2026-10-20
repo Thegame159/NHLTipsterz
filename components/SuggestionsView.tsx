@@ -3,7 +3,7 @@ import React from "react";
 
 import { Suggestions, GamePrediction as Prediction } from "../types";
 import { STRONG_RULES, COMBO_RULES, SUGGESTION_RULES } from "../utils/suggestions";
-import { ScaleKey, levelOf, hasStar, SCALE_BADGE, STAR_CLASS } from "../utils/marketScale";
+import { ScaleKey, levelOf, hasStar, winHasStar, SCALE_BADGE, STAR_CLASS } from "../utils/marketScale";
 import { retryLightLogo, logoUrlFor } from "../utils/nhlUtils";
 
 // Percentagem com a cor (e ★) da escala do mercado, igual à do ecrã Jogos.
@@ -50,6 +50,14 @@ const PercBadge: React.FC<{ value: number | string; scale?: ScaleKey; className?
     return wrap(
       <span className={`relative text-xs font-black text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 ${top ? TOP_RING : ""} ${className}`}>
         {label}
+        {Number.isFinite(v) && winHasStar(v) && (
+          <span
+            title="Acima da média neste mercado"
+            className={`absolute -top-2 -right-2 w-[15px] h-[15px] rounded-full bg-slate-950 border flex items-center justify-center text-[9px] leading-none ${STAR_CLASS[2]}`}
+          >
+            ★
+          </span>
+        )}
       </span>
     );
   }
@@ -665,7 +673,7 @@ const filterTripleWin = (items: string[]) => items;
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
-            {suggestions.winCombo.legs.map((leg, idx) => (
+            {suggestions.winCombo.legs.map((leg, idx, legs) => (
               <div
                 key={`${leg.game}-${idx}`}
                 className="flex items-center gap-3 bg-slate-900/80 p-3 rounded-xl border border-slate-700/50"
@@ -685,9 +693,7 @@ const filterTripleWin = (items: string[]) => items;
                   <p className="font-bold text-slate-100 leading-tight truncate">{teamLabel(leg.team)}</p>
                   <p className="text-[11px] text-slate-500">{leg.game}</p>
                 </div>
-                <span className="text-xs font-black text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                  {leg.prob}%
-                </span>
+                <PercBadge value={leg.prob} top={topFlags(legs.map((l) => Number(l.prob)))[idx]} stack />
               </div>
             ))}
           </div>
