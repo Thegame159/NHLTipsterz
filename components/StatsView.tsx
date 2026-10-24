@@ -988,7 +988,8 @@ const StatsView: React.FC = () => {
 
   return (
     <div className="space-y-8 pb-24">
-      <div className="bg-gradient-to-r from-indigo-900/40 via-indigo-800/30 to-transparent border border-indigo-500/20 rounded-2xl p-6 flex flex-col sm:flex-row items-center justify-between gap-6">
+      <div className="bg-gradient-to-r from-indigo-900/40 via-indigo-800/30 to-transparent border border-indigo-500/20 rounded-2xl p-6 space-y-5">
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
         <div className="flex items-center gap-4">
           <div className="bg-indigo-600/20 p-4 rounded-2xl border border-indigo-500/30 shrink-0">
             <i className="fas fa-chart-line text-4xl text-indigo-300" />
@@ -1015,8 +1016,8 @@ const StatsView: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex items-center gap-6 self-end sm:self-auto">
-          <div className="text-right">
+        <div className="flex items-center justify-center gap-6 self-center sm:self-auto w-full sm:w-auto">
+          <div className="text-center sm:text-right">
             <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Auto (geral)</div>
             <div className="text-2xl font-black text-amber-300">
               {totals.autoPct === null ? "--" : `${totals.autoPct.toFixed(1)}%`}
@@ -1024,7 +1025,7 @@ const StatsView: React.FC = () => {
             <div className="text-[10px] text-slate-500">{totals.aC}/{totals.aT} picks</div>
           </div>
           <div className="w-px h-12 bg-slate-700" />
-          <div className="text-right">
+          <div className="text-center sm:text-right">
             <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Minhas (geral)</div>
             <div className="text-2xl font-black text-blue-300">
               {totals.minePct === null ? "--" : `${totals.minePct.toFixed(1)}%`}
@@ -1033,8 +1034,8 @@ const StatsView: React.FC = () => {
           </div>
         </div>
       </div>
-
-      <PlayerPicksSummary records={playerPicks} />
+      <PlayerPicksSummary records={playerPicks} embedded />
+      </div>
 
       <div className="space-y-3">
         {reports.map((r) => {

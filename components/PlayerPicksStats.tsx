@@ -89,7 +89,7 @@ export function usePlayerPicks(): Record<string, PRecord> {
 }
 
 /** Resumo de todos os dias: tripletes automáticos e os meus. */
-export const PlayerPicksSummary: React.FC<{ records: Record<string, PRecord> }> = ({ records }) => {
+export const PlayerPicksSummary: React.FC<{ records: Record<string, PRecord>; embedded?: boolean }> = ({ records, embedded }) => {
   const recs: PRecord[] = Object.keys(records).map((k) => records[k]);
   const line = (label: string, g: Agg[], p: Agg[]) => {
     const gHit = g.reduce((n, x) => n + x.hit, 0), gDone = g.reduce((n, x) => n + x.done, 0);
@@ -107,7 +107,44 @@ export const PlayerPicksSummary: React.FC<{ records: Record<string, PRecord> }> 
   const auto = line('Jogadores · automáticos', [aggregate(recs, 'goal', 0), aggregate(recs, 'goal', 1)], [aggregate(recs, 'point', 0), aggregate(recs, 'point', 1)]);
   const mine = line('Jogadores · meus', [aggregate(recs, 'goal', 'mine')], [aggregate(recs, 'point', 'mine')]);
   if (!auto && !mine) return null;
-  return <div className="rounded-xl border border-slate-700 bg-slate-800/40 px-4 py-2.5 text-[11px] text-slate-400 space-y-1">{auto}{mine}</div>;
+  if (embedded) {
+    const sum = (a: Agg[]) => ({ hit: a.reduce((n, x) => n + x.hit, 0), done: a.reduce((n, x) => n + x.done, 0) });
+    const Stat: React.FC<{ label: string; v: { hit: number; done: number }; color: string }> = ({ label, v, color }) => {
+      const r = pct(v.hit, v.done);
+      return (
+        <div className="text-center min-w-[64px]">
+          <div className="text-[9px] font-black uppercase tracking-widest text-slate-500">{label}</div>
+          <div className={`text-lg font-black leading-tight ${color}`}>{r === null ? '--' : `${r}%`}</div>
+          <div className="text-[10px] text-slate-500">{v.hit}/{v.done}</div>
+        </div>
+      );
+    };
+    const col = (title: string, g: Agg[], p: Agg[], color: string) => (
+      <div className="flex-1 text-center">
+        <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5">{title}</div>
+        <div className="flex items-start justify-center gap-4">
+          <Stat label="Golos" v={sum(g)} color={color} />
+          <Stat label="Pontos" v={sum(p)} color={color} />
+        </div>
+      </div>
+    );
+    return (
+      <div className="border-t border-indigo-500/20 pt-4">
+        <div className="text-center text-[10px] font-black uppercase tracking-widest text-slate-500 mb-3">Jogadores</div>
+        <div className="flex items-center gap-4">
+          {col('Auto', [aggregate(recs, 'goal', 0), aggregate(recs, 'goal', 1)], [aggregate(recs, 'point', 0), aggregate(recs, 'point', 1)], 'text-amber-300')}
+          <div className="w-px h-14 bg-slate-700" />
+          {col('Meus', [aggregate(recs, 'goal', 'mine')], [aggregate(recs, 'point', 'mine')], 'text-blue-300')}
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className={embedded ? 'border-t border-indigo-500/20 pt-4 text-[11px] text-slate-400 space-y-1' : 'rounded-xl border border-slate-700 bg-slate-800/40 px-4 py-2.5 text-[11px] text-slate-400 space-y-1'}>
+      {auto}
+      {mine}
+    </div>
+  );
 };
 
 /** Os tripletes de um dia (para mostrar dentro do dia aberto). */
