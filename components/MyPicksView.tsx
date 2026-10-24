@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { GamePrediction, Suggestions } from "../types";
 import { retryLightLogo, logoUrlFor } from "../utils/nhlUtils";
+import MyPlayerTriples from "./MyPlayerTriples";
 
 interface Props {
   predictions: GamePrediction[];
@@ -929,6 +930,9 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
           onRemove={(idx) => setPicks((p) => ({ ...p, drawSuggestions: (p.drawSuggestions || []).filter((_, i) => i !== idx) }))}
         />
       </div>
+
+      {/* TRIPLETES DE JOGADORES (golos / pontos) */}
+      <MyPlayerTriples predictions={predictionsOfDay} date={selectedDate} />
     </div>
   );
 };

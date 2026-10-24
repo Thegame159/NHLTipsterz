@@ -6,6 +6,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { GamePrediction, GamePlayers, PlayerCard, TeamPlayers } from '../types';
 import { getLogoUrl, retryLightLogo, teamLabel } from '../utils/nhlUtils';
 import { ScaleKey, levelOf, hasStar, SCALE_BADGE, STAR_CLASS } from '../utils/marketScale';
+import { playersCache } from '../utils/playersData';
 
 interface Props {
   predictions: GamePrediction[];
@@ -13,9 +14,9 @@ interface Props {
 }
 
 // Guarda os resultados enquanto a página está aberta (mudar de aba não volta a pedir tudo)
-const cache = new Map<string, GamePlayers[]>();
+const cache = playersCache;
 
-const shortName = (full: string) => {
+export const shortName = (full: string) => {
   const parts = full.trim().split(/\s+/);
   return parts.length > 1 ? `${parts[0][0]}. ${parts.slice(1).join(' ')}` : full;
 };
@@ -23,7 +24,7 @@ const shortName = (full: string) => {
 const ddmm = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 
 // Percentagem com a cor (e ★) da escala do mercado, igual à dos outros ecrãs
-const ProbBadge: React.FC<{ value: number; scale: ScaleKey; className?: string }> = ({ value, scale, className = '' }) => {
+export const ProbBadge: React.FC<{ value: number; scale: ScaleKey; className?: string }> = ({ value, scale, className = '' }) => {
   const lvl = levelOf(scale, value);
   return (
     <span className={`relative inline-block text-center text-xs font-black rounded border ${SCALE_BADGE[lvl]} ${className}`}>
@@ -254,7 +255,7 @@ const TeamChip: React.FC<{ abbr: string; align: 'left' | 'right' }> = ({ abbr, a
 type Pick = { card: PlayerCard; abbr: string; opp: string; home: boolean; gameId: string };
 
 // Disco de hóquei (desenho próprio, genérico)
-const PuckIcon: React.FC<{ className?: string }> = ({ className = 'w-6 h-6' }) => (
+export const PuckIcon: React.FC<{ className?: string }> = ({ className = 'w-6 h-6' }) => (
   <svg viewBox="0 0 48 48" className={className} aria-hidden="true">
     <ellipse cx="24" cy="29" rx="19" ry="9" fill="#020617" stroke="#475569" strokeWidth="1.5" />
     <rect x="5" y="19" width="38" height="10" fill="#0f172a" />
@@ -266,9 +267,9 @@ const PuckIcon: React.FC<{ className?: string }> = ({ className = 'w-6 h-6' }) =
   </svg>
 );
 
-type Mode = 'goal' | 'point';
+export type Mode = 'goal' | 'point';
 type Focus = { gameId: string; playerId: number; tick: number };
-const probOf = (c: PlayerCard, mode: Mode) => (mode === 'goal' ? c.probGoal : c.probPoint);
+export const probOf = (c: PlayerCard, mode: Mode) => (mode === 'goal' ? c.probGoal : c.probPoint);
 
 /** Triplete: os 3 jogadores com maior probabilidade (golo ou ponto) hoje, de jogos diferentes */
 function buildTriple(predictions: GamePrediction[], byId: Map<string, GamePlayers>, mode: Mode): Pick[][] {
@@ -299,7 +300,7 @@ function buildTriple(predictions: GamePrediction[], byId: Map<string, GamePlayer
   return pages;
 }
 
-const copyText = async (text: string) => {
+export const copyText = async (text: string) => {
   try {
     await navigator.clipboard.writeText(text);
     return true;
