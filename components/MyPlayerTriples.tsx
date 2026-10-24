@@ -1,12 +1,13 @@
 // components/MyPlayerTriples.tsx
 // "Minhas Picks" → os meus tripletes de jogadores (golos e pontos), como na aba Jogadores,
 // mas escolhidos por mim: 3 espaços por triplete, um jogador por jogo.
-// O seletor mostra os 3 melhores de cada equipa de cada jogo e uma pesquisa por nome.
+// O seletor pede primeiro o jogo (como a Combinada) e só depois mostra os jogadores desse jogo.
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { GamePlayers, GamePrediction, PlayerCard } from '../types';
 import { getLogoUrl, retryLightLogo, teamLabel } from '../utils/nhlUtils';
 import { fetchPlayersForGames, playersCache, playersKey } from '../utils/playersData';
+import { IconDropdown, Option } from './IconDropdown';
 import { ProbBadge, PuckIcon, copyText, probOf, shortName, Mode } from './PlayersView';
 
 export type Cand = { card: PlayerCard; abbr: string; opp: string; home: boolean; gameId: string };
@@ -74,35 +75,56 @@ export const PlayerPicker: React.FC<{
   onChoose: (x: Cand) => void;
   onClose: () => void;
   initialQuery?: string;
-}> = ({ mode, all, games, usedGames, usedIds, onChoose, onClose, initialQuery = '' }) => {
+  initialGame?: string;
+}> = ({ mode, all, games, usedGames, usedIds, onChoose, onClose, initialQuery = '', initialGame = '' }) => {
+  const [gameId, setGameId] = useState(initialGame);
   const [q, setQ] = useState(initialQuery);
+  const [showAll, setShowAll] = useState(false);
   const query = norm(q.trim());
 
-  const results = useMemo(() => {
-    if (query.length < 2) return [];
-    return all
-      .filter((x) => norm(x.card.name).includes(query))
-      .sort((a, b) => probOf(b.card, mode) - probOf(a.card, mode))
-      .slice(0, 12);
-  }, [all, query, mode]);
+  const options: Option[] = useMemo(
+    () =>
+      games
+        .filter((g) => !usedGames.has(g.id))
+        .map((g) => ({ value: g.id, label: `${teamLabel(g.home)} vs ${teamLabel(g.away)}`, teams: [g.home, g.away] })),
+    [games, usedGames]
+  );
 
-  const blockedOf = (x: Cand) => (usedIds.has(x.card.id) ? 'Já escolhido' : usedGames.has(x.gameId) ? 'Já tens um jogador deste jogo' : undefined);
+  const game = games.find((g) => g.id === gameId);
+  const inGame = useMemo(() => all.filter((x) => x.gameId === gameId), [all, gameId]);
+  const byProb = (list: Cand[]) => [...list].sort((a, b) => probOf(b.card, mode) - probOf(a.card, mode));
 
-  const topOf = (gameId: string, abbr: string) =>
-    all
-      .filter((x) => x.gameId === gameId && x.abbr === abbr)
-      .sort((a, b) => probOf(b.card, mode) - probOf(a.card, mode))
-      .slice(0, 3);
+  const blockedOf = (x: Cand) => (usedIds.has(x.card.id) ? 'Já escolhido' : undefined);
+  const LIMIT = 3;
+
+  const renderTeam = (abbr: string) => {
+    const list = byProb(inGame.filter((x) => x.abbr === abbr && (query.length < 2 || norm(x.card.name).includes(query))));
+    const shown = query.length >= 2 || showAll ? list : list.slice(0, LIMIT);
+    return (
+      <div key={abbr} className="space-y-1.5">
+        <div className="flex items-center gap-2 text-[11px] font-black text-slate-400">
+          <Logo abbr={abbr} className="w-5 h-5" /> {teamLabel(abbr)}
+        </div>
+        {shown.map((x) => (
+          <CandRow key={x.card.id} x={x} mode={mode} blocked={blockedOf(x)} onChoose={onChoose} />
+        ))}
+        {shown.length === 0 && <p className="text-[11px] text-slate-600">Nenhum jogador.</p>}
+      </div>
+    );
+  };
 
   return (
     <div className="rounded-xl border border-orange-500/40 bg-slate-950/70 p-3 space-y-3">
       <div className="flex items-center gap-2">
-        <input
-          autoFocus
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Procurar jogador (qualquer um dos jogos de hoje)…"
-          className="flex-1 min-w-0 rounded-lg bg-slate-900 border border-slate-700 focus:border-orange-500/60 outline-none px-3 py-1.5 text-sm text-slate-100 placeholder:text-slate-600"
+        <IconDropdown
+          placeholder="Seleciona jogo..."
+          options={options}
+          value={gameId}
+          onChange={(v) => {
+            setGameId(v);
+            setQ('');
+            setShowAll(false);
+          }}
         />
         <button
           type="button"
@@ -113,47 +135,30 @@ export const PlayerPicker: React.FC<{
         </button>
       </div>
 
-      {query.length >= 2 ? (
-        results.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-            {results.map((x) => (
-              <CandRow key={`${x.gameId}-${x.card.id}`} x={x} mode={mode} blocked={blockedOf(x)} onChoose={onChoose} />
-            ))}
-          </div>
-        ) : (
-          <p className="text-[11px] text-slate-500 py-2">Nenhum jogador encontrado.</p>
-        )
+      {!game ? (
+        <p className="text-[11px] text-slate-500">Escolhe primeiro o jogo; depois aparecem os jogadores desse jogo.</p>
       ) : (
-        <div className="space-y-3">
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Os 3 melhores de cada equipa</p>
-          {games.map((g) =>
-            usedGames.has(g.id) ? (
-              <div key={g.id} className="flex items-center gap-2 text-[11px] font-bold text-slate-600">
-                <Logo abbr={g.away} className="w-5 h-5" />
-                {teamLabel(g.away)} <span>@</span> {teamLabel(g.home)}
-                <Logo abbr={g.home} className="w-5 h-5" />
-                <span className="ml-1 text-emerald-500/80">✓ já tens um jogador deste jogo</span>
-              </div>
-            ) : (
-            <div key={g.id} className="space-y-1.5">
-              <div className="flex items-center gap-2 text-[11px] font-black text-slate-400">
-                <Logo abbr={g.away} className="w-5 h-5" />
-                {teamLabel(g.away)} <span className="text-slate-600">@</span> {teamLabel(g.home)}
-                <Logo abbr={g.home} className="w-5 h-5" />
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                {[g.away, g.home].map((abbr) => (
-                  <div key={abbr} className="space-y-1.5">
-                    {topOf(g.id, abbr).map((x) => (
-                      <CandRow key={x.card.id} x={x} mode={mode} blocked={blockedOf(x)} onChoose={onChoose} />
-                    ))}
-                  </div>
-                ))}
-              </div>
-            </div>
-            )
+        <>
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder={`Procurar jogador neste jogo…`}
+            className="w-full rounded-lg bg-slate-900 border border-slate-700 focus:border-orange-500/60 outline-none px-3 py-1.5 text-sm text-slate-100 placeholder:text-slate-600"
+          />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {renderTeam(game.away)}
+            {renderTeam(game.home)}
+          </div>
+          {query.length < 2 && inGame.length > LIMIT * 2 && (
+            <button
+              type="button"
+              onClick={() => setShowAll((v) => !v)}
+              className="w-full text-[10px] font-black uppercase tracking-wider text-slate-400 hover:text-orange-300 py-1"
+            >
+              {showAll ? 'Mostrar só os melhores' : 'Ver todos os jogadores'}
+            </button>
           )}
-        </div>
+        </>
       )}
     </div>
   );
@@ -171,7 +176,8 @@ export const MyTripleCard: React.FC<{
   onRemove: (playerId: number) => void;
   initialOpen?: boolean;
   initialQuery?: string;
-}> = ({ mode, picks, all, games, dateLabel, onAdd, onRemove, initialOpen = false, initialQuery = '' }) => {
+  initialGame?: string;
+}> = ({ mode, picks, all, games, dateLabel, onAdd, onRemove, initialOpen = false, initialQuery = '', initialGame = '' }) => {
   const [open, setOpen] = useState(initialOpen);
   const [copied, setCopied] = useState(false);
   const full = picks.length >= 3;
@@ -258,6 +264,7 @@ export const MyTripleCard: React.FC<{
           usedGames={usedGames}
           usedIds={usedIds}
           initialQuery={initialQuery}
+          initialGame={initialGame}
           onClose={() => setOpen(false)}
           onChoose={(x) => {
             onAdd(x);
