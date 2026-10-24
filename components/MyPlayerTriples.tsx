@@ -292,6 +292,13 @@ const MyPlayerTriples: React.FC<{ predictions: GamePrediction[]; date: string }>
     }
   }, [date]);
 
+  // Guarda no telemóvel e no servidor (para a aba Stats conferir os resultados)
+  const toPayload = (slots: Slot[], mode: Mode) =>
+    slots
+      .map((sl) => all.find((x) => x.gameId === sl.gameId && x.card.id === sl.playerId))
+      .filter(Boolean)
+      .map((x) => ({ id: x!.card.id, name: x!.card.name, abbr: x!.abbr, opp: x!.opp, prob: probOf(x!.card, mode) }));
+
   const save = (next: Store) => {
     setStore(next);
     try {
@@ -299,6 +306,15 @@ const MyPlayerTriples: React.FC<{ predictions: GamePrediction[]; date: string }>
     } catch {
       // sem armazenamento: fica só nesta sessão
     }
+    fetch('/api/player-picks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date, side: 'mine', goal: toPayload(next.goal, 'goal'), point: toPayload(next.point, 'point') }),
+    })
+      .then((r) => {
+        if (r.ok) window.dispatchEvent(new Event('history-updated'));
+      })
+      .catch(() => {});
   };
 
   useEffect(() => {

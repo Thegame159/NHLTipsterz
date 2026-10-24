@@ -5,7 +5,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 
 export type PPick = { id: number; name: string; abbr: string; opp: string; prob: number; r?: 'hit' | 'miss' | 'dnp'; g?: number; a?: number };
-export type PRecord = { date: string; savedAt: number; goal: PPick[][]; point: PPick[][] };
+export type PRecord = { date: string; savedAt: number; goal: PPick[][]; point: PPick[][]; mine?: { goal: PPick[]; point: PPick[]; savedAt: number } };
 
 const shortName = (full: string) => {
   const parts = full.trim().split(/\s+/);
@@ -15,11 +15,11 @@ const shortName = (full: string) => {
 type Agg = { hit: number; done: number; pending: number; probSum: number; triples: number; fullTriples: number };
 const emptyAgg = (): Agg => ({ hit: 0, done: 0, pending: 0, probSum: 0, triples: 0, fullTriples: 0 });
 
-function aggregate(records: PRecord[], mode: 'goal' | 'point', option: number): Agg {
+function aggregate(records: PRecord[], mode: 'goal' | 'point', option: number | 'mine'): Agg {
   const a = emptyAgg();
   for (const rec of records) {
-    const list = rec[mode][option];
-    if (!list) continue;
+    const list = option === 'mine' ? rec.mine?.[mode] : rec[mode][option];
+    if (!list || list.length === 0) continue;
     let allDone = true;
     let allHit = true;
     for (const p of list) {
@@ -88,28 +88,35 @@ export function usePlayerPicks(): Record<string, PRecord> {
   return map;
 }
 
-/** Resumo numa linha de todos os dias. */
+/** Resumo de todos os dias: tripletes automáticos e os meus. */
 export const PlayerPicksSummary: React.FC<{ records: Record<string, PRecord> }> = ({ records }) => {
   const recs: PRecord[] = Object.keys(records).map((k) => records[k]);
-  const g = [aggregate(recs, 'goal', 0), aggregate(recs, 'goal', 1)];
-  const p = [aggregate(recs, 'point', 0), aggregate(recs, 'point', 1)];
-  const gHit = g[0].hit + g[1].hit, gDone = g[0].done + g[1].done;
-  const pHit = p[0].hit + p[1].hit, pDone = p[0].done + p[1].done;
-  if (gDone + pDone === 0) return null;
-  const gr = pct(gHit, gDone), pr = pct(pHit, pDone);
-  return (
-    <div className="rounded-xl border border-slate-700 bg-slate-800/40 px-4 py-2.5 text-[11px] text-slate-400">
-      <span className="font-black uppercase tracking-widest text-[9px] text-slate-500 mr-2">Jogadores (tripletes)</span>
-      Golos <b className="text-white">{gr === null ? '--' : `${gr}%`}</b> ({gHit}/{gDone}) · Pontos{' '}
-      <b className="text-white">{pr === null ? '--' : `${pr}%`}</b> ({pHit}/{pDone})
-    </div>
-  );
+  const line = (label: string, g: Agg[], p: Agg[]) => {
+    const gHit = g.reduce((n, x) => n + x.hit, 0), gDone = g.reduce((n, x) => n + x.done, 0);
+    const pHit = p.reduce((n, x) => n + x.hit, 0), pDone = p.reduce((n, x) => n + x.done, 0);
+    if (gDone + pDone === 0) return null;
+    const gr = pct(gHit, gDone), pr = pct(pHit, pDone);
+    return (
+      <div key={label}>
+        <span className="font-black uppercase tracking-widest text-[9px] text-slate-500 mr-2">{label}</span>
+        Golos <b className="text-white">{gr === null ? '--' : `${gr}%`}</b> ({gHit}/{gDone}) · Pontos{' '}
+        <b className="text-white">{pr === null ? '--' : `${pr}%`}</b> ({pHit}/{pDone})
+      </div>
+    );
+  };
+  const auto = line('Jogadores · automáticos', [aggregate(recs, 'goal', 0), aggregate(recs, 'goal', 1)], [aggregate(recs, 'point', 0), aggregate(recs, 'point', 1)]);
+  const mine = line('Jogadores · meus', [aggregate(recs, 'goal', 'mine')], [aggregate(recs, 'point', 'mine')]);
+  if (!auto && !mine) return null;
+  return <div className="rounded-xl border border-slate-700 bg-slate-800/40 px-4 py-2.5 text-[11px] text-slate-400 space-y-1">{auto}{mine}</div>;
 };
 
 /** Os tripletes de um dia (para mostrar dentro do dia aberto). */
 export const PlayerDayPicks: React.FC<{ rec: PRecord | undefined }> = ({ rec }) => {
   if (!rec) return null;
-  const rows = (['goal', 'point'] as const).flatMap((mode) => rec[mode].map((list, i) => ({ mode, i, list })));
+  const rows = [
+    ...(['goal', 'point'] as const).flatMap((mode) => rec[mode].map((list, i) => ({ mode, i, list, mine: false }))),
+    ...(['goal', 'point'] as const).flatMap((mode) => (rec.mine && rec.mine[mode].length > 0 ? [{ mode, i: 0, list: rec.mine[mode], mine: true }] : [])),
+  ];
   if (rows.length === 0) return null;
   const all = rows.flatMap((r) => r.list);
   const done = all.filter((p) => p.r === 'hit' || p.r === 'miss');
@@ -123,10 +130,10 @@ export const PlayerDayPicks: React.FC<{ rec: PRecord | undefined }> = ({ rec }) 
           {done.length > 0 ? `${hits}/${done.length} acertos` : 'por conferir'}
         </span>
       </div>
-      {rows.map(({ mode, i, list }) => (
-        <div key={`${mode}-${i}`} className="flex flex-wrap items-center gap-1.5">
-          <span className="w-24 text-[9px] font-black uppercase tracking-wider text-slate-500">
-            {mode === 'goal' ? 'Golos' : 'Pontos'} · {i + 1}
+      {rows.map(({ mode, i, list, mine }) => (
+        <div key={`${mine ? 'm' : 'a'}-${mode}-${i}`} className="flex flex-wrap items-center gap-1.5">
+          <span className={`w-24 text-[9px] font-black uppercase tracking-wider ${mine ? 'text-orange-300/80' : 'text-slate-500'}`}>
+            {mine ? 'Meu · ' : ''}{mode === 'goal' ? 'Golos' : 'Pontos'}{mine ? '' : ` · ${i + 1}`}
           </span>
           {list.map((p) => (
             <Chip key={p.id} p={p} />
