@@ -785,8 +785,9 @@ const MarketRanking: React.FC<{ reports: ReportEntry[]; players: ReturnType<type
   return (
     <div className="border-t border-indigo-500/20 pt-4 space-y-3">
       <h3 className="text-center text-[10px] font-black uppercase tracking-widest text-slate-400">Taxa de acerto por mercado</h3>
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
       {(bestA || bestM) && (
-        <div className="grid grid-cols-2 gap-2">
+        <div className="contents">
           {([
             { side: "Auto", name: bestA, key: "a", box: "from-amber-500/20 to-amber-500/5 border-amber-500/30", txt: "text-amber-300" },
             { side: "Minhas", name: bestM, key: "m", box: "from-blue-500/20 to-blue-500/5 border-blue-500/30", txt: "text-blue-300" },
@@ -806,7 +807,7 @@ const MarketRanking: React.FC<{ reports: ReportEntry[]; players: ReturnType<type
         </div>
       )}
       {(players.goal.auto.done + players.goal.mine.done + players.point.auto.done + players.point.mine.done) > 0 && (
-        <div className="rounded-xl border border-orange-500/30 bg-gradient-to-br from-orange-500/15 to-orange-500/5 p-3">
+        <div className="col-span-2 lg:col-span-1 rounded-xl border border-orange-500/30 bg-gradient-to-br from-orange-500/15 to-orange-500/5 p-3">
           <div className="text-center text-[9px] font-black uppercase tracking-widest text-orange-300/90 mb-2">🏒 Jogadores</div>
           <div className="flex items-center gap-3">
             {([
@@ -832,6 +833,7 @@ const MarketRanking: React.FC<{ reports: ReportEntry[]; players: ReturnType<type
           </div>
         </div>
       )}
+      </div>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
