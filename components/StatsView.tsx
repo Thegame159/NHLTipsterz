@@ -657,7 +657,20 @@ const MarketBlock: React.FC<{
           {marketIcon[title] && <i className={`fas ${marketIcon[title]} text-slate-500`} />}
           {title}
         </h4>
-        <span className="text-[10px] font-black text-slate-500">
+        <span className="flex items-center gap-2 text-[10px] font-black text-slate-500">
+          {evaluated > 0 && (
+            <span
+              className={`px-1.5 py-0.5 rounded-md border text-[11px] ${
+                correct / evaluated >= 0.6
+                  ? "text-emerald-300 bg-emerald-500/10 border-emerald-500/30"
+                  : correct / evaluated >= 0.4
+                  ? "text-amber-300 bg-amber-500/10 border-amber-500/30"
+                  : "text-rose-300 bg-rose-500/10 border-rose-500/30"
+              }`}
+            >
+              {Math.round((correct / evaluated) * 100)}%
+            </span>
+          )}
           {correct}/{evaluated} certas
         </span>
       </div>
