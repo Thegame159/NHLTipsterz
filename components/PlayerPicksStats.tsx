@@ -89,6 +89,16 @@ export function usePlayerPicks(): Record<string, PRecord> {
 }
 
 /** Resumo de todos os dias: tripletes automáticos e os meus. */
+/** Acerto acumulado dos tripletes de jogadores (golos/pontos), automáticos vs meus. */
+export function playerMarketStats(records: Record<string, PRecord>) {
+  const recs: PRecord[] = Object.keys(records).map((k) => records[k]);
+  const sum = (a: Agg[]) => ({ hit: a.reduce((n, x) => n + x.hit, 0), done: a.reduce((n, x) => n + x.done, 0) });
+  return {
+    goal: { auto: sum([aggregate(recs, 'goal', 0), aggregate(recs, 'goal', 1)]), mine: sum([aggregate(recs, 'goal', 'mine')]) },
+    point: { auto: sum([aggregate(recs, 'point', 0), aggregate(recs, 'point', 1)]), mine: sum([aggregate(recs, 'point', 'mine')]) },
+  };
+}
+
 export const PlayerPicksSummary: React.FC<{ records: Record<string, PRecord>; embedded?: boolean }> = ({ records, embedded }) => {
   const recs: PRecord[] = Object.keys(records).map((k) => records[k]);
   const line = (label: string, g: Agg[], p: Agg[]) => {

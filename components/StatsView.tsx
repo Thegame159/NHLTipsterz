@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Suggestions } from "../types";
-import { usePlayerPicks, PlayerPicksSummary, PlayerDayPicks } from "./PlayerPicksStats";
+import { usePlayerPicks, playerMarketStats, PlayerDayPicks } from "./PlayerPicksStats";
 import { retryLightLogo, logoUrlFor } from "../utils/nhlUtils";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -733,7 +733,8 @@ const pctColor = (v: number | null) =>
   v === null ? "text-slate-600" : v >= 60 ? "text-emerald-300" : v >= 40 ? "text-amber-300" : "text-rose-300";
 
 /** Acerto acumulado por mercado: onde o Auto e as minhas picks acertam mais. */
-const MarketRanking: React.FC<{ reports: ReportEntry[] }> = ({ reports }) => {
+const MarketRanking: React.FC<{ reports: ReportEntry[]; players: ReturnType<typeof playerMarketStats> }> = ({ reports, players }) => {
+  const [open, setOpen] = useState(false);
   const rows = useMemo(() => {
     const map: Record<string, MStat> = {};
     const add = (side: "auto" | "mine", byMarket: Record<string, PickEval[]>) => {
@@ -749,8 +750,10 @@ const MarketRanking: React.FC<{ reports: ReportEntry[] }> = ({ reports }) => {
       add("auto", r.auto.byMarket);
       add("mine", r.mine.byMarket);
     }
+    map["Jogadores · Golos"] = { name: "Jogadores · Golos", aC: players.goal.auto.hit, aT: players.goal.auto.done, mC: players.goal.mine.hit, mT: players.goal.mine.done };
+    map["Jogadores · Pontos"] = { name: "Jogadores · Pontos", aC: players.point.auto.hit, aT: players.point.auto.done, mC: players.point.mine.hit, mT: players.point.mine.done };
     return Object.values(map).filter((m) => m.aT + m.mT > 0);
-  }, [reports]);
+  }, [reports, players]);
 
   if (rows.length === 0) return null;
   const MIN = 5; // amostra mínima para destacar o melhor
@@ -780,25 +783,81 @@ const MarketRanking: React.FC<{ reports: ReportEntry[] }> = ({ reports }) => {
   };
 
   return (
-    <div className="bg-slate-900/40 border border-slate-700/50 rounded-2xl p-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <h3 className="text-xs font-black uppercase tracking-widest text-slate-300">Acerto por mercado</h3>
-        <span className="text-[9px] text-slate-500">★ = melhor (mín. {MIN} picks)</span>
-      </div>
-      <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest">
-        <div className="flex-1" />
-        <div className="w-[68px] text-center text-amber-300/70">Auto</div>
-        <div className="w-[68px] text-center text-blue-300/70">Minhas</div>
-      </div>
-      <div className="divide-y divide-slate-800">
-        {sorted.map((m) => (
-          <div key={m.name} className="flex items-center gap-2 py-2">
-            <div className="flex-1 min-w-0 text-[11px] font-black uppercase tracking-wider text-slate-300 truncate">{m.name}</div>
-            <Cell c={m.aC} t={m.aT} star={m.name === bestA} tone="text-amber-300" />
-            <Cell c={m.mC} t={m.mT} star={m.name === bestM} tone="text-blue-300" />
+    <div className="border-t border-indigo-500/20 pt-4 space-y-3">
+      <h3 className="text-center text-[10px] font-black uppercase tracking-widest text-slate-400">Taxa de acerto por mercado</h3>
+      {(bestA || bestM) && (
+        <div className="grid grid-cols-2 gap-2">
+          {([
+            { side: "Auto", name: bestA, key: "a", box: "from-amber-500/20 to-amber-500/5 border-amber-500/30", txt: "text-amber-300" },
+            { side: "Minhas", name: bestM, key: "m", box: "from-blue-500/20 to-blue-500/5 border-blue-500/30", txt: "text-blue-300" },
+          ] as const).map((t) => {
+            const m = rows.find((x) => x.name === t.name);
+            const c = m ? (t.key === "a" ? m.aC : m.mC) : 0;
+            const n = m ? (t.key === "a" ? m.aT : m.mT) : 0;
+            return (
+              <div key={t.side} className={`rounded-xl border bg-gradient-to-br ${t.box} p-3 min-w-0`}>
+                <div className={`text-[9px] font-black uppercase tracking-widest ${t.txt} opacity-80`}>★ Melhor · {t.side}</div>
+                <div className={`text-2xl font-black ${t.txt} leading-tight mt-0.5`}>{t.name ? `${Math.round(pctOf(c, n) ?? 0)}%` : "--"}</div>
+                <div className="text-[11px] font-bold text-slate-200 truncate">{t.name || "Sem dados"}</div>
+                <div className="text-[9px] text-slate-500">{c}/{n} picks</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {(players.goal.auto.done + players.goal.mine.done + players.point.auto.done + players.point.mine.done) > 0 && (
+        <div className="rounded-xl border border-orange-500/30 bg-gradient-to-br from-orange-500/15 to-orange-500/5 p-3">
+          <div className="text-center text-[9px] font-black uppercase tracking-widest text-orange-300/90 mb-2">🏒 Jogadores</div>
+          <div className="flex items-center gap-3">
+            {([
+              { title: "Auto", g: players.goal.auto, p: players.point.auto, txt: "text-amber-300" },
+              { title: "Meus", g: players.goal.mine, p: players.point.mine, txt: "text-blue-300" },
+            ] as const).map((c, i) => (
+              <React.Fragment key={c.title}>
+                {i === 1 && <div className="w-px h-12 bg-orange-500/20" />}
+                <div className="flex-1 text-center">
+                  <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">{c.title}</div>
+                  <div className="flex items-start justify-center gap-4">
+                    {([["Golos", c.g], ["Pontos", c.p]] as const).map(([lab, v]) => (
+                      <div key={lab} className="min-w-[56px]">
+                        <div className="text-[9px] font-black uppercase tracking-widest text-slate-500">{lab}</div>
+                        <div className={`text-xl font-black leading-tight ${v.done > 0 ? c.txt : "text-slate-600"}`}>{v.done > 0 ? `${Math.round((v.hit / v.done) * 100)}%` : "--"}</div>
+                        <div className="text-[9px] text-slate-500">{v.hit}/{v.done}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </React.Fragment>
+            ))}
           </div>
-        ))}
-      </div>
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-center gap-2 rounded-lg border border-slate-700 bg-slate-800/40 hover:bg-slate-800/70 py-1.5 text-[10px] font-black uppercase tracking-widest text-slate-300 transition-colors"
+      >
+        {open ? "Esconder mercados" : "Ver todos os mercados"}
+        <i className={`fas ${open ? "fa-chevron-up" : "fa-chevron-down"} text-[9px] text-slate-500`} />
+      </button>
+      {open && (
+        <>
+          <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest">
+            <div className="flex-1 text-[9px] font-normal normal-case tracking-normal text-slate-500">★ = melhor (mín. {MIN} picks)</div>
+            <div className="w-[68px] text-center text-amber-300/70">Auto</div>
+            <div className="w-[68px] text-center text-blue-300/70">Minhas</div>
+          </div>
+          <div className="divide-y divide-slate-800">
+            {sorted.map((m) => (
+              <div key={m.name} className="flex items-center gap-2 py-2">
+                <div className={`flex-1 min-w-0 text-[11px] font-black uppercase tracking-wider truncate ${m.name.startsWith("Jogadores") ? "text-orange-300" : "text-slate-300"}`}>{m.name}</div>
+                <Cell c={m.aC} t={m.aT} star={m.name === bestA} tone="text-amber-300" />
+                <Cell c={m.mC} t={m.mT} star={m.name === bestM} tone="text-blue-300" />
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 };
@@ -1142,10 +1201,8 @@ const StatsView: React.FC = () => {
           </div>
         </div>
       </div>
-      <PlayerPicksSummary records={playerPicks} embedded />
+      <MarketRanking reports={reports} players={playerMarketStats(playerPicks)} />
       </div>
-
-      <MarketRanking reports={reports} />
 
       <div className="space-y-3">
         {reports.map((r) => {
