@@ -628,6 +628,20 @@ const PickLine: React.FC<{
   );
 };
 
+const Collapse: React.FC<{ header: React.ReactNode; forceOpen?: boolean; children: React.ReactNode }> = ({ header, forceOpen, children }) => {
+  const [open, setOpen] = useState(false);
+  const isOpen = open || !!forceOpen;
+  return (
+    <div className="space-y-3">
+      <button type="button" onClick={() => setOpen((v) => !v)} className="w-full flex items-center justify-between gap-2 text-left">
+        {header}
+        <i className={`fas ${isOpen ? "fa-chevron-up" : "fa-chevron-down"} text-[10px] text-slate-500 shrink-0`} />
+      </button>
+      {isOpen && children}
+    </div>
+  );
+};
+
 const MarketBlock: React.FC<{
   title: string;
   picks: PickEval[];
@@ -651,8 +665,10 @@ const MarketBlock: React.FC<{
   const isCombinada = title === "Combinada";
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
+    <Collapse
+      forceOpen={editable}
+      header={
+      <div className="flex-1 flex items-center justify-between">
         <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
           {marketIcon[title] && <i className={`fas ${marketIcon[title]} text-slate-500`} />}
           {title}
@@ -674,6 +690,8 @@ const MarketBlock: React.FC<{
           {correct}/{evaluated} certas
         </span>
       </div>
+      }
+    >
       {picks.length ? (
         isCombinada ? (
           <div className="flex flex-wrap gap-2">
@@ -704,7 +722,7 @@ const MarketBlock: React.FC<{
       ) : (
         <div className="text-[11px] text-slate-600 italic">Sem picks.</div>
       )}
-    </div>
+    </Collapse>
   );
 };
 
@@ -1134,7 +1152,8 @@ const StatsView: React.FC = () => {
                       <div className="space-y-6">
                         {hasCombinada && (
                           <div className="bg-slate-900/40 border border-yellow-500/20 rounded-2xl p-4">
-                            <div className="flex items-center justify-between mb-3">
+                            <Collapse forceOpen={isEditing} header={
+                            <div className="flex-1 flex items-center justify-between">
                               <h4 className="text-xs font-black uppercase tracking-widest text-yellow-400/80 flex items-center gap-2">
                                 <i className="fas fa-layer-group text-yellow-500/60" />
                                 Combinada
@@ -1157,6 +1176,7 @@ const StatsView: React.FC = () => {
                                 )}
                               </div>
                             </div>
+                            }>
 
                             {autoCombinadaPicks.length > 0 && mineCombinadaPicks.length > 0 ? (
                               <div className="space-y-3">
@@ -1196,6 +1216,7 @@ const StatsView: React.FC = () => {
                                 })}
                               </div>
                             )}
+                            </Collapse>
                           </div>
                         )}
 
