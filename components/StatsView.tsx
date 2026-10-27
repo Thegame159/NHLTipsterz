@@ -726,6 +726,83 @@ const MarketBlock: React.FC<{
   );
 };
 
+type MStat = { name: string; aC: number; aT: number; mC: number; mT: number };
+
+const pctOf = (c: number, t: number) => (t > 0 ? (c / t) * 100 : null);
+const pctColor = (v: number | null) =>
+  v === null ? "text-slate-600" : v >= 60 ? "text-emerald-300" : v >= 40 ? "text-amber-300" : "text-rose-300";
+
+/** Acerto acumulado por mercado: onde o Auto e as minhas picks acertam mais. */
+const MarketRanking: React.FC<{ reports: ReportEntry[] }> = ({ reports }) => {
+  const rows = useMemo(() => {
+    const map: Record<string, MStat> = {};
+    const add = (side: "auto" | "mine", byMarket: Record<string, PickEval[]>) => {
+      for (const [k, picks] of Object.entries(byMarket)) {
+        const m = (map[k] ||= { name: k, aC: 0, aT: 0, mC: 0, mT: 0 });
+        const t = picks.filter((x) => x.ok !== null).length;
+        const c = picks.filter((x) => x.ok === true).length;
+        if (side === "auto") { m.aC += c; m.aT += t; } else { m.mC += c; m.mT += t; }
+      }
+    };
+    for (const r of reports) {
+      if (r.resultsStatus !== "ready") continue;
+      add("auto", r.auto.byMarket);
+      add("mine", r.mine.byMarket);
+    }
+    return Object.values(map).filter((m) => m.aT + m.mT > 0);
+  }, [reports]);
+
+  if (rows.length === 0) return null;
+  const MIN = 5; // amostra mínima para destacar o melhor
+  const best = (key: "a" | "m") => {
+    let b = -1, name = "";
+    for (const m of rows) {
+      const t = key === "a" ? m.aT : m.mT;
+      const v = pctOf(key === "a" ? m.aC : m.mC, t);
+      if (t >= MIN && v !== null && v > b) { b = v; name = m.name; }
+    }
+    return name;
+  };
+  const bestA = best("a"), bestM = best("m");
+  const sorted = [...rows].sort((x, y) => (pctOf(y.aC, y.aT) ?? -1) - (pctOf(x.aC, x.aT) ?? -1));
+
+  const Cell: React.FC<{ c: number; t: number; star: boolean; tone: string }> = ({ c, t, star, tone }) => {
+    const v = pctOf(c, t);
+    return (
+      <div className="w-[68px] text-center">
+        <div className={`text-sm font-black ${pctColor(v)}`}>
+          {v === null ? "--" : `${Math.round(v)}%`}
+          {star && <span className={`ml-0.5 text-[10px] ${tone}`}>★</span>}
+        </div>
+        <div className="text-[9px] text-slate-500">{c}/{t}</div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="bg-slate-900/40 border border-slate-700/50 rounded-2xl p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-xs font-black uppercase tracking-widest text-slate-300">Acerto por mercado</h3>
+        <span className="text-[9px] text-slate-500">★ = melhor (mín. {MIN} picks)</span>
+      </div>
+      <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest">
+        <div className="flex-1" />
+        <div className="w-[68px] text-center text-amber-300/70">Auto</div>
+        <div className="w-[68px] text-center text-blue-300/70">Minhas</div>
+      </div>
+      <div className="divide-y divide-slate-800">
+        {sorted.map((m) => (
+          <div key={m.name} className="flex items-center gap-2 py-2">
+            <div className="flex-1 min-w-0 text-[11px] font-black uppercase tracking-wider text-slate-300 truncate">{m.name}</div>
+            <Cell c={m.aC} t={m.aT} star={m.name === bestA} tone="text-amber-300" />
+            <Cell c={m.mC} t={m.mT} star={m.name === bestM} tone="text-blue-300" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 const StatsView: React.FC = () => {
@@ -1067,6 +1144,8 @@ const StatsView: React.FC = () => {
       </div>
       <PlayerPicksSummary records={playerPicks} embedded />
       </div>
+
+      <MarketRanking reports={reports} />
 
       <div className="space-y-3">
         {reports.map((r) => {

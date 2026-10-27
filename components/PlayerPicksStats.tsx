@@ -149,6 +149,7 @@ export const PlayerPicksSummary: React.FC<{ records: Record<string, PRecord>; em
 
 /** Os tripletes de um dia (para mostrar dentro do dia aberto). */
 export const PlayerDayPicks: React.FC<{ rec: PRecord | undefined }> = ({ rec }) => {
+  const [open, setOpen] = React.useState(false);
   if (!rec) return null;
   const rows = [
     ...(['goal', 'point'] as const).flatMap((mode) => rec[mode].map((list, i) => ({ mode, i, list, mine: false }))),
@@ -161,13 +162,14 @@ export const PlayerDayPicks: React.FC<{ rec: PRecord | undefined }> = ({ rec }) 
 
   return (
     <div className="bg-slate-900/40 border border-orange-500/20 rounded-2xl p-4 space-y-2">
-      <div className="flex items-center justify-between">
+      <button type="button" onClick={() => setOpen((v) => !v)} className="w-full flex items-center justify-between gap-2 text-left">
         <h4 className="text-xs font-black uppercase tracking-widest text-orange-300/80">Jogadores · tripletes</h4>
-        <span className="text-[10px] font-black text-slate-500">
+        <span className="flex items-center gap-2 text-[10px] font-black text-slate-500">
           {done.length > 0 ? `${hits}/${done.length} acertos` : 'por conferir'}
+          <i className={`fas ${open ? 'fa-chevron-up' : 'fa-chevron-down'}`} />
         </span>
-      </div>
-      {rows.map(({ mode, i, list, mine }) => (
+      </button>
+      {open && rows.map(({ mode, i, list, mine }) => (
         <div key={`${mine ? 'm' : 'a'}-${mode}-${i}`} className="flex flex-wrap items-center gap-1.5">
           <span className={`w-24 text-[9px] font-black uppercase tracking-wider ${mine ? 'text-orange-300/80' : 'text-slate-500'}`}>
             {mine ? 'Meu · ' : ''}{mode === 'goal' ? 'Golos' : 'Pontos'}{mine ? '' : ` · ${i + 1}`}
