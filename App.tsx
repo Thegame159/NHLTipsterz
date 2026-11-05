@@ -118,6 +118,18 @@ const App: React.FC = () => {
       });
       setLoadedDate(date);
 
+      // Só guarda o Auto enquanto o dia ainda não começou: se o primeiro jogo já arrancou
+      // (ex.: analisar hoje um dia anterior), não escreve por cima do que já estava guardado.
+      const firstStart = filteredPredictions
+        .map((g) => (g?.dateTime ? new Date(g.dateTime).getTime() : NaN))
+        .filter((t) => !Number.isNaN(t))
+        .sort((a, b) => a - b)[0];
+      if (firstStart !== undefined && Date.now() >= firstStart) {
+        setToastMessage('ℹ️ Dia já começou — o Auto guardado no histórico não foi alterado.');
+        setTimeout(() => setToastMessage(null), 4000);
+        return;
+      }
+
       // Guarda snapshot automático no histórico
       try {
         const res = await fetch('/api/history', {
@@ -131,9 +143,13 @@ const App: React.FC = () => {
         });
         if (res.ok) {
           window.dispatchEvent(new Event('history-updated'));
+        } else {
+          setToastMessage('⚠️ Não consegui guardar o Auto no histórico.');
+          setTimeout(() => setToastMessage(null), 4000);
         }
       } catch {
-        // Falha silenciosa
+        setToastMessage('⚠️ Não consegui guardar o Auto no histórico.');
+        setTimeout(() => setToastMessage(null), 4000);
       }
     } catch (err: any) {
       if (reqId !== requestIdRef.current) return;

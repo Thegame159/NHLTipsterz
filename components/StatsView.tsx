@@ -990,7 +990,11 @@ const StatsView: React.FC = () => {
             const autoReady = history?.auto?.markets && Object.keys(history.auto.markets).length > 0;
             const mineReady = history?.mine?.markets && Object.keys(history.mine.markets).length > 0;
 
-            if (autoReady || mineReady) {
+            // Só reutiliza os resultados guardados se TODOS os lados com dicas já estão avaliados;
+            // senão (ex.: Minhas já avaliadas e Auto guardado depois) volta a avaliar o dia todo.
+            const pendingEval = (!!autoSug && !autoReady) || (!!mineSug && !mineReady);
+
+            if ((autoReady || mineReady) && !pendingEval) {
               const autoApplied = applyManualOverrides(manualStore, "auto", history?.auto?.markets ?? {});
               const mineApplied = applyManualOverrides(manualStore, "mine", history?.mine?.markets ?? {});
 
