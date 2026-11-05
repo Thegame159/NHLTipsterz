@@ -22,10 +22,11 @@ export const PortalMenu: React.FC<{
   onClose: () => void;
   children: React.ReactNode;
 }> = ({ open, anchorEl, onClose, children }) => {
-  const [pos, setPos] = useState<{ top: number; left: number; width: number }>({
+  const [pos, setPos] = useState<{ top?: number; bottom?: number; left: number; width: number; maxH: number }>({
     top: 0,
     left: 0,
     width: 280,
+    maxH: 320,
   });
   const menuRef = useRef<HTMLDivElement | null>(null);
 
@@ -34,11 +35,17 @@ export const PortalMenu: React.FC<{
 
     const calc = () => {
       const r = anchorEl.getBoundingClientRect();
-      setPos({
-        top: r.bottom + 8,
-        left: r.left,
-        width: Math.max(220, r.width),
-      });
+      const vh = window.innerHeight;
+      const below = vh - r.bottom - 16;
+      const above = r.top - 16;
+      const width = Math.max(220, r.width);
+      const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
+      // sem espaço em baixo (e mais espaço em cima): abre para cima
+      if (below < 240 && above > below) {
+        setPos({ bottom: vh - r.top + 8, left, width, maxH: Math.min(320, above) });
+      } else {
+        setPos({ top: r.bottom + 8, left, width, maxH: Math.max(140, Math.min(320, below)) });
+      }
     };
 
     calc();
@@ -71,8 +78,8 @@ export const PortalMenu: React.FC<{
   return createPortal(
     <div
       ref={menuRef}
-      style={{ position: "fixed", top: pos.top, left: pos.left, width: pos.width, zIndex: 999999 }}
-      className="max-h-80 overflow-auto rounded-xl border border-white/10 bg-slate-950/95 backdrop-blur-xl shadow-2xl"
+      style={{ position: "fixed", top: pos.top, bottom: pos.bottom, left: pos.left, width: pos.width, maxHeight: pos.maxH, zIndex: 999999 }}
+      className="overflow-auto rounded-xl border border-white/10 bg-slate-950/95 backdrop-blur-xl shadow-2xl"
     >
       {children}
     </div>,
