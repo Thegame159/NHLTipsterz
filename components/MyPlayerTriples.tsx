@@ -282,7 +282,7 @@ export const MyTripleCard: React.FC<{
 
 // ─── Secção (dados + guardar no telemóvel) ──────────────────────────────────
 
-const MyPlayerTriples: React.FC<{ predictions: GamePrediction[]; date: string }> = ({ predictions, date }) => {
+const MyPlayerTriples: React.FC<{ predictions: GamePrediction[]; date: string; middle?: React.ReactNode }> = ({ predictions, date, middle }) => {
   const key = playersKey(date, predictions);
   const [games, setGames] = useState<GamePlayers[] | null>(playersCache.get(key) ?? null);
   const [error, setError] = useState<string | null>(null);
@@ -341,9 +341,26 @@ const MyPlayerTriples: React.FC<{ predictions: GamePrediction[]; date: string }>
   const resolve = (slots: Slot[]): Cand[] =>
     slots.map((s) => all.find((x) => x.gameId === s.gameId && x.card.id === s.playerId)).filter(Boolean) as Cand[];
 
-  if (predictions.length === 0) return null;
-  if (error) {
-    return (
+  // Ordem no ecrã: pontos de jogadores → (middle: Tiro do Dia) → golos de jogadores
+  const card = (mode: Mode) => (
+    <MyTripleCard
+      key={mode}
+      mode={mode}
+      picks={resolve(store[mode])}
+      all={all}
+      games={gameList}
+      dateLabel={ddmm(date)}
+      onAdd={(x) => {
+        if (store[mode].length >= 3) return;
+        save({ ...store, [mode]: [...store[mode], { gameId: x.gameId, playerId: x.card.id }] });
+      }}
+      onRemove={(id) => save({ ...store, [mode]: store[mode].filter((s) => s.playerId !== id) })}
+    />
+  );
+
+  let status: React.ReactNode = null;
+  if (predictions.length > 0 && error) {
+    status = (
       <div className="rounded-xl border border-slate-800 p-4 text-center space-y-3">
         <p className="text-sm text-slate-400">{error}</p>
         <button onClick={() => setAttempt((a) => a + 1)} className="rounded-lg bg-orange-600 hover:bg-orange-500 px-4 py-2 text-[11px] font-black uppercase tracking-wider text-white">
@@ -351,32 +368,17 @@ const MyPlayerTriples: React.FC<{ predictions: GamePrediction[]; date: string }>
         </button>
       </div>
     );
+  } else if (predictions.length > 0 && !games) {
+    status = <div className="py-8 text-center text-slate-500 text-[10px] font-black uppercase tracking-widest">A carregar jogadores…</div>;
   }
-  if (!games) {
-    return <div className="py-8 text-center text-slate-500 text-[10px] font-black uppercase tracking-widest">A carregar jogadores…</div>;
-  }
+  const ready = predictions.length > 0 && !status;
 
   return (
-    <div className="space-y-3">
-      <div>
-        <h2 className="text-lg font-black text-white">Tripletes de jogadores</h2>
-        <p className="text-xs text-slate-400">Escolhe até 3 jogadores (de jogos diferentes) para golos e para pontos.</p>
-      </div>
-      {(['goal', 'point'] as Mode[]).map((mode) => (
-        <MyTripleCard
-          key={mode}
-          mode={mode}
-          picks={resolve(store[mode])}
-          all={all}
-          games={gameList}
-          dateLabel={ddmm(date)}
-          onAdd={(x) => {
-            if (store[mode].length >= 3) return;
-            save({ ...store, [mode]: [...store[mode], { gameId: x.gameId, playerId: x.card.id }] });
-          }}
-          onRemove={(id) => save({ ...store, [mode]: store[mode].filter((s) => s.playerId !== id) })}
-        />
-      ))}
+    <div className="space-y-6">
+      {status}
+      {ready && card('point')}
+      {middle}
+      {ready && card('goal')}
     </div>
   );
 };

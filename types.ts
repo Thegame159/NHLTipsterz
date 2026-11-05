@@ -142,6 +142,18 @@ export interface Suggestions {
   strongPicks?: StrongPick[];
   winCombo?: WinCombo | null;
   combinadaFlex?: { game: string; pick: 'HOME' | 'AWAY' | '1X' | 'X2' }[]; // combinada manual (Minhas Picks)
+  tiroDoDia?: Tiro[]; // tiros do dia (Minhas Picks), pode haver vários
+}
+
+export type TiroType = 'DRAW' | 'BTTS1P' | 'PTS' | 'GOAL';
+export interface Tiro {
+  type: TiroType; // empate TR | ambas marcam no 1.º período | jogador a pontuar | jogador a marcar
+  home: string;
+  away: string;
+  playerId?: number;
+  player?: string;
+  team?: string;
+  prob?: number;
 }
 
 export interface NHLAnalysisData {

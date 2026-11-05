@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { GamePrediction, Suggestions } from "../types";
 import { retryLightLogo, logoUrlFor } from "../utils/nhlUtils";
 import MyPlayerTriples from "./MyPlayerTriples";
+import MyTiroDoDia from "./MyTiroDoDia";
 import { IconDropdown, parseTeamsFromText, Option } from "./IconDropdown";
 
 interface Props {
@@ -15,6 +16,7 @@ const defaultSuggestions = (): Suggestions => ({
   tripleOver15P1: [],
   doubleOver15P1: [],
   drawSuggestions: [],
+  tripleOver15P2: [],
   quadrupleOver45: [],
   over55Suggestions: [],
   combinadaFlex: [],
@@ -77,7 +79,9 @@ const isEmptyPicks = (p: Suggestions) =>
   (p.quadrupleOver45 || []).length === 0 &&
   (p.over55Suggestions || []).length === 0 &&
   (p.drawSuggestions || []).length === 0 &&
-  (p.combinadaFlex?.length || 0) === 0;
+  (p.tripleOver15P2 || []).length === 0 &&
+  (p.combinadaFlex?.length || 0) === 0 &&
+  (p.tiroDoDia?.length || 0) === 0;
 
 type CombinadaPick = {
   game: string;
@@ -91,7 +95,8 @@ const PickLine: React.FC<{
   badgeColor: string;
   index: number;
   onRemove?: () => void;
-}> = ({ text, badgeColor, index, onRemove }) => {
+  tag?: { label: string; className: string };
+}> = ({ text, badgeColor, index, onRemove, tag }) => {
   const teams = parseTeamsFromText(text);
   return (
     <div className="flex items-center gap-3 bg-slate-900/60 p-3 rounded-xl border border-slate-700/50 group hover:border-blue-500/30 transition-colors">
@@ -129,6 +134,10 @@ const PickLine: React.FC<{
           )}
         </div>
       </div>
+
+      {tag && (
+        <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border shrink-0 ${tag.className}`}>{tag.label}</span>
+      )}
 
       {onRemove && (
         <button
@@ -246,6 +255,7 @@ const PickCard: React.FC<{
 const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
   const [picks, setPicks] = useState<Suggestions>(defaultSuggestions());
   const [comboGame, setComboGame] = useState<string | null>(null);
+  const [overGame, setOverGame] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -348,20 +358,18 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
     });
   }, [gameOptionsAll, tripleOverSet, picks.doubleOver15P1]);
 
-  const over45Options = useMemo(() => {
-    const chosen = new Set((picks.quadrupleOver45 || []).map(normalizeGameText));
+  const tripleOverP2Options = useMemo(() => {
+    const chosen = new Set((picks.tripleOver15P2 || []).map(normalizeGameText));
     return gameOptionsAll.filter((o) => !chosen.has(normalizeGameText(o.value)));
-  }, [gameOptionsAll, picks.quadrupleOver45]);
+  }, [gameOptionsAll, picks.tripleOver15P2]);
 
-  const over55Options = useMemo(() => {
-    const chosen = new Set((picks.over55Suggestions || []).map(normalizeGameText));
-    return gameOptionsAll.filter((o) => !chosen.has(normalizeGameText(o.value)));
-  }, [gameOptionsAll, picks.over55Suggestions]);
-
-  const drawOptions = useMemo(() => {
-    const chosen = new Set((picks.drawSuggestions || []).map((d: any) => normalizeGameText(d?.game ?? String(d))));
-    return gameOptionsAll.filter((o) => !chosen.has(normalizeGameText(o.value)));
-  }, [gameOptionsAll, picks.drawSuggestions]);
+  const overTotal = (picks.quadrupleOver45 || []).length + (picks.over55Suggestions || []).length;
+  const overGameOptions = useMemo(() => {
+    const used = new Set(
+      [...(picks.quadrupleOver45 || []), ...(picks.over55Suggestions || [])].map(normalizeGameText)
+    );
+    return gameOptionsAll.filter((o) => !used.has(normalizeGameText(o.value)));
+  }, [gameOptionsAll, picks.quadrupleOver45, picks.over55Suggestions]);
 
   const addTeamToTripleWin = (abbr: string) => {
     const t = abbr.trim().toUpperCase();
@@ -388,6 +396,17 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
     });
   };
 
+  const addGameToTripleOverP2 = (gameValue: string) => {
+    const g = normalizeGameText(gameValue);
+    if (!gamesOfDay.includes(g)) return;
+    setPicks((prev) => {
+      const cur = prev.tripleOver15P2 || [];
+      if (cur.map(normalizeGameText).includes(g)) return prev;
+      if (cur.length >= 3) return prev;
+      return { ...prev, tripleOver15P2: [...cur, g] };
+    });
+  };
+
   const addGameToDoubleOver = (gameValue: string) => {
     const g = normalizeGameText(gameValue);
     if (!gamesOfDay.includes(g)) return;
@@ -402,39 +421,19 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
     });
   };
 
-  const addGameToOver45 = (gameValue: string) => {
-    const g = normalizeGameText(gameValue);
+  // Quádrupla Overs: uma só aposta de até 4 jogos; cada jogo é Over 4.5 ou Over 5.5
+  const addOver = (line: "4.5" | "5.5") => {
+    if (!overGame) return;
+    const g = normalizeGameText(overGame);
     if (!gamesOfDay.includes(g)) return;
-
     setPicks((prev) => {
-      const cur = prev.quadrupleOver45 || [];
-      if (cur.map(normalizeGameText).includes(g)) return prev;
-      if (cur.length >= 4) return prev;
-      return { ...prev, quadrupleOver45: [...cur, g] };
+      const o45 = prev.quadrupleOver45 || [];
+      const o55 = prev.over55Suggestions || [];
+      if ([...o45, ...o55].map(normalizeGameText).includes(g)) return prev;
+      if (o45.length + o55.length >= 4) return prev;
+      return line === "4.5" ? { ...prev, quadrupleOver45: [...o45, g] } : { ...prev, over55Suggestions: [...o55, g] };
     });
-  };
-
-  const addGameToOver55 = (gameValue: string) => {
-    const g = normalizeGameText(gameValue);
-    if (!gamesOfDay.includes(g)) return;
-
-    setPicks((prev) => {
-      const cur = prev.over55Suggestions || [];
-      if (cur.map(normalizeGameText).includes(g)) return prev;
-      return { ...prev, over55Suggestions: [...cur, g] };
-    });
-  };
-
-  const addGameToDrawTR = (gameValue: string) => {
-    const g = normalizeGameText(gameValue);
-    if (!gamesOfDay.includes(g)) return;
-
-    setPicks((prev) => {
-      const cur = prev.drawSuggestions || [];
-      const exists = cur.some((x: any) => normalizeGameText(x?.game ?? String(x)) === g);
-      if (exists) return prev;
-      return { ...prev, drawSuggestions: [...cur, { game: g, explanation: "" }] as any };
-    });
+    setOverGame(null);
   };
 
   const addComboPick = (type: "HOME" | "AWAY" | "1X" | "X2") => {
@@ -518,7 +517,7 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-4 gap-6">
         {/* COMBINADA FLEX */}
         <div className="col-span-full">
           <div className="relative overflow-visible bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 shadow-xl">
@@ -696,54 +695,113 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
           onRemove={(idx) => setPicks((p) => ({ ...p, doubleOver15P1: (p.doubleOver15P1 || []).filter((_, i) => i !== idx) }))}
         />
 
-        {/* QUADRUPA OVER 4.5 */}
+        {/* TRIPLETE OVER 1.5 P2 */}
         <PickCard
-          title="Quádrupla Over 4.5"
-          icon="fa-cubes"
-          gradient="bg-gradient-to-br from-emerald-500 to-green-700"
-          badgeColor="bg-emerald-500"
-          description="Escolhe 4 jogos com > 4.5 golos no total."
-          max={4}
-          options={over45Options}
-          selectedItems={picks.quadrupleOver45}
+          title="Triplete Over 1.5 P2"
+          icon="fa-fire"
+          gradient="bg-gradient-to-br from-pink-500 to-rose-700"
+          badgeColor="bg-pink-500"
+          description="Escolhe 3 jogos com > 1.5 golos no 2º período."
+          max={3}
+          options={tripleOverP2Options}
+          selectedItems={picks.tripleOver15P2 || []}
           placeholder="Seleciona jogo..."
-          onAdd={addGameToOver45}
-          onRemove={(idx) => setPicks((p) => ({ ...p, quadrupleOver45: (p.quadrupleOver45 || []).filter((_, i) => i !== idx) }))}
+          onAdd={addGameToTripleOverP2}
+          onRemove={(idx) => setPicks((p) => ({ ...p, tripleOver15P2: (p.tripleOver15P2 || []).filter((_, i) => i !== idx) }))}
         />
 
-        {/* JOGOS OVER 5.5 */}
-        <PickCard
-          title="Jogos Over 5.5"
-          icon="fa-chart-line"
-          gradient="bg-gradient-to-br from-blue-500 to-indigo-700"
-          badgeColor="bg-blue-500"
-          description="Escolhe jogos com tendência para > 5.5 golos."
-          max={10}
-          options={over55Options}
-          selectedItems={picks.over55Suggestions}
-          placeholder="Seleciona jogo..."
-          onAdd={addGameToOver55}
-          onRemove={(idx) => setPicks((p) => ({ ...p, over55Suggestions: (p.over55Suggestions || []).filter((_, i) => i !== idx) }))}
-        />
+        {/* QUÁDRUPLA OVERS (Over 4.5 ou Over 5.5 por jogo) */}
+        <div className="col-span-full relative overflow-visible bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 shadow-xl transition-all hover:scale-[1.01] hover:shadow-blue-500/10">
+          <div className="absolute top-0 right-0 w-32 h-32 -mr-8 -mt-8 opacity-10 rounded-full blur-3xl bg-gradient-to-br from-emerald-500 to-blue-600" />
+          <div className="relative z-10">
+            <div className="flex items-center justify-between mb-4">
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-gradient-to-br from-emerald-500 to-blue-600 shadow-lg shadow-black/20">
+                <i className="fas fa-cubes text-white text-xl" />
+              </div>
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">As minhas picks</span>
+            </div>
 
-        {/* EMPATE EM TEMPO REGULAMENTAR */}
-        <PickCard
-          title="Empate em Tempo Regulamentar"
-          icon="fa-handshake"
-          gradient="bg-gradient-to-br from-purple-500 to-violet-700"
-          badgeColor="bg-purple-500"
-          description="Escolhe jogos com elevada probabilidade de ir a Overtime."
-          max={5}
-          options={drawOptions}
-          selectedItems={(picks.drawSuggestions || []).map((d: any) => (typeof d === "object" ? d.game : d))}
-          placeholder="Seleciona jogo..."
-          onAdd={addGameToDrawTR}
-          onRemove={(idx) => setPicks((p) => ({ ...p, drawSuggestions: (p.drawSuggestions || []).filter((_, i) => i !== idx) }))}
-        />
+            <h3 className="text-xl font-bold text-white mb-1">Quádrupla Overs</h3>
+            <p className="text-xs text-slate-400 mb-5 font-medium leading-tight">
+              Escolhe 4 jogos e, em cada um, Over 4.5 ou Over 5.5. <span className="text-slate-500">(máx. 4)</span>
+            </p>
+
+            <div className="mb-3">
+              <IconDropdown
+                placeholder="Seleciona jogo..."
+                options={overGameOptions}
+                value={overGame || ""}
+                onChange={(v) => setOverGame(v)}
+                disabled={overGameOptions.length === 0 || overTotal >= 4}
+              />
+            </div>
+
+            {overGame && (
+              <div className="flex gap-2 mb-5">
+                <button
+                  onClick={() => addOver("4.5")}
+                  className="flex-1 px-3 py-2 rounded-xl border text-xs font-black uppercase tracking-widest transition bg-emerald-500/20 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30"
+                >
+                  Over 4.5
+                </button>
+                <button
+                  onClick={() => addOver("5.5")}
+                  className="flex-1 px-3 py-2 rounded-xl border text-xs font-black uppercase tracking-widest transition bg-blue-500/20 border-blue-500/30 text-blue-300 hover:bg-blue-500/30"
+                >
+                  Over 5.5
+                </button>
+              </div>
+            )}
+
+            <div className="space-y-3">
+              {overTotal > 0 ? (
+                [
+                  ...(picks.quadrupleOver45 || []).map((g, i) => ({ g, line: "4.5" as const, i })),
+                  ...(picks.over55Suggestions || []).map((g, i) => ({ g, line: "5.5" as const, i })),
+                ].map((it, n) => (
+                  <PickLine
+                    key={`over-${it.line}-${it.g}`}
+                    text={it.g}
+                    badgeColor={it.line === "4.5" ? "bg-emerald-500" : "bg-blue-500"}
+                    index={n}
+                    tag={{
+                      label: `O${it.line}`,
+                      className:
+                        it.line === "4.5"
+                          ? "bg-emerald-500/20 border-emerald-500/30 text-emerald-300"
+                          : "bg-blue-500/20 border-blue-500/30 text-blue-300",
+                    }}
+                    onRemove={() =>
+                      setPicks((p) =>
+                        it.line === "4.5"
+                          ? { ...p, quadrupleOver45: (p.quadrupleOver45 || []).filter((_, j) => j !== it.i) }
+                          : { ...p, over55Suggestions: (p.over55Suggestions || []).filter((_, j) => j !== it.i) }
+                      )
+                    }
+                  />
+                ))
+              ) : (
+                <p className="text-slate-500 italic text-sm py-3">Sem seleções ainda — adiciona acima.</p>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* TRIPLETES DE JOGADORES (golos / pontos) */}
-      <MyPlayerTriples predictions={predictionsOfDay} date={selectedDate} />
+      {/* PONTOS DE JOGADORES → TIRO DO DIA → GOLOS DE JOGADORES */}
+      <MyPlayerTriples
+        predictions={predictionsOfDay}
+        date={selectedDate}
+        middle={
+          <MyTiroDoDia
+            tiros={picks.tiroDoDia || []}
+            onChange={(next) => setPicks((p) => ({ ...p, tiroDoDia: next }))}
+            predictions={predictionsOfDay}
+            date={selectedDate}
+            gameOptions={gameOptionsAll}
+          />
+        }
+      />
     </div>
   );
 };
