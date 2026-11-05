@@ -166,16 +166,27 @@ export const PlayerDayPicks: React.FC<{ rec: PRecord | undefined }> = ({ rec }) 
     ...(['goal', 'point'] as const).flatMap((mode) => (rec.mine && rec.mine[mode].length > 0 ? [{ mode, i: 0, list: rec.mine[mode], mine: true }] : [])),
   ];
   if (rows.length === 0) return null;
-  const all = rows.flatMap((r) => r.list);
-  const done = all.filter((p) => p.r === 'hit' || p.r === 'miss');
-  const hits = done.filter((p) => p.r === 'hit').length;
+  const count = (mine: boolean) => {
+    const done = rows.filter((r) => r.mine === mine).flatMap((r) => r.list).filter((p) => p.r === 'hit' || p.r === 'miss');
+    return { done: done.length, hits: done.filter((p) => p.r === 'hit').length };
+  };
+  const auto = count(false);
+  const minhas = count(true);
+  const hasMine = rows.some((r) => r.mine);
 
   return (
     <div className="bg-slate-900/40 border border-orange-500/20 rounded-2xl p-4 space-y-2">
       <button type="button" onClick={() => setOpen((v) => !v)} className="w-full flex items-center justify-between gap-2 text-left">
         <h4 className="text-xs font-black uppercase tracking-widest text-orange-300/80">Jogadores · tripletes</h4>
         <span className="flex items-center gap-2 text-[10px] font-black text-slate-500">
-          {done.length > 0 ? `${hits}/${done.length} acertos` : 'por conferir'}
+          {auto.done + minhas.done === 0 ? (
+            'por conferir'
+          ) : (
+            <>
+              <span className="text-amber-300">Auto {auto.done > 0 ? `${auto.hits}/${auto.done}` : '–'}</span>
+              {hasMine && <span className="text-sky-300">Minhas {minhas.done > 0 ? `${minhas.hits}/${minhas.done}` : '–'}</span>}
+            </>
+          )}
           <i className={`fas ${open ? 'fa-chevron-up' : 'fa-chevron-down'}`} />
         </span>
       </button>
