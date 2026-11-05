@@ -35,9 +35,23 @@ export const TiroRow: React.FC<{ tiro: Tiro; onRemove?: () => void }> = ({ tiro,
   const isPlayer = tiro.type === 'PTS' || tiro.type === 'GOAL';
   return (
     <div className="flex items-center gap-3 rounded-xl bg-slate-900/70 border border-rose-500/30 p-3">
-      <div className="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-sm shrink-0">{info.icon}</div>
+      {isPlayer ? (
+        <div className="relative w-12 h-12 rounded-full bg-slate-800 border border-slate-600 flex items-center justify-center shrink-0">
+          {tiro.team ? <Logo abbr={tiro.team} className="w-8 h-8" /> : <span className="text-lg">{info.icon}</span>}
+          <span className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-slate-900 border border-rose-500/40 flex items-center justify-center text-[10px] leading-none">{info.icon}</span>
+        </div>
+      ) : (
+        <div className="flex -space-x-3 shrink-0">
+          <div className="w-11 h-11 rounded-full bg-slate-800 border border-slate-600 flex items-center justify-center">
+            <Logo abbr={tiro.away} className="w-7 h-7" />
+          </div>
+          <div className="w-11 h-11 rounded-full bg-slate-800 border border-slate-600 flex items-center justify-center">
+            <Logo abbr={tiro.home} className="w-7 h-7" />
+          </div>
+        </div>
+      )}
       <div className="flex-1 min-w-0">
-        <div className="text-[10px] font-black uppercase tracking-widest text-rose-300">{info.long}</div>
+        <div className="text-[10px] font-black uppercase tracking-widest text-rose-300">{!isPlayer && <span className="mr-1">{info.icon}</span>}{info.long}</div>
         <div className="text-base font-black text-white truncate">
           {isPlayer ? tiro.player : `${teamLabel(tiro.home)} vs ${teamLabel(tiro.away)}`}
         </div>
