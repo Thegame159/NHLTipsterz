@@ -204,14 +204,16 @@ const PickCard: React.FC<{
           {description} <span className="text-slate-500">(máx. {max})</span>
         </p>
 
-        <div className="flex items-center gap-2 mb-5">
-          <IconDropdown
-            placeholder={placeholder}
-            options={options}
-            value={sel}
-            onChange={(v) => setSel(v)}
-            disabled={options.length === 0}
-          />
+        <div className="flex items-center gap-2 mb-5 min-w-0">
+          <div className="min-w-0 flex-1 [&>*]:w-full [&_button]:max-w-full">
+            <IconDropdown
+              placeholder={placeholder}
+              options={options}
+              value={sel}
+              onChange={(v) => setSel(v)}
+              disabled={options.length === 0}
+            />
+          </div>
           <button
             type="button"
             disabled={!sel || disabledAdd || selectedItems.length >= max}
@@ -220,7 +222,7 @@ const PickCard: React.FC<{
               onAdd(sel);
               setSel("");
             }}
-            className={`px-3 py-2 rounded-lg border text-[10px] font-black uppercase tracking-widest transition ${
+            className={`shrink-0 px-3 py-2 rounded-lg border text-[10px] font-black uppercase tracking-widest transition ${
               !sel || disabledAdd || selectedItems.length >= max
                 ? "bg-white/5 border-white/10 text-slate-600 cursor-not-allowed"
                 : "bg-white/5 border-white/10 text-slate-200 hover:bg-white/10"
@@ -517,7 +519,7 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* COMBINADA FLEX */}
         <div className="col-span-full">
           <div className="relative overflow-visible bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 shadow-xl">

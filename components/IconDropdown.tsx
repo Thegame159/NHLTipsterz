@@ -98,7 +98,7 @@ export const IconDropdown: React.FC<{
   }, [selected]);
 
   return (
-    <div className="flex-1">
+    <div className="flex-1 min-w-0">
       <button
         ref={btnRef}
         type="button"
