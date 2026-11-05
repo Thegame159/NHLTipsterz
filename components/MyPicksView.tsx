@@ -482,6 +482,25 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
         return;
       }
 
+      // Tiros de jogador (marcar/pontuar): vão para o avaliador de jogadores
+      try {
+        const tiros = (picks.tiroDoDia || [])
+          .filter((t) => (t.type === "GOAL" || t.type === "PTS") && t.playerId)
+          .map((t) => ({
+            id: Number(t.playerId),
+            name: t.player || "",
+            abbr: t.team || "",
+            opp: t.team === t.home ? t.away : t.home,
+            prob: Math.round(t.prob ?? 0),
+            mode: t.type === "GOAL" ? "goal" : "point",
+          }));
+        await fetch("/api/player-picks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ date: selectedDate, side: "tiros", tiros }),
+        });
+      } catch {}
+
       alert("Picks guardadas!");
       window.dispatchEvent(new CustomEvent("history-updated"));
     } catch (err) {

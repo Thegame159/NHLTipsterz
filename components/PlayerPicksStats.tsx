@@ -5,7 +5,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 
 export type PPick = { id: number; name: string; abbr: string; opp: string; prob: number; r?: 'hit' | 'miss' | 'dnp'; g?: number; a?: number };
-export type PRecord = { date: string; savedAt: number; goal: PPick[][]; point: PPick[][]; mine?: { goal: PPick[]; point: PPick[]; savedAt: number } };
+export type PRecord = { date: string; savedAt: number; goal: PPick[][]; point: PPick[][]; mine?: { goal: PPick[]; point: PPick[]; savedAt: number }; tiros?: (PPick & { mode: 'goal' | 'point' })[] };
 
 const shortName = (full: string) => {
   const parts = full.trim().split(/\s+/);

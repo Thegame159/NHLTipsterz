@@ -4,6 +4,7 @@
 //
 //   POST   { date, goal: Pick[][], point: Pick[][] }  → guarda os tripletes automáticos (só a primeira vez de cada dia)
 //   POST   { date, side: "mine", goal: Pick[], point: Pick[] } → guarda os MEUS tripletes (substitui os anteriores)
+//   POST   { date, side: "tiros", tiros: TiroPick[] }  → guarda os MEUS tiros do dia de jogador (substitui os anteriores)
 //   GET    ?limit=60                                  → últimos dias, com resultados já conferidos
 //   DELETE ?date=YYYY-MM-DD                           → apaga um dia
 
@@ -28,7 +29,8 @@ type Pick = {
   a?: number;
 };
 type Mine = { goal: Pick[]; point: Pick[]; savedAt: number };
-type Record_ = { date: string; savedAt: number; goal: Pick[][]; point: Pick[][]; mine?: Mine };
+type TiroPick = Pick & { mode: "goal" | "point" }; // jogador a marcar (goal) ou a pontuar (point)
+type Record_ = { date: string; savedAt: number; goal: Pick[][]; point: Pick[][]; mine?: Mine; tiros?: TiroPick[] };
 
 const safeParse = (raw: any) => {
   try {
@@ -65,6 +67,16 @@ const cleanList = (v: unknown): Pick[] =>
     prob: Math.max(0, Math.min(100, Math.round(num(p?.prob)))),
   })).filter((p) => p.id > 0);
 
+const cleanTiros = (v: unknown): TiroPick[] =>
+  (Array.isArray(v) ? v : []).slice(0, 30).map((p: any) => ({
+    id: num(p?.id),
+    name: String(p?.name ?? "").slice(0, 60),
+    abbr: String(p?.abbr ?? "").slice(0, 4),
+    opp: String(p?.opp ?? "").slice(0, 4),
+    prob: Math.max(0, Math.min(100, Math.round(num(p?.prob)))),
+    mode: (p?.mode === "goal" ? "goal" : "point") as "goal" | "point",
+  })).filter((p) => p.id > 0);
+
 const seasonIdFor = (date: string) => {
   const y = Number(date.slice(0, 4));
   const m = Number(date.slice(5, 7));
@@ -95,7 +107,11 @@ async function evaluate(rec: Record_, mode: "goal" | "point", logs: Map<number, 
   const today = new Date().toISOString().slice(0, 10);
   const age = dayDiff(today, rec.date);
 
-  const lists: Pick[][] = [...rec[mode], ...(rec.mine ? [rec.mine[mode]] : [])];
+  const lists: Pick[][] = [
+    ...rec[mode],
+    ...(rec.mine ? [rec.mine[mode]] : []),
+    ...(rec.tiros ? [rec.tiros.filter((t) => t.mode === mode)] : []),
+  ];
   for (const list of lists) {
     for (const p of list) {
       if (p.r) continue;
@@ -126,6 +142,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const date = String(body?.date ?? "").trim();
       if (!isDate(date)) return res.status(400).json({ message: "Invalid date" });
 
+      // Os meus tiros do dia (jogadores): substituem os anteriores (mantém o resultado de quem já foi conferido)
+      if (body?.side === "tiros") {
+        const prev = safeParse(await redis.get(keyFor(date))) as Record_ | null;
+        const old = new Map<string, TiroPick>();
+        for (const t of prev?.tiros ?? []) old.set(`${t.id}|${t.mode}`, t);
+        const tiros = cleanTiros(body?.tiros).map((t) => {
+          const o = old.get(`${t.id}|${t.mode}`);
+          return o && o.opp === t.opp && o.r ? { ...t, r: o.r, g: o.g, a: o.a } : t;
+        });
+        const rec: Record_ = prev ?? { date, savedAt: Date.now(), goal: [], point: [] };
+        if (tiros.length === 0) delete rec.tiros;
+        else rec.tiros = tiros;
+        if (rec.goal.length === 0 && rec.point.length === 0 && !rec.mine && !rec.tiros) await redis.del(keyFor(date));
+        else await redis.set(keyFor(date), JSON.stringify(rec));
+        return res.status(200).json({ ok: true, tiros: tiros.length });
+      }
+
       // Os meus tripletes: substituem os anteriores (mantém o resultado de quem já foi conferido)
       if (body?.side === "mine") {
         const prev = safeParse(await redis.get(keyFor(date))) as Record_ | null;
@@ -139,7 +172,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const rec: Record_ = prev ?? { date, savedAt: Date.now(), goal: [], point: [] };
         if (mine.goal.length === 0 && mine.point.length === 0) delete rec.mine;
         else rec.mine = mine;
-        if (rec.goal.length === 0 && rec.point.length === 0 && !rec.mine) await redis.del(keyFor(date));
+        if (rec.goal.length === 0 && rec.point.length === 0 && !rec.mine && !rec.tiros) await redis.del(keyFor(date));
         else await redis.set(keyFor(date), JSON.stringify(rec));
         return res.status(200).json({ ok: true, mine: true });
       }
@@ -153,7 +186,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (existing && (existing.goal.length > 0 || existing.point.length > 0)) return res.status(200).json({ ok: true, kept: true });
 
       // pode já existir um registo só com os "meus" tripletes: acrescenta os automáticos
-      const rec: Record_ = { date, savedAt: Date.now(), goal, point, ...(existing?.mine ? { mine: existing.mine } : {}) };
+      const rec: Record_ = { date, savedAt: Date.now(), goal, point, ...(existing?.mine ? { mine: existing.mine } : {}), ...(existing?.tiros ? { tiros: existing.tiros } : {}) };
       await redis.set(keyFor(date), JSON.stringify(rec));
       return res.status(200).json({ ok: true, saved: true });
     }
@@ -183,7 +216,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const pendingIds = new Set<number>();
       for (const rec of items) {
         if (rec.date > today || dayDiff(today, rec.date) > 10) continue;
-        for (const m of ["goal", "point"] as const) for (const l of [...rec[m], ...(rec.mine ? [rec.mine[m]] : [])]) for (const p of l) if (!p.r) pendingIds.add(p.id);
+        for (const m of ["goal", "point"] as const) for (const l of [...rec[m], ...(rec.mine ? [rec.mine[m]] : []), ...(rec.tiros ? [rec.tiros.filter((t) => t.mode === m)] : [])]) for (const p of l) if (!p.r) pendingIds.add(p.id);
       }
       const ids = [...pendingIds].slice(0, 60);
       const logsBySeason = new Map<string, Map<number, any[] | null>>();

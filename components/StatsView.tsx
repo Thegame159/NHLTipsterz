@@ -383,6 +383,20 @@ function evalMarkets(sug: Suggestions, results: ApiResultsResponse): Record<stri
 
   if (combinadaPicks.length > 0) out["Combinada"] = combinadaPicks;
 
+  // Tiro do Dia (jogos): empate em tempo regulamentar e ambas marcam no 1.º período.
+  // Os tiros de jogador (marcar/pontuar) são avaliados à parte, a partir de /api/player-picks.
+  const tiroGames: PickEval[] = [];
+  for (const t of sug.tiroDoDia || []) {
+    if (t.type !== "DRAW" && t.type !== "BTTS1P") continue;
+    const text = `${t.home} vs ${t.away}`;
+    const e =
+      t.type === "DRAW"
+        ? evalGamePick(text, (g) => g.regAway === g.regHome)
+        : evalGamePick(text, (g) => g.p1Away > 0 && g.p1Home > 0);
+    tiroGames.push({ ...e, label: `${t.type === "DRAW" ? "Empate TR" : "BTTS 1P"} · ${text}` });
+  }
+  if (tiroGames.length > 0) out["Tiro do Dia"] = tiroGames;
+
   for (const k of Object.keys(out)) {
     if (!out[k].length) delete out[k];
   }
@@ -660,6 +674,7 @@ const MarketBlock: React.FC<{
     "Over 4.5": "fa-hockey-puck",
     "Over 5.5": "fa-plus-circle",
     "Combinada": "fa-layer-group",
+    "Tiro do Dia": "fa-bullseye",
   };
 
   const isCombinada = title === "Combinada";
@@ -1050,15 +1065,44 @@ const StatsView: React.FC = () => {
     return () => { cancelled = true; };
   }, [dates, historyMap, manualByDate, editDate]);
 
+  // Junta aos "Minhas picks" os tiros de jogador (marcar/pontuar), avaliados ao vivo
+  const viewReports = useMemo(() => {
+    return reports.map((r) => {
+      const tiros = playerPicks[r.date]?.tiros;
+      if (!tiros || tiros.length === 0 || r.resultsStatus !== "ready") return r;
+      const extra: PickEval[] = tiros.map((t) => {
+        const nm = t.name.trim().split(/\s+/);
+        const short = nm.length > 1 ? `${nm[0][0]}. ${nm.slice(1).join(" ")}` : t.name;
+        const label = `${t.mode === "goal" ? "Marcar" : "Pontuar"} · ${short}`;
+        const teams = [t.abbr, t.opp].filter(Boolean);
+        if (t.r === "hit") return { label, ok: true, teams, reason: `${t.g ?? 0}G ${t.a ?? 0}A` };
+        if (t.r === "miss") return { label, ok: false, teams, reason: `${t.g ?? 0}G ${t.a ?? 0}A` };
+        if (t.r === "dnp") return { label, ok: null, teams, reason: "Não jogou." };
+        return { label, ok: null, teams, reason: "Ainda sem resultado." };
+      });
+      const merged = { ...r.mine.byMarket, "Tiro do Dia": [...(r.mine.byMarket["Tiro do Dia"] ?? []), ...extra] };
+      const applied = applyManualOverrides(manualByDate[r.date] ?? null, "mine", merged);
+      return {
+        ...r,
+        mine: {
+          percent: applied.total > 0 ? (applied.correct / applied.total) * 100 : null,
+          correct: applied.correct,
+          total: applied.total,
+          byMarket: applied.byMarket,
+        },
+      };
+    });
+  }, [reports, playerPicks, manualByDate]);
+
   const totals = useMemo(() => {
     let aC = 0, aT = 0, mC = 0, mT = 0;
-    for (const r of reports) { aC += r.auto.correct; aT += r.auto.total; mC += r.mine.correct; mT += r.mine.total; }
+    for (const r of viewReports) { aC += r.auto.correct; aT += r.auto.total; mC += r.mine.correct; mT += r.mine.total; }
     return {
       autoPct: aT > 0 ? (aC / aT) * 100 : null,
       minePct: mT > 0 ? (mC / mT) * 100 : null,
       aC, aT, mC, mT,
     };
-  }, [reports]);
+  }, [viewReports]);
 
   const forceRefresh = useCallback(async () => {
     if (refreshing) return;
@@ -1203,11 +1247,11 @@ const StatsView: React.FC = () => {
           </div>
         </div>
       </div>
-      <MarketRanking reports={reports} players={playerMarketStats(playerPicks)} />
+      <MarketRanking reports={viewReports} players={playerMarketStats(playerPicks)} />
       </div>
 
       <div className="space-y-3">
-        {reports.map((r) => {
+        {viewReports.map((r) => {
           const isOpen = openDate === r.date;
           const isEditing = editDate === r.date;
 
