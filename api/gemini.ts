@@ -16,7 +16,7 @@ const MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
 const TEAM_GAMES = 7; // jogos recentes usados por equipa
 const LOOKBACK_DAYS = 21; // até onde se procuram esses jogos
 const PRESEASON_CUTOFF_DAY = 8; // a partir deste dia da época regular a pré-época deixa de contar
-const CACHE_PREFIX = "nhl:analysis:v9:";
+const CACHE_PREFIX = "nhl:analysis:v10:";
 const CACHE_TTL_MS = 2 * 60 * 60 * 1000; // 2 horas (as lesões influenciam os números)
 const GAME_CACHE_PREFIX = "nhl:game:v2:"; // golos do 1.º período de jogos já terminados (nunca mudam)
 const GAME_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -76,7 +76,19 @@ type FinishedGame = {
   p2Away: number | null;
 };
 
+/** Um jogo recente de uma equipa, para a lista "Forma das equipas" (mais recente primeiro). */
+type FormGame = {
+  date: string;
+  home: string; // abreviatura da casa
+  away: string;
+  homeScore: number;
+  awayScore: number;
+  res: "W" | "L"; // do ponto de vista da equipa
+  ending: "REG" | "OT" | "SO";
+};
+
 type TeamRecent = {
+  recent: FormGame[];
   abbr: string;
   gp: number;
   preGp: number;
@@ -169,6 +181,8 @@ type Prediction = {
   awayP1: TeamP1Stats;
   homeP2: TeamP1Stats;
   awayP2: TeamP1Stats;
+  homeForm: FormGame[]; // últimos jogos de cada equipa (os mesmos que o modelo usa)
+  awayForm: FormGame[];
   injuryAdj: { home: number; away: number }; // golos/jogo que cada equipa perde por lesões
 };
 
@@ -414,7 +428,7 @@ function aggregateTeams(perTeam: Map<string, FinishedGame[]>): Map<string, TeamR
   const map = new Map<string, TeamRecent>();
 
   for (const [abbr, games] of perTeam) {
-    const t: TeamRecent = { abbr, gp: 0, preGp: 0, w: 0, l: 0, otl: 0, gf: 0, ga: 0, regGf: 0, regGa: 0, over45: 0, over55: 0, regTies: 0, p1n: 0, p1Over15: 0, p1Btts: 0, p1For: 0, p1Against: 0, p1Scored: 0, p1Conceded: 0, p2n: 0, p2For: 0, p2Against: 0, p2Scored: 0, p2Conceded: 0, p2Over15: 0, p2Btts: 0 };
+    const t: TeamRecent = { recent: [], abbr, gp: 0, preGp: 0, w: 0, l: 0, otl: 0, gf: 0, ga: 0, regGf: 0, regGa: 0, over45: 0, over55: 0, regTies: 0, p1n: 0, p1Over15: 0, p1Btts: 0, p1For: 0, p1Against: 0, p1Scored: 0, p1Conceded: 0, p2n: 0, p2For: 0, p2Against: 0, p2Scored: 0, p2Conceded: 0, p2Over15: 0, p2Btts: 0 };
 
     for (const g of games) {
       const side = g.homeAbbr === abbr ? "home" : "away";
@@ -424,6 +438,15 @@ function aggregateTeams(perTeam: Map<string, FinishedGame[]>): Map<string, TeamR
       const wentExtra = g.ending === "OT" || g.ending === "SO";
 
       t.gp++;
+      t.recent.push({
+        date: g.date,
+        home: g.homeAbbr,
+        away: g.awayAbbr,
+        homeScore: g.homeScore,
+        awayScore: g.awayScore,
+        res: own > opp ? "W" : "L",
+        ending: g.ending === "OT" || g.ending === "SO" ? g.ending : "REG",
+      });
       if (g.gameType === 1) t.preGp++;
       t.gf += own;
       t.ga += opp;
@@ -1381,6 +1404,8 @@ function buildPredictions(
       awayP1: teamP1(away, m.scoreProbAway),
       homeP2: teamP2(home, m.scoreProb2Home),
       awayP2: teamP2(away, m.scoreProb2Away),
+      homeForm: home?.recent ?? [],
+      awayForm: away?.recent ?? [],
       injuryAdj: { home: Math.round((ih?.total ?? 0) * 100) / 100, away: Math.round((ia?.total ?? 0) * 100) / 100 },
     };
     const e = { lh: m.lh, la: m.la };

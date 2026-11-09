@@ -62,6 +62,16 @@ export interface GamePlayers {
   away: TeamPlayers;
 }
 
+export interface FormGame {
+  date: string;
+  home: string;
+  away: string;
+  homeScore: number;
+  awayScore: number;
+  res: 'W' | 'L';
+  ending: 'REG' | 'OT' | 'SO';
+}
+
 export interface GamePrediction {
   id: string;
   homeTeam: string;
@@ -102,6 +112,8 @@ export interface GamePrediction {
   over15P2Prob?: number;
   homeP2?: TeamP1Stats;
   awayP2?: TeamP1Stats;
+  homeForm?: FormGame[]; // últimos jogos de cada equipa (os que o modelo usa)
+  awayForm?: FormGame[];
   injuryAdj?: { home: number; away: number }; // golos/jogo que cada equipa perde por lesões
 }
 

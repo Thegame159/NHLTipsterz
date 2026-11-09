@@ -1,7 +1,7 @@
 // src/components/GameTable.tsx
 
 import React, { useState } from 'react';
-import { GamePrediction } from '../types';
+import { GamePrediction, FormGame } from '../types';
 import { ScaleKey, levelOf, hasStar, winHasStar, barWidth, SCALE_BADGE, SCALE_BAR } from '../utils/marketScale';
 import {
   getLogoUrl,
@@ -71,6 +71,73 @@ const ProbabilityCell: React.FC<{ value?: number; scale?: ScaleKey; top?: boolea
 };
 
 type Tops = { win: number; draw: number; p1: number; btts: number; p2: number; o45: number; multi: boolean };
+
+
+// ─── Forma das equipas: resultado de cada um dos últimos jogos ───────────────
+
+const FormColumn: React.FC<{ abbr: string; games: FormGame[] }> = ({ abbr, games }) => {
+  const wins = games.filter((g) => g.res === 'W').length;
+  return (
+    <div className="flex-1 min-w-0 space-y-1.5">
+      <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest mb-1">
+        <span className="text-white">{teamLabel(abbr)}</span>
+        <span className="text-slate-400">{wins}V · {games.length - wins}D</span>
+      </div>
+      {games.map((g, i) => {
+        const win = g.res === 'W';
+        const ownHome = g.home === abbr;
+        const ownScore = ownHome ? g.homeScore : g.awayScore;
+        const oppScore = ownHome ? g.awayScore : g.homeScore;
+        return (
+          <div key={`${g.date}-${i}`} className="flex items-center gap-2">
+            <img src={getLogoUrl(g.home)} alt={g.home} className="w-7 h-7 object-contain shrink-0"
+              onError={(e) => { if (!retryLightLogo(e.currentTarget)) { e.currentTarget.src = FALLBACK_LOGO; } }} />
+            <div
+              title={`${g.date}${g.ending !== 'REG' ? ` · ${g.ending}` : ''}`}
+              className={`relative flex-1 rounded-lg py-1 text-center text-sm ${win ? 'bg-emerald-600/80' : 'bg-rose-600/80'}`}
+            >
+              <span className={g.homeScore > g.awayScore ? 'font-black text-white' : 'text-white/60'}>{g.homeScore}</span>
+              <span className="text-white/50"> - </span>
+              <span className={g.awayScore > g.homeScore ? 'font-black text-white' : 'text-white/60'}>{g.awayScore}</span>
+              {g.ending !== 'REG' && (
+                <span className="absolute -top-1 -right-1 text-[8px] font-black bg-amber-400 text-slate-900 rounded px-1 leading-tight">{g.ending}</span>
+              )}
+              <span className="sr-only">{ownScore}-{oppScore}</span>
+            </div>
+            <img src={getLogoUrl(g.away)} alt={g.away} className="w-7 h-7 object-contain shrink-0"
+              onError={(e) => { if (!retryLightLogo(e.currentTarget)) { e.currentTarget.src = FALLBACK_LOGO; } }} />
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+const TeamForm: React.FC<{ home: string; away: string; homeForm: FormGame[]; awayForm: FormGame[] }> = ({ home, away, homeForm, awayForm }) => {
+  const [open, setOpen] = useState(false);
+  const rec = (g: FormGame[]) => `${g.filter((x) => x.res === 'W').length}V ${g.filter((x) => x.res === 'L').length}D`;
+  return (
+    <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-4">
+      <button type="button" onClick={() => setOpen((v) => !v)} className="w-full flex items-center justify-between gap-3 text-left">
+        <span className="text-blue-400 font-bold text-[11px] uppercase tracking-wide">Forma das equipas · últimos {Math.max(homeForm.length, awayForm.length)} jogos</span>
+        <span className="flex items-center gap-3 text-[10px] font-black text-slate-300">
+          <span>{teamLabel(home)} {rec(homeForm)}</span>
+          <span>{teamLabel(away)} {rec(awayForm)}</span>
+          <i className={`fas ${open ? 'fa-chevron-up' : 'fa-chevron-down'} text-slate-500`} />
+        </span>
+      </button>
+      {open && (
+        <>
+          <div className="flex flex-col md:flex-row gap-6 mt-4">
+            <FormColumn abbr={home} games={homeForm} />
+            <FormColumn abbr={away} games={awayForm} />
+          </div>
+          <p className="text-[10px] text-slate-500 mt-3">Verde = vitória · vermelho = derrota (da equipa indicada) · OT/SO = prolongamento/penáltis. São os mesmos jogos que o modelo usa.</p>
+        </>
+      )}
+    </div>
+  );
+};
 
 // ─── Equipa (logo, nome, registo e jogos por baixo) ─────────────────────────
 
@@ -322,6 +389,11 @@ const GameRow: React.FC<{ game: GamePrediction; tops: Tops }> = ({ game, tops })
                   ))}
                 </div>
               </div>
+            )}
+
+            {/* Forma das equipas */}
+            {((game.homeForm?.length ?? 0) > 0 || (game.awayForm?.length ?? 0) > 0) && (
+              <TeamForm home={homeTeam} away={awayTeam} homeForm={game.homeForm ?? []} awayForm={game.awayForm ?? []} />
             )}
 
             {/* Lesões */}
