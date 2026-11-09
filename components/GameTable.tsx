@@ -310,6 +310,11 @@ const GameRow: React.FC<{ game: GamePrediction; tops: Tops }> = ({ game, tops })
               <span className="italic text-slate-400">{game.analysisSummary || (game as any).analysis || 'Sem resumo disponível.'}</span>
             </div>
 
+            {/* Forma das equipas */}
+            {((game.homeForm?.length ?? 0) > 0 || (game.awayForm?.length ?? 0) > 0) && (
+              <TeamForm home={homeTeam} away={awayTeam} homeForm={game.homeForm ?? []} awayForm={game.awayForm ?? []} />
+            )}
+
             {/* Estimativas do modelo */}
             {(game.scoreGuess || game.homeP1) && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -389,11 +394,6 @@ const GameRow: React.FC<{ game: GamePrediction; tops: Tops }> = ({ game, tops })
                   ))}
                 </div>
               </div>
-            )}
-
-            {/* Forma das equipas */}
-            {((game.homeForm?.length ?? 0) > 0 || (game.awayForm?.length ?? 0) > 0) && (
-              <TeamForm home={homeTeam} away={awayTeam} homeForm={game.homeForm ?? []} awayForm={game.awayForm ?? []} />
             )}
 
             {/* Lesões */}
