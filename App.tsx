@@ -71,6 +71,7 @@ const App: React.FC = () => {
     setLoading(true);
     setProgress(0);
     setError(null);
+    setToastMessage(null);
 
     try {
       progressInterval = setInterval(() => {
@@ -125,8 +126,8 @@ const App: React.FC = () => {
         .filter((t) => !Number.isNaN(t))
         .sort((a, b) => a - b)[0];
       if (firstStart !== undefined && Date.now() >= firstStart) {
+        // fica visível até à próxima análise
         setToastMessage('ℹ️ Dia já começou — o Auto guardado no histórico não foi alterado.');
-        setTimeout(() => setToastMessage(null), 4000);
         return;
       }
 
