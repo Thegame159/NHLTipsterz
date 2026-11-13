@@ -248,6 +248,8 @@ async function saveHistoryStats(
   stats: { correct: number; total: number; percent: number | null },
   markets: Record<string, PickEval[]>
 ) {
+  // v:2 = Over 4.5 / 5.5 avaliados só em tempo regulamentar
+  (stats as any).v = 2;
   try {
     await fetch(`/api/history?t=${Date.now()}`, {
       method: "POST",
@@ -377,8 +379,8 @@ function evalMarkets(sug: Suggestions, results: ApiResultsResponse): Record<stri
       evalGamePick(t, (g) => (g.p2Away ?? 0) + (g.p2Home ?? 0) >= 2, (g) => typeof g.p2Away === "number" && typeof g.p2Home === "number")
     ),
     "Empate TR": (sug.drawSuggestions || []).map((d) => evalGamePick(d.game, (g) => g.regAway === g.regHome)),
-    "Over 4.5": (sug.quadrupleOver45 || []).map((t) => evalGamePick(t, (g) => g.finalAway + g.finalHome >= 5)),
-    "Over 5.5": (sug.over55Suggestions || []).map((t) => evalGamePick(t, (g) => g.finalAway + g.finalHome >= 6)),
+    "Over 4.5": (sug.quadrupleOver45 || []).map((t) => evalGamePick(t, (g) => g.regAway + g.regHome >= 5)),
+    "Over 5.5": (sug.over55Suggestions || []).map((t) => evalGamePick(t, (g) => g.regAway + g.regHome >= 6)),
   };
 
   if (combinadaPicks.length > 0) out["Combinada"] = combinadaPicks;
@@ -998,8 +1000,11 @@ const StatsView: React.FC = () => {
             const mineSug: Suggestions | null = history?.mine?.suggestions ?? null;
             const manualStore = manualByDate[date] ?? null;
 
-            const autoReady = history?.auto?.markets && Object.keys(history.auto.markets).length > 0;
-            const mineReady = history?.mine?.markets && Object.keys(history.mine.markets).length > 0;
+            // Resultados antigos com Over 4.5/5.5 foram avaliados com prolongamento: voltam a ser calculados
+            const stale = (side: HistoryItem["auto"]) =>
+              !!side?.markets && ("Over 4.5" in side.markets || "Over 5.5" in side.markets) && (side.stats as any)?.v !== 2;
+            const autoReady = history?.auto?.markets && Object.keys(history.auto.markets).length > 0 && !stale(history.auto);
+            const mineReady = history?.mine?.markets && Object.keys(history.mine.markets).length > 0 && !stale(history.mine);
 
             // Só reutiliza os resultados guardados se TODOS os lados com dicas já estão avaliados;
             // senão (ex.: Minhas já avaliadas e Auto guardado depois) volta a avaliar o dia todo.
