@@ -936,8 +936,19 @@ const StatsView: React.FC = () => {
     };
   }, [loadHistory, loadAllManual, editDate]);
 
+  // Dias sem nenhuma pick guardada (nem Auto nem Minhas) não aparecem na lista
+  const hasPicks = (sug: any): boolean =>
+    !!sug &&
+    Object.values(sug).some((v: any) =>
+      Array.isArray(v) ? v.length > 0 : v && typeof v === "object" ? Object.keys(v).length > 0 : !!v
+    );
+
   const dates = useMemo(
-    () => historyItems.map((x) => x.date).sort((a, b) => (a < b ? 1 : -1)),
+    () =>
+      historyItems
+        .filter((x) => hasPicks(x.auto?.suggestions) || hasPicks(x.mine?.suggestions))
+        .map((x) => x.date)
+        .sort((a, b) => (a < b ? 1 : -1)),
     [historyItems]
   );
 
