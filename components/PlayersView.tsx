@@ -447,6 +447,7 @@ const PlayersView: React.FC<Props> = ({ predictions, date }) => {
   const [openGames, setOpenGames] = useState<Set<string>>(new Set());
   const [focus, setFocus] = useState<Focus | null>(null);
   const [showTop, setShowTop] = useState(false);
+  const [resetKey, setResetKey] = useState(0); // muda ao voltar ao início: fecha tudo o que estava aberto
   const savedKey = useRef('');
 
   // Guarda os tripletes do dia (só a primeira vez; o servidor ignora repetições) para a aba Stats
@@ -587,7 +588,7 @@ const PlayersView: React.FC<Props> = ({ predictions, date }) => {
         const id = String(p.id);
         return (
           <GameSection
-            key={p.id}
+            key={`${p.id}-${resetKey}`}
             p={p}
             g={g}
             open={openGames.has(id)}
@@ -609,6 +610,8 @@ const PlayersView: React.FC<Props> = ({ predictions, date }) => {
         <button
           onClick={() => {
             setFocus(null);
+            setOpenGames(new Set()); // fecha todos os jogos
+            setResetKey((k) => k + 1); // e os jogadores abertos / "ver mais"
             window.scrollTo({ top: 0, behavior: 'smooth' });
           }}
           className="fixed right-4 bottom-20 z-50 flex items-center gap-1.5 rounded-full bg-orange-600 hover:bg-orange-500 shadow-lg shadow-black/40 px-4 py-2.5 text-[11px] font-black uppercase tracking-wider text-white"
