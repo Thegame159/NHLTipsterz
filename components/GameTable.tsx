@@ -1,7 +1,7 @@
 // src/components/GameTable.tsx
 
 import React, { useState } from 'react';
-import { GamePrediction, FormGame } from '../types';
+import { GamePrediction, FormGame, TeamP1Stats } from '../types';
 import { ScaleKey, levelOf, hasStar, winHasStar, barWidth, SCALE_BADGE, SCALE_BAR } from '../utils/marketScale';
 import {
   getLogoUrl,
@@ -72,6 +72,48 @@ const ProbabilityCell: React.FC<{ value?: number; scale?: ScaleKey; top?: boolea
 
 type Tops = { win: number; draw: number; p1: number; btts: number; p2: number; o45: number; multi: boolean };
 
+
+
+// Golos por jogo num período: do mais antigo (esquerda) para o mais recente (direita)
+const GoalChips: React.FC<{ label: string; values: number[] }> = ({ label, values }) => (
+  <div className="flex items-center gap-1.5 mt-1.5">
+    <span className="text-[9px] uppercase tracking-widest text-slate-500 w-14 shrink-0">{label}</span>
+    {values.map((v, i) => (
+      <span
+        key={i}
+        className={`w-6 h-6 rounded-md border flex items-center justify-center text-xs font-black ${
+          v === 0
+            ? 'bg-slate-800 text-slate-500 border-slate-700'
+            : v === 1
+              ? 'bg-sky-900/50 text-sky-300 border-sky-700/50'
+              : 'bg-emerald-600/80 text-white border-emerald-400/60'
+        }`}
+      >
+        {v}
+      </span>
+    ))}
+  </div>
+);
+
+const PeriodGoals: React.FC<{ s: TeamP1Stats }> = ({ s }) => {
+  const seq = [...(s.seq ?? [])].reverse(); // antigo → recente
+  if (seq.length === 0) return null;
+  const multi = seq.filter((x) => x.f >= 2).length;
+  const zero = seq.filter((x) => x.f === 0).length;
+  const one = seq.filter((x) => x.f === 1).length;
+  return (
+    <div className="mt-1.5">
+      <GoalChips label="Marcou" values={seq.map((x) => x.f)} />
+      <GoalChips label="Sofreu" values={seq.map((x) => x.a)} />
+      <div className="flex flex-wrap gap-x-3 mt-1.5 text-[10px] text-slate-500">
+        <span>0 golos: <b className="text-slate-300">{zero}</b></span>
+        <span>1 golo: <b className="text-sky-300">{one}</b></span>
+        <span>2+ golos: <b className="text-emerald-300">{multi}</b></span>
+        <span className="text-slate-600">· antigo → recente</span>
+      </div>
+    </div>
+  );
+};
 
 // ─── Forma das equipas: resultado de cada um dos últimos jogos ───────────────
 
@@ -361,6 +403,7 @@ const GameRow: React.FC<{ game: GamePrediction; tops: Tops }> = ({ game, tops })
                       ) : (
                         <span> · sem dados do 1.º período</span>
                       )}
+                      {s && s.n > 0 && <PeriodGoals s={s} />}
                     </div>
                   ))}
                   <p className="text-[10px] text-slate-600 leading-tight">
@@ -390,6 +433,7 @@ const GameRow: React.FC<{ game: GamePrediction; tops: Tops }> = ({ game, tops })
                       ) : (
                         <span> · sem dados do 2.º período</span>
                       )}
+                      {s && s.n > 0 && <PeriodGoals s={s} />}
                     </div>
                   ))}
                 </div>

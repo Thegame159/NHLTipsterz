@@ -1,5 +1,6 @@
 
 export interface TeamP1Stats {
+  seq?: { f: number; a: number }[]; // golos marcados (f) e sofridos (a) por jogo, do mais recente para o mais antigo
   n: number; // jogos com dados do 1.º período
   scored: number; // jogos em que marcou no 1.º período
   conceded: number; // jogos em que sofreu golo no 1.º período

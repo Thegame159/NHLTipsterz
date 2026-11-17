@@ -16,7 +16,7 @@ const MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
 const TEAM_GAMES = 7; // jogos recentes usados por equipa
 const LOOKBACK_DAYS = 21; // até onde se procuram esses jogos
 const PRESEASON_CUTOFF_DAY = 8; // a partir deste dia da época regular a pré-época deixa de contar
-const CACHE_PREFIX = "nhl:analysis:v10:";
+const CACHE_PREFIX = "nhl:analysis:v11:";
 const CACHE_TTL_MS = 2 * 60 * 60 * 1000; // 2 horas (as lesões influenciam os números)
 const GAME_CACHE_PREFIX = "nhl:game:v2:"; // golos do 1.º período de jogos já terminados (nunca mudam)
 const GAME_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -89,6 +89,8 @@ type FormGame = {
 
 type TeamRecent = {
   recent: FormGame[];
+  p1Seq: { f: number; a: number }[]; // golos marcados/sofridos no 1.º período, jogo a jogo (mais recente primeiro)
+  p2Seq: { f: number; a: number }[];
   abbr: string;
   gp: number;
   preGp: number;
@@ -137,6 +139,7 @@ type LeagueRates = {
 };
 
 type TeamP1Stats = {
+  seq: { f: number; a: number }[]; // golos marcados (f) e sofridos (a) em cada jogo, do mais recente para o mais antigo
   n: number; // jogos com dados do 1.º período
   scored: number; // jogos em que marcou no 1.º período
   conceded: number; // jogos em que sofreu golo no 1.º período
@@ -428,7 +431,7 @@ function aggregateTeams(perTeam: Map<string, FinishedGame[]>): Map<string, TeamR
   const map = new Map<string, TeamRecent>();
 
   for (const [abbr, games] of perTeam) {
-    const t: TeamRecent = { recent: [], abbr, gp: 0, preGp: 0, w: 0, l: 0, otl: 0, gf: 0, ga: 0, regGf: 0, regGa: 0, over45: 0, over55: 0, regTies: 0, p1n: 0, p1Over15: 0, p1Btts: 0, p1For: 0, p1Against: 0, p1Scored: 0, p1Conceded: 0, p2n: 0, p2For: 0, p2Against: 0, p2Scored: 0, p2Conceded: 0, p2Over15: 0, p2Btts: 0 };
+    const t: TeamRecent = { recent: [], p1Seq: [], p2Seq: [], abbr, gp: 0, preGp: 0, w: 0, l: 0, otl: 0, gf: 0, ga: 0, regGf: 0, regGa: 0, over45: 0, over55: 0, regTies: 0, p1n: 0, p1Over15: 0, p1Btts: 0, p1For: 0, p1Against: 0, p1Scored: 0, p1Conceded: 0, p2n: 0, p2For: 0, p2Against: 0, p2Scored: 0, p2Conceded: 0, p2Over15: 0, p2Btts: 0 };
 
     for (const g of games) {
       const side = g.homeAbbr === abbr ? "home" : "away";
@@ -469,6 +472,7 @@ function aggregateTeams(perTeam: Map<string, FinishedGame[]>): Map<string, TeamR
         const oppP1 = side === "home" ? g.p1Away : g.p1Home;
         t.p1For += ownP1;
         t.p1Against += oppP1;
+        t.p1Seq.push({ f: ownP1, a: oppP1 });
         if (ownP1 > 0) t.p1Scored++;
         if (oppP1 > 0) t.p1Conceded++;
       }
@@ -481,6 +485,7 @@ function aggregateTeams(perTeam: Map<string, FinishedGame[]>): Map<string, TeamR
         const oppP2 = side === "home" ? g.p2Away : g.p2Home;
         t.p2For += ownP2;
         t.p2Against += oppP2;
+        t.p2Seq.push({ f: ownP2, a: oppP2 });
         if (ownP2 > 0) t.p2Scored++;
         if (oppP2 > 0) t.p2Conceded++;
       }
@@ -1314,6 +1319,7 @@ async function askGroqSummaries(apiKey: string, prompt: string): Promise<Map<str
 const record = (t?: TeamRecent) => (t ? `${t.w}-${t.l}-${t.otl}` : "0-0-0");
 
 const teamP1 = (t: TeamRecent | undefined, scoreProb: number): TeamP1Stats => ({
+  seq: t?.p1Seq ?? [],
   n: t?.p1n ?? 0,
   scored: t?.p1Scored ?? 0,
   conceded: t?.p1Conceded ?? 0,
@@ -1323,6 +1329,7 @@ const teamP1 = (t: TeamRecent | undefined, scoreProb: number): TeamP1Stats => ({
 });
 
 const teamP2 = (t: TeamRecent | undefined, scoreProb: number): TeamP1Stats => ({
+  seq: t?.p2Seq ?? [],
   n: t?.p2n ?? 0,
   scored: t?.p2Scored ?? 0,
   conceded: t?.p2Conceded ?? 0,
