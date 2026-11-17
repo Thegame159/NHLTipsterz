@@ -713,6 +713,39 @@ const filterTripleWin = (items: string[]) => items;
             </div>
           </div>
 
+          {(suggestions.winCombo.alternatives?.length ?? 0) > 0 && (
+            <div className="mt-5">
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">
+                Alternativas · para substituir uma perna
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {suggestions.winCombo.alternatives!.map((leg, idx) => (
+                  <div
+                    key={`alt-${leg.game}-${idx}`}
+                    className="flex items-center gap-3 bg-slate-900/40 p-3 rounded-xl border border-dashed border-slate-700/70"
+                  >
+                    <span className="w-6 h-6 rounded-full bg-slate-700 text-slate-300 text-[10px] font-black flex items-center justify-center shrink-0">
+                      {(suggestions.winCombo!.legs.length) + idx + 1}
+                    </span>
+                    <img
+                      src={getLogoUrl(leg.team)}
+                      className="w-8 h-8 object-contain bg-slate-800 rounded-full p-1 border border-slate-700"
+                      alt={leg.team}
+                      loading="lazy"
+                      decoding="async"
+                      onError={(e) => { if (!retryLightLogo(e.currentTarget)) { e.currentTarget.style.display = "none"; } }}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-slate-200 leading-tight truncate">{teamLabel(leg.team)}</p>
+                      <p className="text-[11px] text-slate-500">{leg.game}</p>
+                    </div>
+                    <PercBadge value={leg.prob} top={false} stack />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <p className="text-[10px] text-slate-500 mt-4 leading-tight uppercase tracking-wider font-bold">
             Odd justa = 100 ÷ probabilidade combinada, com vitórias incluindo prolongamento/desempate. Só há valor se a casa pagar mais do que isto. Gerado com {COMBO_RULES.minGames}+ jogos.
           </p>

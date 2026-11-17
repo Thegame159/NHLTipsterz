@@ -39,7 +39,7 @@ export const STRONG_RULES = {
  * Pernas extra (até `maxLegs`) só entram se o favorito seguinte tiver pelo menos `extraLegMinProb`%,
  * porque cada perna a mais multiplica a probabilidade combinada.
  */
-export const COMBO_RULES = { minGames: 5, legs: 4, maxLegs: 6, extraLegMinProb: 62 };
+export const COMBO_RULES = { minGames: 5, legs: 4, maxLegs: 6, extraLegMinProb: 62, maxAlternatives: 2 };
 
 const pct = (n: number) => Math.round(Number.isFinite(n) ? n : 0);
 const matchup = (g: GamePrediction) => `${g.homeTeamAbbr} vs ${g.awayTeamAbbr}`;
@@ -70,8 +70,13 @@ function buildWinCombo(games: GamePrediction[]): WinCombo | null {
   const combined = legs.reduce((acc, l) => acc * (l.prob / 100), 1);
   if (!(combined > 0)) return null;
 
+  // Alternativas: os favoritos seguintes, para substituir uma perna (escolhas totais ≤ maxLegs)
+  const altCount = Math.max(0, Math.min(COMBO_RULES.maxAlternatives, COMBO_RULES.maxLegs - legs.length));
+  const alternatives = ranked.slice(legs.length, legs.length + altCount);
+
   return {
     legs,
+    alternatives,
     combinedProb: Math.round(combined * 1000) / 10, // 1 casa decimal, em %
     fairOdds: Math.round((1 / combined) * 100) / 100,
   };

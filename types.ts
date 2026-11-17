@@ -136,6 +136,7 @@ export interface WinComboLeg {
 
 export interface WinCombo {
   legs: WinComboLeg[];
+  alternatives?: WinComboLeg[]; // favoritos seguintes, para substituir uma perna (não entram na combinada)
   combinedProb: number; // % de todas as pernas acertarem
   fairOdds: number; // 100 / combinedProb
 }
