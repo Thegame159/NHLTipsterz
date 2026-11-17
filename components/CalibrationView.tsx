@@ -7,7 +7,9 @@ import type { ApiResultsResponse, HistoryItem, PickEval } from './StatsView';
 
 type Sample = { market: string; p: number; ok: boolean; date: string };
 
-const MIN_N = 10; // abaixo disto a banda fica a cinzento (amostra pequena)
+const MIN_N = 10;
+const MIN_MARKET_N = 30; // mínimo de picks por mercado para sugerir correção
+const PRIOR_N = 30; // peso da "prudência": a correção sugerida encolhe com amostras pequenas // abaixo disto a banda fica a cinzento (amostra pequena)
 
 const parseProb = (label: string): number | null => {
   const m = /\((\d{1,3}(?:[.,]\d+)?)\s*%\)/.exec(label || '');
@@ -21,6 +23,7 @@ const CalibrationView: React.FC = () => {
   const [status, setStatus] = useState<'loading' | 'ok' | 'error'>('loading');
   const [days, setDays] = useState(0);
   const [market, setMarket] = useState<string>('Todos');
+  const [showFix, setShowFix] = useState(false);
 
   const load = useCallback(async () => {
     setStatus('loading');
@@ -99,6 +102,21 @@ const CalibrationView: React.FC = () => {
       real: n ? (hits / n) * 100 : 0,
     };
   }, [samples, market]);
+
+  const fixRows = useMemo(() => {
+    const names = Array.from(new Set(samples.map((x) => x.market)));
+    return names.map((m) => {
+      const arr = samples.filter((x) => x.market === m);
+      const n = arr.length;
+      const hits = arr.filter((x) => x.ok).length;
+      const pred = arr.reduce((a, x) => a + x.p, 0) / n;
+      const real = (hits / n) * 100;
+      const dev = real - pred;
+      const enough = n >= MIN_MARKET_N;
+      const fix = enough ? dev * (n / (n + PRIOR_N)) : null;
+      return { m, n, pred, real, dev, enough, fix };
+    }).sort((a, b) => b.n - a.n);
+  }, [samples]);
 
   const W = 300, H = 300, PAD = 30;
   const xs = (v: number) => PAD + (v / 100) * (W - PAD * 2);
@@ -187,6 +205,43 @@ const CalibrationView: React.FC = () => {
               Sobre a diagonal = bem calibrado · acima = o modelo é prudente · abaixo = otimista. Cinzento = menos de {MIN_N} picks.
             </p>
           </div>
+
+          <button
+            onClick={() => setShowFix((v) => !v)}
+            className="w-full text-sm font-semibold px-3 py-2.5 rounded-xl bg-orange-600 text-white"
+          >
+            {showFix ? 'Esconder correção sugerida' : '📐 Correção sugerida'}
+          </button>
+
+          {showFix && (
+            <div className="rounded-xl border border-orange-500/40 overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-800 text-slate-400 text-[11px]">
+                  <tr>
+                    <th className="text-left px-3 py-2">Mercado</th>
+                    <th className="text-right px-2 py-2">Picks</th>
+                    <th className="text-right px-2 py-2">Prev→Real</th>
+                    <th className="text-right px-3 py-2">Corrigir</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {fixRows.map((r) => (
+                    <tr key={r.m} className={`border-t border-slate-700/60 ${r.enough ? 'text-slate-200' : 'text-slate-500'}`}>
+                      <td className="px-3 py-1.5">{r.m}</td>
+                      <td className="text-right px-2">{r.n}</td>
+                      <td className="text-right px-2">{r.pred.toFixed(0)}→{r.real.toFixed(0)}%</td>
+                      <td className={`text-right px-3 font-semibold ${r.fix === null ? '' : Math.abs(r.fix) < 2 ? 'text-emerald-400' : r.fix > 0 ? 'text-sky-400' : 'text-amber-400'}`}>
+                        {r.fix === null ? "aguardar" : Math.abs(r.fix) < 2 ? 'manter' : `${r.fix > 0 ? '+' : ''}${r.fix.toFixed(1)} pp`}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="text-[11px] text-slate-400 px-3 py-2 border-t border-slate-700/60">
+                Corrigir = desvio × n/(n+{PRIOR_N}): encolhe quando há poucas picks. Positivo = subir a probabilidade do modelo, negativo = baixar. Menos de 2 pp = manter. Só sugere com {MIN_MARKET_N}+ picks no mercado.
+              </p>
+            </div>
+          )}
 
           <div className="rounded-xl border border-slate-700 overflow-hidden">
             <table className="w-full text-sm">
