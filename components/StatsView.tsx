@@ -21,13 +21,13 @@ type ApiResultGame = {
   winnerAbbr: string | null;
 };
 
-type ApiResultsResponse = {
+export type ApiResultsResponse = {
   date: string;
   games: ApiResultGame[];
   byMatchup: Record<string, ApiResultGame>;
 };
 
-type HistoryItem = {
+export type HistoryItem = {
   date: string;
   auto: null | {
     savedAt: number;
@@ -51,7 +51,7 @@ type ManualStore = {
   mine: Record<string, Record<string, ManualValue>>;
 };
 
-type PickEval = {
+export type PickEval = {
   label: string;
   ok: boolean | null;
   reason?: string;
@@ -292,7 +292,7 @@ function findGame(results: ApiResultsResponse, a: string, b: string): ApiResultG
 
 // ─── Eval markets ─────────────────────────────────────────────────────────────
 
-function evalMarkets(sug: Suggestions, results: ApiResultsResponse): Record<string, PickEval[]> {
+export function evalMarkets(sug: Suggestions, results: ApiResultsResponse): Record<string, PickEval[]> {
   const evalGamePick = (text: string, fn: (g: ApiResultGame) => boolean, hasData?: (g: ApiResultGame) => boolean): PickEval => {
     const cleaned = normalizeGameText(text);
     let teams = parseTeamsFromText(cleaned);

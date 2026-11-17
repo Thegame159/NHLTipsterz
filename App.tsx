@@ -12,6 +12,7 @@ import BrandLogo from './components/BrandLogo';
 import UpdateBanner from './components/UpdateBanner';
 import PlayersView from './components/PlayersView';
 import TabIcon from './components/TabIcon';
+import CalibrationView from './components/CalibrationView';
 import TabHeader from './components/TabHeader';
 import { buildSuggestions } from './utils/suggestions';
 
@@ -28,7 +29,7 @@ const LOADING_MESSAGES = [
   'Preparando face-off...',
 ];
 
-type Tab = 'schedule' | 'suggestions' | 'players' | 'mypicks' | 'stats';
+type Tab = 'schedule' | 'suggestions' | 'players' | 'mypicks' | 'stats' | 'calibration';
 
 // ─── Helpers de data ─────────────────────────────────────────────────────────
 
@@ -309,6 +310,7 @@ const App: React.FC = () => {
                 { key: 'players',     label: 'Jogadores'    },
                 { key: 'mypicks',     label: 'Minhas Picks' },
                 { key: 'stats',       label: 'Stats'        },
+                { key: 'calibration', label: 'Calibração'   },
               ] as { key: Tab; label: string }[]
             ).map(tab => (
               <button
@@ -398,6 +400,7 @@ const App: React.FC = () => {
             )}
 
             {activeTab === 'stats' && <StatsView />}
+            {activeTab === 'calibration' && <CalibrationView />}
           </main>
         </>
       )}
