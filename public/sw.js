@@ -1,5 +1,5 @@
 /* public/sw.js */
-const CACHE_NAME = "nhl-tipsterz-v3";
+const CACHE_NAME = "nhl-tipsterz-v4";
 
 // Precache mínimo (podes adicionar mais ficheiros se quiseres)
 const CORE_ASSETS = ["/", "/index.html", "/manifest.webmanifest"];
@@ -51,13 +51,16 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(
     caches.match(req).then((cached) => {
       if (cached) return cached;
-      return fetch(req)
-        .then((res) => {
+      return fetch(req).then((res) => {
+        // só guarda respostas válidas e nunca HTML a fazer-se passar por JS/CSS
+        // (um deploy a meio devolve o index.html no lugar do ficheiro e ficava preso na cache)
+        const type = res.headers.get("content-type") || "";
+        if (res.ok && !type.includes("text/html")) {
           const copy = res.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
-          return res;
-        })
-        .catch(() => cached);
+        }
+        return res;
+      });
     })
   );
 });

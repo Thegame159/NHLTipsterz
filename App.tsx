@@ -319,7 +319,9 @@ const App: React.FC = () => {
                 className={`flex-1 py-2 rounded-lg font-black text-[9px] uppercase tracking-wider transition-all flex flex-col items-center gap-1 ${
                   activeTab === tab.key
                     ? 'bg-orange-600 text-white'
-                    : 'text-slate-500 hover:text-slate-300'
+                    : tab.key === 'calibration'
+                      ? 'text-violet-400 hover:text-violet-300'
+                      : 'text-slate-500 hover:text-slate-300'
                 }`}
               >
                 <TabIcon name={tab.key} className="w-[18px] h-[18px]" />
