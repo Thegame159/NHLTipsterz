@@ -171,6 +171,12 @@ const CalibrationView: React.FC = () => {
             </div>
           </div>
 
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-400">
+            <span><span className="text-emerald-400">●</span> Verde: certo (±5 pp)</span>
+            <span><span className="text-amber-400">●</span> Laranja: abaixo do que diz (otimista)</span>
+            <span><span className="text-sky-400">●</span> Azul: acima do que diz (prudente)</span>
+          </div>
+
           <div className="rounded-xl bg-slate-800/50 border border-slate-700 p-3">
             <svg viewBox={`0 0 ${W} ${H}`} className="w-full max-w-sm mx-auto">
               {[0, 25, 50, 75, 100].map((t) => (
