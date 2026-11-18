@@ -318,7 +318,7 @@ const App: React.FC = () => {
                 onClick={() => setActiveTab(tab.key)}
                 className={`flex-1 py-2 rounded-lg font-black text-[9px] uppercase tracking-wider transition-all flex flex-col items-center gap-1 ${
                   activeTab === tab.key
-                    ? (tab.key === 'calibration' ? 'bg-violet-600 text-white' : 'bg-orange-600 text-white')
+                    ? 'bg-orange-600 text-white'
                     : 'text-slate-500 hover:text-slate-300'
                 }`}
               >
