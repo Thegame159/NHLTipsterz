@@ -127,11 +127,18 @@ const PlayerRow: React.FC<{ card: PlayerCard; rank: number; top?: boolean; focus
         <span className="text-[11px] text-slate-400 whitespace-nowrap">
           <b className="text-white">{card.stat.p}</b> pts
         </span>
-        {off ? (
-          <span className="w-12 text-center text-xs font-black px-1.5 py-1 rounded border text-slate-600 border-slate-800">—</span>
-        ) : (
-          <ProbBadge value={card.probPoint} scale="pPoint" className="w-12 px-1.5 py-1" />
-        )}
+        <div className="flex gap-2 items-start">
+          {([['MARCAR', card.probGoal, 'pGoal'], ['PONTUAR', card.probPoint, 'pPoint']] as const).map(([label, val, scale]) => (
+            <div key={label} className="flex flex-col items-center gap-0.5">
+              {off ? (
+                <span className="w-12 text-center text-xs font-black px-1.5 py-1 rounded border text-slate-600 border-slate-800">—</span>
+              ) : (
+                <ProbBadge value={val} scale={scale} className="w-12 px-1.5 py-1" />
+              )}
+              <span className="text-[8px] font-black tracking-wider text-slate-500">{label}</span>
+            </div>
+          ))}
+        </div>
         <span className="text-slate-600 text-[10px]">{open ? '▲' : '▼'}</span>
       </button>
 
@@ -570,7 +577,7 @@ const PlayersView: React.FC<Props> = ({ predictions, date }) => {
       <TripleCard pages={buildTriple(predictions, byId, 'point')} mode="point" onPick={pick} dateLabel={dateLabel} />
 
       <p className="text-[11px] text-slate-500 leading-snug">
-        Jogadores do plantel atual ordenados por <b className="text-slate-300">pontos</b> na época. A % é a probabilidade de pontuar hoje; os 3 com maior probabilidade de cada equipa ficam em destaque (★).
+        Jogadores do plantel atual ordenados por <b className="text-slate-300">pontos</b> na época. As duas % são a probabilidade de marcar golo e de pontuar (golo ou assistência) hoje; os 3 com maior probabilidade de pontuar de cada equipa ficam em destaque (★).
         Clica num jogo para abrir e num jogador para ver os últimos 10 jogos.
       </p>
 
