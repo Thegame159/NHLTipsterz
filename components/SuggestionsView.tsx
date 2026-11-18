@@ -574,7 +574,37 @@ const filterTripleWin = (items: string[]) => items;
           scale="o45"
         />
 
-        <div className="md:col-span-2 bg-slate-800/40 border border-slate-700 rounded-2xl p-6 relative overflow-hidden group">
+        <div className="bg-slate-800/40 border border-slate-700 rounded-2xl p-6">
+          <h3 className="text-xl font-bold flex items-center mb-1 text-pink-400">
+            <i className="fas fa-plus-circle mr-3"></i>
+            Over 5.5 Plus
+          </h3>
+          <p className="text-xs text-slate-400 mb-5 font-medium leading-tight">
+            Jogos com elevado potencial de chuva de golos (6+ golos).
+          </p>
+
+          <div className="space-y-3">
+            {filterSuggestionsByTime(suggestions.over55Suggestions).map((item, idx, arr) => (
+              <SuggestionItem
+                top={topFlags(arr.map(percNumber))[idx]}
+                key={`over55-${idx}`}
+                text={item}
+                badgeColor="bg-pink-500"
+                index={idx}
+                scale="o55"
+              />
+            ))}
+            {suggestions.over55Suggestions.length === 0 && (
+              <p className="text-slate-500 italic text-sm py-4">Nenhuma sugestão adicional.</p>
+            )}
+          </div>
+
+          <p className="text-[10px] text-slate-500 mt-4 leading-tight">
+            Só entram jogos com {SUGGESTION_RULES.over55.minProb}% ou mais.
+          </p>
+        </div>
+
+        <div className="md:col-span-2 lg:col-span-3 bg-slate-800/40 border border-slate-700 rounded-2xl p-6 relative overflow-hidden group">
           <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500"></div>
           <h3 className="text-xl font-bold flex items-center mb-6 text-indigo-400">
             <i className="fas fa-handshake mr-3 text-2xl"></i>
@@ -629,35 +659,6 @@ const filterTripleWin = (items: string[]) => items;
           </div>
         </div>
 
-        <div className="bg-slate-800/40 border border-slate-700 rounded-2xl p-6">
-          <h3 className="text-xl font-bold flex items-center mb-1 text-pink-400">
-            <i className="fas fa-plus-circle mr-3"></i>
-            Over 5.5 Plus
-          </h3>
-          <p className="text-xs text-slate-400 mb-5 font-medium leading-tight">
-            Jogos com elevado potencial de chuva de golos (6+ golos).
-          </p>
-
-          <div className="space-y-3">
-            {filterSuggestionsByTime(suggestions.over55Suggestions).map((item, idx, arr) => (
-              <SuggestionItem
-                top={topFlags(arr.map(percNumber))[idx]}
-                key={`over55-${idx}`}
-                text={item}
-                badgeColor="bg-pink-500"
-                index={idx}
-                scale="o55"
-              />
-            ))}
-            {suggestions.over55Suggestions.length === 0 && (
-              <p className="text-slate-500 italic text-sm py-4">Nenhuma sugestão adicional.</p>
-            )}
-          </div>
-
-          <p className="text-[10px] text-slate-500 mt-4 leading-tight">
-            Só entram jogos com {SUGGESTION_RULES.over55.minProb}% ou mais.
-          </p>
-        </div>
       </div>
 
       {/* COMBO DE VITÓRIAS: só existe com COMBO_RULES.minGames ou mais jogos */}
