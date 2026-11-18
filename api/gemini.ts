@@ -16,7 +16,7 @@ const MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
 const TEAM_GAMES = 7; // jogos recentes usados por equipa
 const LOOKBACK_DAYS = 21; // até onde se procuram esses jogos
 const PRESEASON_CUTOFF_DAY = 8; // a partir deste dia da época regular a pré-época deixa de contar
-const CACHE_PREFIX = "nhl:analysis:v11:";
+const CACHE_PREFIX = "nhl:analysis:v12:";
 const CACHE_TTL_MS = 2 * 60 * 60 * 1000; // 2 horas (as lesões influenciam os números)
 const GAME_CACHE_PREFIX = "nhl:game:v2:"; // golos do 1.º período de jogos já terminados (nunca mudam)
 const GAME_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -40,6 +40,7 @@ const MODEL_CFG = {
   leagueGoalsPerGame: 6.1, // golos totais por jogo em tempo regulamentar (referência da liga)
   leaguePriorGames: 30, // peso dessa referência quando se calculam as médias da janela
   rateBlendGames: 40, // peso da referência ao calibrar as taxas da liga (empate, 1.º período, totais)
+  over45Keep: 0.5, // Over 4.5: fração do afastamento à taxa da liga que se mantém (1 = modelo puro, 0 = só média da liga). A Calibração mostrou o modelo otimista (76% previsto vs 69% real)
   homeEdge: 0.05, // vantagem de casa: +5% golos esperados em casa, -5% fora
   regTieRate: 0.22, // empates ao fim dos 60 min (NHL 2016-17 a 2024-25: entre 20,5% e 23,5%)
   p1Share: 0.31, // fração dos golos que cai no 1.º período
@@ -754,7 +755,11 @@ function gameModel(
     btts: clamp01(m.btts * F.btts),
     over15P2: clamp01(m.over15P2 * F.over15P2),
     btts2: clamp01(m.btts2 * F.btts2),
-    over45: clamp01(m.over45 * F.over45),
+    over45: (() => {
+      const raw = clamp01(m.over45 * F.over45);
+      const base = ctx.baseline.over45 / 100;
+      return clamp01(base + (raw - base) * C.over45Keep);
+    })(),
     over55: clamp01(m.over55 * F.over55),
     p1,
     favorite,
