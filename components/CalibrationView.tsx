@@ -147,7 +147,7 @@ const CalibrationView: React.FC = () => {
               <button
                 key={m}
                 onClick={() => setMarket(m)}
-                className={`text-xs px-2.5 py-1 rounded-full border ${market === m ? 'bg-sky-600 border-sky-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-300'}`}
+                className={`text-xs px-2.5 py-1 rounded-full border ${market === m ? 'bg-violet-600 border-violet-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-300'}`}
               >
                 {m}
               </button>
@@ -214,13 +214,13 @@ const CalibrationView: React.FC = () => {
 
           <button
             onClick={() => setShowFix((v) => !v)}
-            className="w-full text-sm font-semibold px-3 py-2.5 rounded-xl bg-orange-600 text-white"
+            className="w-full text-sm font-semibold px-3 py-2.5 rounded-xl bg-violet-600 text-white"
           >
             {showFix ? 'Esconder correção sugerida' : '📐 Correção sugerida'}
           </button>
 
           {showFix && (
-            <div className="rounded-xl border border-orange-500/40 overflow-hidden">
+            <div className="rounded-xl border border-violet-500/40 overflow-hidden">
               <table className="w-full text-sm">
                 <thead className="bg-slate-800 text-slate-400 text-[11px]">
                   <tr>
