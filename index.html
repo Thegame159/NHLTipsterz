@@ -19,6 +19,32 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 
+    <!-- Auto-recuperação: se o JS da app falhar a carregar (deploy a meio / cache antiga), limpa o service worker e a cache e recarrega uma vez -->
+    <script>
+      window.addEventListener(
+        'error',
+        function (e) {
+          var t = e && e.target;
+          if (!t || t.tagName !== 'SCRIPT' || !t.src || t.src.indexOf('/assets/') === -1) return;
+          try {
+            var last = Number(sessionStorage.getItem('nhl-heal') || 0);
+            if (Date.now() - last < 60000) return;
+            sessionStorage.setItem('nhl-heal', String(Date.now()));
+          } catch (_) {}
+          var done = function () { location.reload(); };
+          Promise.all([
+            navigator.serviceWorker && navigator.serviceWorker.getRegistrations
+              ? navigator.serviceWorker.getRegistrations().then(function (r) { return Promise.all(r.map(function (x) { return x.unregister(); })); })
+              : null,
+            window.caches && caches.keys
+              ? caches.keys().then(function (k) { return Promise.all(k.map(function (x) { return caches.delete(x); })); })
+              : null,
+          ]).then(done, done);
+        },
+        true
+      );
+    </script>
+
     <script src="https://cdn.tailwindcss.com"></script>
     <link
       rel="stylesheet"
