@@ -31,7 +31,7 @@ const LOADING_MESSAGES = [
   'Preparando face-off...',
 ];
 
-type Tab = 'schedule' | 'suggestions' | 'players' | 'mypicks' | 'stats' | 'calibration';
+type Tab = 'schedule' | 'suggestions' | 'players' | 'mypicks' | 'stats' | 'calibration' | 'admin';
 
 // ─── Helpers de data ─────────────────────────────────────────────────────────
 
@@ -46,13 +46,14 @@ const toDateStringLocal = (d: Date): string => {
 
 const AppMain: React.FC = () => {
   const auth = useAuth();
-  const [adminOpen, setAdminOpen] = useState(false);
   // Módulos (separadores) a que o utilizador tem acesso; o administrador vê todos
   const allowedTabs = useMemo<Set<string> | null>(
     () => (!auth || auth.user.role === 'admin' ? null : new Set(auth.user.modules ?? ['schedule', 'suggestions'])),
     [auth]
   );
-  const canSee = (t: Tab) => !allowedTabs || allowedTabs.has(t);
+  const isAdmin = auth?.user.role === 'admin';
+  // 'admin' só para o administrador; os outros separadores conforme os módulos
+  const canSee = (t: Tab) => (t === 'admin' ? isAdmin : !allowedTabs || allowedTabs.has(t));
   const [data, setData]               = useState<NHLAnalysisData | null>(null);
   const [loading, setLoading]         = useState(false);
   const [progress, setProgress]       = useState(0);
@@ -183,7 +184,10 @@ const AppMain: React.FC = () => {
 
   // ─── Função de Limpeza Global de Cache ─────────────────────────────────────
 
+  const [clearing, setClearing] = useState(false);
   const handleGlobalRefreshClick = async () => {
+    if (clearing) return;
+    setClearing(true);
     try {
       const res = await fetch('/api/gemini', {
         method: 'DELETE',
@@ -207,6 +211,8 @@ const AppMain: React.FC = () => {
       console.error('Erro ao comunicar com o servidor para limpar cache', err);
       setToastMessage('⚠️ Erro de ligação ao limpar cache.');
       setTimeout(() => setToastMessage(null), 4000);
+    } finally {
+      setClearing(false);
     }
   };
 
@@ -261,15 +267,6 @@ const AppMain: React.FC = () => {
 
         {auth && (
           <div className="order-2 md:order-3 flex items-center gap-1.5">
-            {auth.user.role === 'admin' && (
-              <button
-                onClick={() => setAdminOpen(true)}
-                className="bg-zinc-800 text-orange-400 px-2.5 py-2 rounded-lg hover:bg-zinc-700 transition border border-orange-500/30 text-[10px] font-black uppercase tracking-wider whitespace-nowrap"
-                title="Convites e utilizadores"
-              >
-                Admin
-              </button>
-            )}
             <button
               onClick={auth.logout}
               className="bg-zinc-800 text-slate-300 px-2.5 py-2 rounded-lg hover:bg-zinc-700 transition border border-white/10 text-[10px] font-black uppercase tracking-wider whitespace-nowrap"
@@ -301,18 +298,34 @@ const AppMain: React.FC = () => {
               Analisar
             </button>
 
-            <button
-              onClick={handleGlobalRefreshClick}
-              className="bg-zinc-800 text-white p-2 rounded-lg hover:bg-zinc-700 transition border border-white/10 flex items-center justify-center cursor-pointer"
-              title="Limpar toda a cache e histórico guardado"
-            >
-              🔄
-            </button>
+            {isAdmin && (
+              <button
+                onClick={handleGlobalRefreshClick}
+                disabled={clearing}
+                aria-label="Limpar cache"
+                title="Limpar toda a cache e histórico guardado"
+                className="p-2 rounded-lg text-slate-500 hover:text-slate-200 transition flex items-center justify-center disabled:opacity-60"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={1.8}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className={`w-4 h-4 ${clearing ? 'animate-spin' : ''}`}
+                  aria-hidden="true"
+                >
+                  <path d="M20 11a8 8 0 0 0-14.3-4.9L4 8" />
+                  <path d="M4 4v4h4" />
+                  <path d="M4 13a8 8 0 0 0 14.3 4.9L20 16" />
+                  <path d="M20 20v-4h-4" />
+                </svg>
+              </button>
+            )}
           </div>
         </div>
       </header>
-
-      {adminOpen && <AdminPanel onClose={() => setAdminOpen(false)} />}
 
       {/* Toast de Feedback Visual da Limpeza */}
       {toastMessage && (
@@ -341,7 +354,7 @@ const AppMain: React.FC = () => {
       ) : (
         <>
           {/* Tabs */}
-          <div className="bg-[#020617]/80 backdrop-blur-3xl p-1 rounded-xl border border-white/5 mb-8 flex gap-1 shadow-xl max-w-[620px] mx-auto">
+          <div className="bg-[#020617]/80 backdrop-blur-3xl p-1 rounded-xl border border-white/5 mb-8 flex gap-1 shadow-xl max-w-[720px] mx-auto">
             {(
               [
                 { key: 'schedule',    label: 'Jogos'        },
@@ -350,6 +363,7 @@ const AppMain: React.FC = () => {
                 { key: 'mypicks',     label: 'Minhas Picks' },
                 { key: 'stats',       label: 'Stats'        },
                 { key: 'calibration', label: 'Calibração'   },
+                { key: 'admin',       label: 'Admin'        },
               ] as { key: Tab; label: string }[]
             ).filter(tab => canSee(tab.key)).map(tab => (
               <button
@@ -360,6 +374,8 @@ const AppMain: React.FC = () => {
                     ? 'bg-orange-600 text-white'
                     : tab.key === 'calibration'
                       ? 'text-violet-400 hover:text-violet-300'
+                      : tab.key === 'admin'
+                        ? 'text-orange-400/80 hover:text-orange-300'
                       : 'text-slate-500 hover:text-slate-300'
                 }`}
               >
@@ -448,6 +464,7 @@ const AppMain: React.FC = () => {
 
             {activeTab === 'stats' && canSee('stats') && <StatsView />}
             {activeTab === 'calibration' && canSee('calibration') && <CalibrationView />}
+            {activeTab === 'admin' && canSee('admin') && <AdminPanel />}
           </main>
         </>
       )}

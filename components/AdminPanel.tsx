@@ -1,5 +1,5 @@
 // components/AdminPanel.tsx
-// Painel de administração (só para o administrador): convites e utilizadores.
+// Separador de administração (só para o administrador): convites e utilizadores.
 
 import React, { useCallback, useEffect, useState } from 'react';
 import AdminUsers, { type UserRow } from './AdminUsers';
@@ -22,7 +22,7 @@ const fmtDate = (ms: number) =>
   ms ? new Date(ms).toLocaleString('pt-PT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
 const daysLeft = (ms: number) => Math.max(0, Math.ceil((ms - Date.now()) / 86400000));
 
-const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+const AdminPanel: React.FC = () => {
   const [tab, setTab] = useState<'invites' | 'users'>('invites');
   const [invites, setInvites] = useState<Invite[]>([]);
   const [users, setUsers] = useState<UserRow[]>([]);
@@ -49,12 +49,6 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   useEffect(() => {
     load();
   }, [load]);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
 
   const copy = async (token: string) => {
     const url = inviteUrl(token);
@@ -106,19 +100,11 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm sm:items-center sm:p-4" onClick={onClose}>
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="Administração"
-        onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[88vh] w-full max-w-lg flex-col sm:max-w-3xl rounded-t-2xl border border-white/10 bg-[#0b1220] shadow-2xl sm:rounded-2xl"
-      >
-        <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+    <div className="mx-auto max-w-4xl">
+      <div className="flex flex-col rounded-2xl border border-white/10 bg-[#0b1220] shadow-2xl">
+        <div className="border-b border-white/10 px-5 py-4">
           <h2 className="text-base font-black text-white">Administração</h2>
-          <button onClick={onClose} aria-label="Fechar" className="rounded-lg px-2 py-1 text-slate-400 hover:text-white">
-            ✕
-          </button>
+          <p className="text-[11px] text-slate-500">Convites, utilizadores e o que cada um pode ver.</p>
         </div>
 
         <div className="flex gap-2 px-5 pt-4">
@@ -126,7 +112,7 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           {tabBtn('users', 'Utilizadores', users.length)}
         </div>
 
-        <div className="flex-1 overflow-y-auto px-5 py-4">
+        <div className="px-5 py-4">
           {error && (
             <p role="alert" className="mb-3 rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-300">
               {error}
