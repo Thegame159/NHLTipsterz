@@ -7,6 +7,7 @@
 // - A partir do 8.º dia da época regular, a pré-época deixa de contar (a equipa fica só com os jogos da época regular).
 
 import { redis } from "./_redis.js";
+import { guardEdge } from "./_session.js";
 
 export const config = { runtime: "edge" };
 
@@ -1463,9 +1464,13 @@ async function clearCache(): Promise<number> {
 
 export async function POST(req: Request) {
   try {
+    const auth = await guardEdge(req, "user");
+    if ("deny" in auth) return auth.deny;
+    const isAdmin = auth.session.r === "admin";
+
     const body = await req.json().catch(() => ({}));
     const date = String(body?.selectedDate ?? body?.date ?? "").trim();
-    const force = body?.force === true;
+    const force = isAdmin && body?.force === true;
 
     if (!isDate(date)) return json({ message: "Data inválida (usa YYYY-MM-DD)." }, 400);
 
@@ -1473,6 +1478,9 @@ export async function POST(req: Request) {
       const cached = await readCache(date);
       if (cached) return json({ ...cached, meta: { ...cached.meta, cached: true } });
     }
+
+    // Só o administrador pode gerar uma análise nova (gasta quota da IA); os restantes só veem as já feitas.
+    if (!isAdmin) return json({ message: "Esta data ainda não foi analisada." }, 404);
 
     let games: NhlGame[];
     try {
@@ -1574,7 +1582,9 @@ export async function POST(req: Request) {
   }
 }
 
-export async function DELETE() {
+export async function DELETE(req: Request) {
+  const auth = await guardEdge(req, "admin");
+  if ("deny" in auth) return auth.deny;
   const removed = await clearCache();
   return json({ success: true, removed, message: "Cache limpa!" });
 }

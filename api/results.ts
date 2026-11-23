@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { guard } from "./_session.js";
 
 export const config = { runtime: "nodejs" };
 
@@ -164,6 +165,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (req.method === "OPTIONS") return res.status(200).end();
     if (req.method !== "GET") return res.status(405).json({ message: "Use GET." });
+    if (!(await guard(req, res, "user"))) return;
 
     const date = String(req.query.date || "").trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {

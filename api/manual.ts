@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { redis } from "./_redis.js";
+import { guard } from "./_session.js";
 
 export const config = { runtime: "nodejs" };
 
@@ -21,6 +22,7 @@ function safeJsonParse(raw: any) {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (!(await guard(req, res, "admin"))) return;
   try {
     const date = String((req.query as any)?.date || "").trim();
     if (!date || !isDate(date)) return res.status(400).json({ message: "Invalid date" });

@@ -6,14 +6,12 @@ import crypto from "node:crypto";
 import type { VercelRequest } from "@vercel/node";
 import { redis } from "./_redis.js";
 
-export type Role = "admin" | "user";
-export type Session = { u: string; r: Role };
+import { COOKIE, k, sessionFromCookieHeader } from "./_session.js";
+import type { Session } from "./_session.js";
 
-export const COOKIE = "nhl_session";
+export { COOKIE, k };
+export type { Role, Session } from "./_session.js";
 export const SESSION_DAYS = 30;
-
-const NS = process.env.VERCEL_ENV === "production" ? "prod" : "dev";
-export const k = (...parts: string[]) => `auth:${NS}:${parts.join(":")}`;
 
 const safeEq = (a: string, b: string) => {
   const ha = crypto.createHash("sha256").update(a).digest();
@@ -75,17 +73,7 @@ export function readCookie(req: VercelRequest, name: string): string | null {
   return null;
 }
 
-export async function getSession(req: VercelRequest): Promise<Session | null> {
-  const token = readCookie(req, COOKIE);
-  if (!token || !/^[0-9a-f]{64}$/.test(token)) return null;
-  const raw = await redis.get(k("session", token));
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw) as Session;
-  } catch {
-    return null;
-  }
-}
+export const getSession = (req: VercelRequest): Promise<Session | null> => sessionFromCookieHeader(req.headers.cookie);
 
 export const sessionCookie = (token: string) =>
   `${COOKIE}=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${SESSION_DAYS * 24 * 3600}`;

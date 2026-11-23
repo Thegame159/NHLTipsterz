@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { redis } from "./_redis.js";
+import { guard } from "./_session.js";
 
 export const config = { runtime: "nodejs" };
 
@@ -45,6 +46,7 @@ export default async function handler(
   req: VercelRequest,
   res: VercelResponse
 ) {
+  if (!(await guard(req, res, req.method === "GET" ? "user" : "admin"))) return;
   try {
     // =========================
     // DELETE

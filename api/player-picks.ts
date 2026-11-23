@@ -10,6 +10,7 @@
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { redis } from "./_redis.js";
+import { guard } from "./_session.js";
 
 export const config = { runtime: "nodejs" };
 
@@ -136,6 +137,7 @@ async function evaluate(rec: Record_, mode: "goal" | "point", logs: Map<number, 
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (!(await guard(req, res, req.method === "GET" ? "user" : "admin"))) return;
   try {
     if (req.method === "POST") {
       const body = typeof req.body === "string" ? safeParse(req.body) : req.body || {};

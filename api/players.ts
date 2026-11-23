@@ -6,6 +6,7 @@
 // Plantel: /roster/{equipa}/current → /roster/{equipa}/{época} → /club-stats/{equipa}/now → estatísticas da liga.
 
 import { redis } from "./_redis.js";
+import { guardEdge } from "./_session.js";
 
 export const config = { runtime: "edge" };
 
@@ -427,6 +428,9 @@ function buildCard(
 
 export async function POST(req: Request) {
   try {
+    const auth = await guardEdge(req, "user");
+    if ("deny" in auth) return auth.deny;
+
     const body = await req.json().catch(() => ({}));
     const date = String(body?.date ?? "").trim();
     const games: GameReq[] = Array.isArray(body?.games) ? body.games.slice(0, MAX_GAMES) : [];
