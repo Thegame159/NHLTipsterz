@@ -3,6 +3,7 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import BrandLogo from './BrandLogo';
+import { IceBackdrop, PuckIntro } from './LoginScene';
 
 export type AuthUser = { username: string; role: 'admin' | 'user' };
 type Ctx = { user: AuthUser; logout: () => void };
@@ -22,7 +23,7 @@ const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [intro, setIntro] = useState(true);
   useEffect(() => {
     if (!intro) return;
-    const t = setTimeout(() => setIntro(false), 2900);
+    const t = setTimeout(() => setIntro(false), 3500);
     return () => clearTimeout(t);
   }, [intro]);
 
@@ -68,40 +69,28 @@ const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     return (
       <div className="relative min-h-screen overflow-hidden bg-[#020617] flex items-center justify-center px-5 py-10">
         <style>{`
-          @keyframes nhl-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
-          .nhl-draw { stroke-dasharray: 1; stroke-dashoffset: 0; animation: nhl-draw 1.6s cubic-bezier(.4,0,.2,1) both; }
-          @keyframes nhl-puck { 0% { transform: translateX(-62vw); opacity: 0; } 12% { opacity: 1; } 100% { transform: translateX(0); opacity: 1; } }
-          @keyframes nhl-trail { 0% { transform: translateX(-62vw) scaleX(.2); opacity: 0; } 15% { opacity: .9; } 100% { transform: translateX(-4px) scaleX(1); opacity: 0; } }
-          @keyframes nhl-title { from { letter-spacing: .3em; opacity: 0; } to { letter-spacing: .06em; opacity: 1; } }
+                    @keyframes nhl-puck { 0% { transform: translateX(-60vw) scale(.8); opacity: 0; } 10% { opacity: 1; } 100% { transform: translateX(0) scale(1); opacity: 1; } }
+          @keyframes nhl-scratch { 0% { transform: translateX(-60vw) scaleX(.1); opacity: 0; } 12% { opacity: 1; } 78% { opacity: .85; } 100% { transform: translateX(0) scaleX(1); opacity: .5; } }
+          @keyframes nhl-title { from { letter-spacing: .3em; opacity: 0; filter: blur(6px); } to { letter-spacing: .06em; opacity: 1; filter: blur(0); } }
           @keyframes nhl-fade-in { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
-          @keyframes nhl-fade-out { to { opacity: 0; transform: scale(1.04); } }
-          .nhl-puck { animation: nhl-puck 1.15s cubic-bezier(.16,.84,.3,1) .25s both; }
-          .nhl-trail { transform-origin: right center; animation: nhl-trail 1.15s cubic-bezier(.16,.84,.3,1) .25s both; }
-          .nhl-title { animation: nhl-title 1.3s cubic-bezier(.2,.7,.2,1) 1s both; }
-          .nhl-intro-out { animation: nhl-fade-out .5s ease-in 2.4s forwards; }
+          @keyframes nhl-fade-out { to { opacity: 0; transform: scale(1.03); } }
+          .nhl-puck { animation: nhl-puck 1.15s cubic-bezier(.1,.8,.25,1) .2s both; }
+          .nhl-scratch { animation: nhl-scratch 1.15s cubic-bezier(.1,.8,.25,1) .2s both; }
+          .nhl-title { animation: nhl-title 1.2s cubic-bezier(.2,.7,.2,1) 1.35s both; }
+          .nhl-intro-out { animation: nhl-fade-out .6s ease-in 2.9s forwards; }
           .nhl-form-in { animation: nhl-fade-in .7s cubic-bezier(.2,.7,.2,1) both; }
           @keyframes nhl-soft-in { from { opacity: 0; } to { opacity: 1; } }
           @keyframes nhl-soft-out { to { opacity: 0; } }
           @media (prefers-reduced-motion: reduce) {
-            .nhl-draw, .nhl-puck, .nhl-trail { animation: none; }
-            .nhl-title { animation: nhl-soft-in 1s ease-out .2s both; }
-            .nhl-intro-out { animation: nhl-soft-out .5s ease-in 2.4s forwards; }
+            .nhl-puck, .nhl-scratch { animation: none; }
+            .nhl-title { animation: nhl-soft-in 1s ease-out .2s both; filter: none; }
+            .nhl-intro-out { animation: nhl-soft-out .6s ease-in 2.9s forwards; }
             .nhl-form-in { animation: nhl-soft-in .6s ease-out both; }
           }
           .nhl-field:-webkit-autofill { -webkit-box-shadow: 0 0 0 40px #0b1220 inset; -webkit-text-fill-color: #e2e8f0; caret-color: #e2e8f0; }
         `}</style>
 
-        {/* Pista: círculo de face-off e linhas, só como fundo */}
-        <svg aria-hidden="true" viewBox="0 0 800 800" className="pointer-events-none absolute left-1/2 top-1/2 h-[900px] w-[900px] max-w-none -translate-x-1/2 -translate-y-1/2 opacity-80">
-          <g fill="none" strokeLinecap="round">
-            <circle className="nhl-draw" pathLength={1} cx="400" cy="400" r="300" stroke="#1e3a5f" strokeWidth="2" />
-            <circle cx="400" cy="400" r="6" fill="#f97316" fillOpacity="0.55" stroke="none" />
-            <path d="M400 0V800" stroke="#7f1d1d" strokeOpacity="0.35" strokeWidth="3" strokeDasharray="14 10" />
-            <path d="M300 400H100M500 400H700" stroke="#1e3a5f" strokeWidth="2" />
-            <path d="M370 118v28M430 118v28M370 654v28M430 654v28" stroke="#f97316" strokeOpacity="0.45" strokeWidth="3" />
-          </g>
-        </svg>
-        <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_30%,#020617_75%)]" />
+        <IceBackdrop />
 
         {intro && (
           <div
@@ -109,17 +98,11 @@ const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             className="nhl-intro-out absolute inset-0 z-10 flex cursor-pointer flex-col items-center justify-center"
             aria-hidden="true"
           >
-            <div className="relative flex w-full items-center justify-center">
-              <div className="nhl-trail absolute right-1/2 h-[3px] w-[55vw] rounded-full bg-gradient-to-l from-orange-500 to-transparent" />
-              <div className="nhl-puck relative h-7 w-14">
-                <div className="absolute inset-x-0 bottom-0 top-2 rounded-[50%] bg-slate-950 ring-1 ring-slate-600" />
-                <div className="absolute inset-x-0 top-0 h-5 rounded-[50%] bg-slate-800 ring-1 ring-slate-500" />
-              </div>
-            </div>
-            <div className="nhl-title mt-8 whitespace-nowrap text-center text-[64px] leading-none text-white sm:text-[88px]" style={{ fontFamily: "'Bebas Neue', sans-serif" }}>
+            <PuckIntro stopAtMs={1350} />
+            <div className="nhl-title absolute top-[27%] whitespace-nowrap text-center text-[64px] leading-none text-white drop-shadow-[0_4px_24px_rgba(147,197,253,0.35)] sm:text-[88px]" style={{ fontFamily: "'Bebas Neue', sans-serif" }}>
               Bem-vindo
             </div>
-            <div className="mt-4"><BrandLogo size="sm" /></div>
+            <div className="absolute top-[11%]"><BrandLogo size="sm" /></div>
           </div>
         )}
 
@@ -184,7 +167,7 @@ const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             </button>
           </form>
 
-          <p className="mt-6 text-center text-xs text-slate-500">Só com convite. Não tens conta? Pede um link a quem gere o site.</p>
+          <p className="mt-6 text-center text-xs text-slate-300 [text-shadow:0_1px_8px_#020617,0_0_2px_#020617]">Só com convite. Não tens conta? Pede um link a quem gere o site.</p>
         </main>
         )}
       </div>
