@@ -13,7 +13,7 @@ const BrandLogo: React.FC<Props> = ({ size = 'sm' }) => {
 
   return (
     <img
-      src="/logo-tipsterz.webp"
+      src="/logo-tipsterz-v2.webp"
       alt="NHL Tipsterz"
       width={902}
       height={578}

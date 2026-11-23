@@ -16,6 +16,51 @@ type UpstashResponse<T> = { result?: T; error?: string };
 const RETRIES = 3; // tentativas por comando (falhas de rede/DNS passageiras são comuns nas funções)
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * Alternativa quando o fetch falha por DNS (getaddrinfo EBUSY nas funções):
+ * resolve o IP com dns.resolve4 (c-ares, outro caminho) e liga por https mantendo o nome para TLS/SNI.
+ */
+async function viaHttps(command: any[]): Promise<{ status: number; data: any }> {
+  const [https, dns] = await Promise.all([import("node:https"), import("node:dns")]);
+  const url = new URL(REDIS_REST_URL as string);
+  const body = JSON.stringify(command);
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      {
+        hostname: url.hostname,
+        path: url.pathname + url.search,
+        method: "POST",
+        timeout: 8000,
+        headers: {
+          Authorization: `Bearer ${REDIS_REST_TOKEN}`,
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(body),
+        },
+        lookup: (host: string, _opts: any, cb: any) => {
+          dns.resolve4(host, (err: any, addrs: string[]) => {
+            if (err || !addrs?.length) return cb(err || new Error("dns sem resultados"));
+            cb(null, addrs[0], 4);
+          });
+        },
+      } as any,
+      (res) => {
+        let buf = "";
+        res.on("data", (c) => (buf += c));
+        res.on("end", () => {
+          try {
+            resolve({ status: res.statusCode || 0, data: JSON.parse(buf) });
+          } catch (e) {
+            reject(e);
+          }
+        });
+      }
+    );
+    req.on("timeout", () => req.destroy(new Error("timeout")));
+    req.on("error", reject);
+    req.end(body);
+  });
+}
+
 /** Executa o comando; faz retry em falhas de rede e erros 5xx. Lança erro se continuar a falhar. */
 async function cmdStrict<T = any>(command: any[]): Promise<T | null> {
   if (!REDIS_REST_URL || !REDIS_REST_TOKEN) {
@@ -27,23 +72,34 @@ async function cmdStrict<T = any>(command: any[]): Promise<T | null> {
   for (let attempt = 0; attempt < RETRIES; attempt++) {
     if (attempt > 0) await sleep(120 * attempt * attempt + 80);
     try {
-      const res = await fetch(REDIS_REST_URL, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${REDIS_REST_TOKEN}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(command),
-      });
+      let status: number;
+      let data: UpstashResponse<T>;
+      try {
+        const res = await fetch(REDIS_REST_URL, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${REDIS_REST_TOKEN}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(command),
+        });
+        status = res.status;
+        data = (await res.json()) as UpstashResponse<T>;
+      } catch (fetchErr) {
+        // fetch falhou (DNS/rede): tenta a via alternativa
+        const r = await viaHttps(command).catch((e) => {
+          throw fetchErr instanceof Error ? fetchErr : e;
+        });
+        status = r.status;
+        data = r.data;
+      }
 
-      const data = (await res.json()) as UpstashResponse<T>;
-
-      if (res.status >= 500) {
-        lastErr = new Error(`Upstash HTTP ${res.status}`);
+      if (status >= 500) {
+        lastErr = new Error(`Upstash HTTP ${status}`);
         continue;
       }
-      if (!res.ok) {
-        console.error("Upstash HTTP error:", res.status, data);
+      if (status < 200 || status >= 300) {
+        console.error("Upstash HTTP error:", status, data);
         return null;
       }
       if (data?.error) {
