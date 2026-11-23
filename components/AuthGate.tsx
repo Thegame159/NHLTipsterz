@@ -30,7 +30,7 @@ const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   useEffect(() => {
     let alive = true;
     const check = async () => {
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < 2; i++) {
         try {
           const r = await fetch('/api/auth?action=me', { cache: 'no-store' });
           if (r.ok) {
@@ -42,7 +42,7 @@ const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         } catch {
           /* tenta de novo */
         }
-        await new Promise((res) => setTimeout(res, 400 * (i + 1)));
+        await new Promise((res) => setTimeout(res, 300));
       }
       if (alive) setUser(null);
     };

@@ -91,6 +91,7 @@ async function cmdStrict<T = any>(command: any[]): Promise<T | null> {
       } catch (fetchErr) {
         // fetch falhou (DNS/rede): tenta a via alternativa
         const r = await viaHttps(command).catch((e) => {
+          console.error("Upstash via alternativa também falhou:", e?.code || e?.message || e);
           throw fetchErr instanceof Error ? fetchErr : e;
         });
         status = r.status;
