@@ -149,8 +149,8 @@ export const PlayerPicker: React.FC<{
             className="w-full rounded-lg bg-slate-900 border border-slate-700 focus:border-orange-500/60 outline-none px-3 py-1.5 text-sm text-slate-100 placeholder:text-slate-600"
           />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {renderTeam(game.away)}
             {renderTeam(game.home)}
+            {renderTeam(game.away)}
           </div>
           {query.length < 2 && inGame.length > LIMIT * 2 && (
             <button
