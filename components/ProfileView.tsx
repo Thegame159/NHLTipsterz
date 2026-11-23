@@ -43,7 +43,7 @@ const ProfileView: React.FC = () => {
   if (!auth || !user) return null;
   const isAdmin = user.role === 'admin';
   const isJersey = kind === 'jersey';
-  const idFor = (k: string) => (k === 'jersey' ? `jersey-${color}-${num || '0'}` : k);
+  const idFor = (k: string) => (k === 'jersey' ? `jersey-${color}-${num || '0'}` : `${k}-${color}`);
   const chosen = idFor(kind);
   const dirty = chosen !== (user.avatar ?? '');
 
@@ -139,8 +139,8 @@ const ProfileView: React.FC = () => {
                 ))}
               </div>
             </div>
-            {isJersey && (
-              <div className="flex flex-wrap items-end gap-5">
+            <div className="flex flex-wrap items-end gap-5">
+              {isJersey && (
                 <div>
                   <p className="mb-2 text-xs font-semibold text-slate-400">Número</p>
                   <input
@@ -151,8 +151,9 @@ const ProfileView: React.FC = () => {
                     className="w-20 rounded-xl border border-slate-700/80 bg-[#060b16] px-3 py-2 text-center text-lg font-black text-white outline-none focus:border-orange-500"
                   />
                 </div>
+              )}
                 <div>
-                  <p className="mb-2 text-xs font-semibold text-slate-400">Cor da camisola</p>
+                  <p className="mb-2 text-xs font-semibold text-slate-400">{isJersey ? 'Cor da camisola' : 'Cor'}</p>
                   <div className="flex flex-wrap gap-2.5">
                     {JERSEY_COLORS.map((c) => (
                       <button
@@ -169,8 +170,7 @@ const ProfileView: React.FC = () => {
                     ))}
                   </div>
                 </div>
-              </div>
-            )}
+            </div>
           </div>
         </div>
         <div className="mt-4 flex items-center gap-2 border-t border-white/10 pt-4">

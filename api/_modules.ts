@@ -15,7 +15,7 @@ export const cleanModules = (v: unknown): Module[] =>
   Array.isArray(v) ? MODULES.filter((m) => v.includes(m)) : [...DEFAULT_MODULES];
 
 /** Avatares disponíveis (desenhos próprios, ver components/Avatar.tsx). */
-export const AVATAR_RE = /^(mask|puck|helmet|skate|sticks|lamp|cup|jersey-[a-z]+-\d{1,2})$/;
+export const AVATAR_RE = /^(?:(?:mask|puck|helmet|skate|sticks|lamp|cup)(?:-[a-z]+)?|jersey-[a-z]+-\d{1,2})$/;
 
 /** Perfil (avatar) de qualquer conta, incluindo a do administrador: auth:{ns}:profile:{nome} */
 export async function readProfile(username: string): Promise<{ avatar: string | null }> {
