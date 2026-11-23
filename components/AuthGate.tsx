@@ -18,14 +18,8 @@ const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showPw, setShowPw] = useState(false);
-  // Introdução animada antes do formulário (salta-se ao tocar ou com "reduzir movimento")
-  const [intro, setIntro] = useState(() => {
-    try {
-      return !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    } catch {
-      return false;
-    }
-  });
+  // Introdução animada antes do formulário (toca para saltar). Com "reduzir movimento" fica só o desvanecer, sem deslocações.
+  const [intro, setIntro] = useState(true);
   useEffect(() => {
     if (!intro) return;
     const t = setTimeout(() => setIntro(false), 2900);
@@ -86,7 +80,14 @@ const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           .nhl-title { animation: nhl-title 1.3s cubic-bezier(.2,.7,.2,1) 1s both; }
           .nhl-intro-out { animation: nhl-fade-out .5s ease-in 2.4s forwards; }
           .nhl-form-in { animation: nhl-fade-in .7s cubic-bezier(.2,.7,.2,1) both; }
-          @media (prefers-reduced-motion: reduce) { .nhl-draw, .nhl-puck, .nhl-trail, .nhl-title, .nhl-form-in { animation: none; } }
+          @keyframes nhl-soft-in { from { opacity: 0; } to { opacity: 1; } }
+          @keyframes nhl-soft-out { to { opacity: 0; } }
+          @media (prefers-reduced-motion: reduce) {
+            .nhl-draw, .nhl-puck, .nhl-trail { animation: none; }
+            .nhl-title { animation: nhl-soft-in 1s ease-out .2s both; }
+            .nhl-intro-out { animation: nhl-soft-out .5s ease-in 2.4s forwards; }
+            .nhl-form-in { animation: nhl-soft-in .6s ease-out both; }
+          }
           .nhl-field:-webkit-autofill { -webkit-box-shadow: 0 0 0 40px #0b1220 inset; -webkit-text-fill-color: #e2e8f0; caret-color: #e2e8f0; }
         `}</style>
 
