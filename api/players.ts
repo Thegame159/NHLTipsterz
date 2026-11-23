@@ -155,12 +155,68 @@ async function fetchSeasonRows(season: string): Promise<Map<number, SeasonRow> |
         teams: String(r?.teamAbbrevs ?? ""),
       });
     }
-    await redis.setPx(key, JSON.stringify(rows), rows.length ? 60 * 60 * 1000 : 10 * 60 * 1000);
+    await redis.setPx(key, JSON.stringify(rows), rows.length >= 500 ? 60 * 60 * 1000 : 10 * 60 * 1000); // incompleta: cache curta
     return new Map(rows.map((p) => [p.id, p]));
   } catch (e) {
     console.error(`[players] estatísticas ${season} falharam:`, e);
     return null;
   }
+}
+
+/** Estatísticas de época dos patinadores de uma equipa (api-web). Preenche o que falte na tabela de líderes. */
+function clubRowsFrom(data: any, abbr: string): SeasonRow[] {
+  const rows: SeasonRow[] = [];
+  for (const p of Array.isArray(data?.skaters) ? data.skaters : []) {
+    const id = num(p?.playerId ?? p?.id);
+    if (!id) continue;
+    rows.push({
+      id,
+      name: fullName(p),
+      pos: String(p?.positionCode ?? ""),
+      gp: num(p?.gamesPlayed),
+      g: num(p?.goals),
+      a: num(p?.assists),
+      pts: num(p?.points),
+      teams: abbr,
+    });
+  }
+  return rows;
+}
+
+async function fetchClubRows(abbr: string, season: string, current: boolean): Promise<SeasonRow[]> {
+  const key = `nhl:club-rows:v1:${abbr}:${season}`;
+  const cached = await redis.get(key);
+  if (cached) {
+    try {
+      return JSON.parse(cached) as SeasonRow[];
+    } catch {
+      /* ignora cache inválida */
+    }
+  }
+  const data = await tryJson(current ? `${NHL_API}/club-stats/${abbr}/now` : `${NHL_API}/club-stats/${abbr}/${season}/2`);
+  if (!data) return [];
+  if (current && data?.season && String(data.season) !== season) return []; // fora de época: "now" é de outra época
+  const rows = clubRowsFrom(data, abbr);
+  if (rows.length) await redis.setPx(key, JSON.stringify(rows), current ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000);
+  return rows;
+}
+
+/** Junta à tabela de líderes os jogadores que lá faltam (ou com menos jogos do que a equipa regista). */
+async function fillFromClubs(
+  base: Map<number, SeasonRow> | null,
+  abbrs: string[],
+  season: string,
+  current: boolean
+): Promise<Map<number, SeasonRow>> {
+  const out = new Map(base ?? []);
+  const lists = await Promise.all(abbrs.map((a) => fetchClubRows(a, season, current)));
+  for (const rows of lists) {
+    for (const r of rows) {
+      const ex = out.get(r.id);
+      if (!ex || ex.gp < r.gp) out.set(r.id, { ...r, teams: ex?.teams || r.teams });
+    }
+  }
+  return out;
 }
 
 // ─── Plantel atual (várias fontes) ───────────────────────────────────────────
@@ -338,9 +394,9 @@ function injuredOf(map: Map<string, InjuryEntry[]> | null, teamFullName: string)
 
 const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
 
-function seasonPrior(p: RosterPlayer, cur?: SeasonRow, prev?: SeasonRow) {
+/** w = peso da época passada: 0 depois do arranque de época (só conta a época atual), CFG.prevSeasonWeight no arranque */
+function seasonPrior(p: RosterPlayer, cur: SeasonRow | undefined, prev: SeasonRow | undefined, w: number) {
   const C = CFG;
-  const w = C.prevSeasonWeight;
   const gp = (cur?.gp ?? 0) + w * (prev?.gp ?? 0);
   const g = (cur?.g ?? 0) + w * (prev?.g ?? 0);
   const pts = (cur?.pts ?? 0) + w * (prev?.pts ?? 0);
@@ -438,12 +494,17 @@ export async function POST(req: Request) {
     const prevSeason = prevSeasonId(season);
     const abbrs = [...new Set(games.flatMap((g) => [g.homeAbbr, g.awayAbbr]))].filter(Boolean);
 
-    const [cur, prev, injuries] = await Promise.all([
+    const [cur0, prev0, injuries] = await Promise.all([
       fetchSeasonRows(season),
       fetchSeasonRows(prevSeason),
       fetchInjuryMap(),
     ]);
-    if (!cur && !prev) return json({ message: "Estatísticas de jogadores indisponíveis na NHL." }, 502);
+    // A tabela de líderes da NHL tem vindo incompleta: completa-se com as estatísticas de cada equipa
+    const [cur, prev] = await Promise.all([
+      fillFromClubs(cur0, abbrs, season, true),
+      fillFromClubs(prev0, abbrs, prevSeason, false),
+    ]);
+    if (cur.size === 0 && prev.size === 0) return json({ message: "Estatísticas de jogadores indisponíveis na NHL." }, 502);
 
     const rosterList = await Promise.all(abbrs.map(async (a) => [a, await fetchRoster(a, season, cur)] as const));
     const rosters = new Map(rosterList.filter(([, r]) => r).map(([a, r]) => [a, r as Roster]));
@@ -468,7 +529,7 @@ export async function POST(req: Request) {
             const src = useCur ? c : pr;
             return {
               p,
-              prior: seasonPrior(p, c, pr),
+              prior: seasonPrior(p, c, pr, useCur ? 0 : CFG.prevSeasonWeight),
               stat: { gp: src?.gp ?? 0, g: src?.g ?? 0, a: src?.a ?? 0, p: src?.pts ?? 0 },
               statPrev: !useCur,
               inj: injMap.get(normName(p.name)),
