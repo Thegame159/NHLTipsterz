@@ -4,6 +4,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import BrandLogo from './BrandLogo';
 import { IceBackdrop, PlayerIntro } from './LoginScene';
+import RegisterForm from './RegisterForm';
 
 export type AuthUser = { username: string; role: 'admin' | 'user' };
 type Ctx = { user: AuthUser; logout: () => void };
@@ -20,7 +21,23 @@ const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [busy, setBusy] = useState(false);
   const [showPw, setShowPw] = useState(false);
   // Introdução animada antes do formulário (toca para saltar). Com "reduzir movimento" fica só o desvanecer, sem deslocações.
-  const [intro, setIntro] = useState(true);
+  const [invite, setInvite] = useState<string | null>(() => {
+    try {
+      const t = new URLSearchParams(window.location.search).get('convite');
+      return t && /^[0-9a-f]{32}$/.test(t) ? t : null;
+    } catch {
+      return null;
+    }
+  });
+  const leaveInvite = () => {
+    setInvite(null);
+    try {
+      window.history.replaceState(null, '', window.location.pathname);
+    } catch {
+      /* ignora */
+    }
+  };
+  const [intro, setIntro] = useState(!invite);
   useEffect(() => {
     if (!intro || checking) return; // a contagem só começa quando a abertura está visível
     const t = setTimeout(() => setIntro(false), 2800);
@@ -133,6 +150,17 @@ const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             <BrandLogo size="sm" />
           </div>
 
+          {invite ? (
+            <RegisterForm
+              token={invite}
+              onDone={(u) => {
+                leaveInvite();
+                setUser(u);
+              }}
+              onCancel={leaveInvite}
+            />
+          ) : (
+          <>
           <h1 className="text-center text-[40px] leading-none tracking-wide text-white" style={{ fontFamily: "'Bebas Neue', sans-serif" }}>
             Inicia sessão
           </h1>
@@ -192,6 +220,8 @@ const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           </form>
 
           <p className="mt-6 text-center text-xs text-slate-300 [text-shadow:0_1px_8px_#020617,0_0_2px_#020617]">Só com convite. Não tens conta? Pede um link a quem gere o site.</p>
+          </>
+          )}
         </main>
         )}
       </div>

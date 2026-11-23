@@ -2,9 +2,11 @@
 // GET  /api/auth?action=me      -> { user: { username, role } | null }
 // POST /api/auth?action=login   -> { username, password }
 // POST /api/auth?action=logout
+// Convites / utilizadores: ver api/_admin.ts
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { redis } from "./_redis.js";
+import { adminActions } from "./_admin.js";
 import { checkCredentials, clearCookie, createSession, getSession, k, normUser, readCookie, COOKIE, sessionCookie } from "./_auth.js";
 
 export const config = { runtime: "nodejs" };
@@ -18,6 +20,13 @@ const clientIp = (req: VercelRequest) =>
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader("Cache-Control", "no-store");
   const action = String(req.query.action ?? "");
+
+  try {
+    if (await adminActions(action, req, res)) return;
+  } catch (e) {
+    console.error("auth admin error:", e);
+    return res.status(503).json({ error: "Serviço temporariamente indisponível. Tenta de novo." });
+  }
 
   if (action === "me" && req.method === "GET") {
     try {

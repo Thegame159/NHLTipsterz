@@ -15,6 +15,7 @@ import TabIcon from './components/TabIcon';
 import CalibrationView from './components/CalibrationView';
 import TabHeader from './components/TabHeader';
 import AuthGate, { useAuth } from './components/AuthGate';
+import AdminPanel from './components/AdminPanel';
 import { buildSuggestions } from './utils/suggestions';
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
@@ -45,6 +46,7 @@ const toDateStringLocal = (d: Date): string => {
 
 const AppMain: React.FC = () => {
   const auth = useAuth();
+  const [adminOpen, setAdminOpen] = useState(false);
   const [data, setData]               = useState<NHLAnalysisData | null>(null);
   const [loading, setLoading]         = useState(false);
   const [progress, setProgress]       = useState(0);
@@ -274,6 +276,16 @@ const AppMain: React.FC = () => {
               🔄
             </button>
 
+            {auth?.user.role === 'admin' && (
+              <button
+                onClick={() => setAdminOpen(true)}
+                className="bg-zinc-800 text-orange-400 px-2.5 py-2 rounded-lg hover:bg-zinc-700 transition border border-orange-500/30 text-[10px] font-black uppercase tracking-wider whitespace-nowrap"
+                title="Convites e utilizadores"
+              >
+                Admin
+              </button>
+            )}
+
             {auth && (
               <button
                 onClick={auth.logout}
@@ -286,6 +298,8 @@ const AppMain: React.FC = () => {
           </div>
         </div>
       </header>
+
+      {adminOpen && <AdminPanel onClose={() => setAdminOpen(false)} />}
 
       {/* Toast de Feedback Visual da Limpeza */}
       {toastMessage && (
