@@ -503,15 +503,26 @@ export async function POST(req: Request) {
       batch.forEach((id, j) => prevLogs.set(id, res[j]));
     }
 
+    // Estatística de época a partir dos jogos (cada linha do histórico é um jogo da época): serve de reserva
+    // quando a tabela de líderes da NHL não traz o jogador (ou traz menos jogos do que ele realmente fez).
+    const fromLog = (log: LogRow[] | null | undefined, fallback: Stat): Stat => {
+      if (!log || log.length <= fallback.gp) return fallback;
+      const g = log.reduce((n, r) => n + r.g, 0);
+      const a = log.reduce((n, r) => n + r.a, 0);
+      return { gp: log.length, g, a, p: g + a };
+    };
+
     // 3) cartas por equipa (ordenadas por pontos da época; a vista pode reordenar)
     const teamResult = (abbr: string, teamExp: number): TeamPlayers => {
       const t = pools.get(abbr);
       const players = (t?.cands ?? [])
         .map((c) => {
-          const card = buildCard(c.p, mergedHistory(curLogs.get(c.p.id) ?? null, prevLogs.get(c.p.id) ?? null), c.prior, c.stat, c.statPrev, teamExp, c.inj);
+          const stat = fromLog(c.statPrev ? prevLogs.get(c.p.id) : curLogs.get(c.p.id), c.stat);
+          const curGp = Math.max(c.curGp, curLogs.get(c.p.id)?.length ?? 0);
+          const card = buildCard(c.p, mergedHistory(curLogs.get(c.p.id) ?? null, prevLogs.get(c.p.id) ?? null), c.prior, stat, c.statPrev, teamExp, c.inj);
           if (c.newTeam) card.newTeam = true;
-          if (c.curGp < 5) card.lowSample = true;
-          const missed = c.teamGp - c.curGp;
+          if (curGp < 5) card.lowSample = true;
+          const missed = c.teamGp - curGp;
           // "Regresso": falhou 3+ jogos da equipa e já não consta como lesionado (inferência, não confirmação)
           if (!card.status && missed >= 3) card.missed = missed;
           return card;
