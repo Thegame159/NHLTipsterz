@@ -13,41 +13,69 @@ const REDIS_REST_TOKEN =
 
 type UpstashResponse<T> = { result?: T; error?: string };
 
-async function cmd<T = any>(command: any[]): Promise<T | null> {
+const RETRIES = 3; // tentativas por comando (falhas de rede/DNS passageiras são comuns nas funções)
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Executa o comando; faz retry em falhas de rede e erros 5xx. Lança erro se continuar a falhar. */
+async function cmdStrict<T = any>(command: any[]): Promise<T | null> {
   if (!REDIS_REST_URL || !REDIS_REST_TOKEN) {
     // Sem env vars -> comporta-se como "redis desligado"
     return null;
   }
 
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < RETRIES; attempt++) {
+    if (attempt > 0) await sleep(120 * attempt * attempt + 80);
+    try {
+      const res = await fetch(REDIS_REST_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${REDIS_REST_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(command),
+      });
+
+      const data = (await res.json()) as UpstashResponse<T>;
+
+      if (res.status >= 500) {
+        lastErr = new Error(`Upstash HTTP ${res.status}`);
+        continue;
+      }
+      if (!res.ok) {
+        console.error("Upstash HTTP error:", res.status, data);
+        return null;
+      }
+      if (data?.error) {
+        console.error("Upstash command error:", data.error, command[0]);
+        return null;
+      }
+
+      return (data?.result ?? null) as any;
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  console.error("Upstash fetch failed:", lastErr);
+  throw lastErr instanceof Error ? lastErr : new Error("Upstash fetch failed");
+}
+
+/** Igual a cmdStrict, mas devolve null em vez de lançar (comportamento original). */
+async function cmd<T = any>(command: any[]): Promise<T | null> {
   try {
-    const res = await fetch(REDIS_REST_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${REDIS_REST_TOKEN}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(command),
-    });
-
-    const data = (await res.json()) as UpstashResponse<T>;
-
-    if (!res.ok) {
-      console.error("Upstash HTTP error:", res.status, data);
-      return null;
-    }
-    if (data?.error) {
-      console.error("Upstash command error:", data.error, command);
-      return null;
-    }
-
-    return (data?.result ?? null) as any;
-  } catch (e) {
-    console.error("Upstash fetch failed:", e);
+    return await cmdStrict<T>(command);
+  } catch {
     return null;
   }
 }
 
 export const redis = {
+  /** Como get, mas lança erro se o Redis estiver inacessível (para distinguir "não existe" de "falhou"). */
+  async getStrict(key: string): Promise<string | null> {
+    const r = await cmdStrict<string>(["GET", key]);
+    return typeof r === "string" ? r : null;
+  },
+
   async get(key: string): Promise<string | null> {
     const r = await cmd<string>(["GET", key]);
     return typeof r === "string" ? r : null;

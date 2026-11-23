@@ -20,8 +20,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const action = String(req.query.action ?? "");
 
   if (action === "me" && req.method === "GET") {
-    const s = await getSession(req);
-    return res.status(200).json({ user: s ? { username: s.u, role: s.r } : null });
+    try {
+      const s = await getSession(req);
+      return res.status(200).json({ user: s ? { username: s.u, role: s.r } : null });
+    } catch {
+      return res.status(503).json({ error: "Serviço temporariamente indisponível." });
+    }
   }
 
   if (action === "logout" && req.method === "POST") {
@@ -53,7 +57,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     await redis.del(rlKey);
-    const token = await createSession(session);
+    let token: string;
+    try {
+      token = await createSession(session);
+    } catch {
+      return res.status(503).json({ error: "Serviço temporariamente indisponível. Tenta de novo." });
+    }
     res.setHeader("Set-Cookie", sessionCookie(token));
     return res.status(200).json({ user: { username: session.u, role: session.r } });
   }

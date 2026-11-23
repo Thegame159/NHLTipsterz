@@ -3,7 +3,7 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import BrandLogo from './BrandLogo';
-import { IceBackdrop, PuckIntro } from './LoginScene';
+import { IceBackdrop, PlayerIntro } from './LoginScene';
 
 export type AuthUser = { username: string; role: 'admin' | 'user' };
 type Ctx = { user: AuthUser; logout: () => void };
@@ -23,17 +23,30 @@ const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [intro, setIntro] = useState(true);
   useEffect(() => {
     if (!intro) return;
-    const t = setTimeout(() => setIntro(false), 3500);
+    const t = setTimeout(() => setIntro(false), 2800);
     return () => clearTimeout(t);
   }, [intro]);
 
   useEffect(() => {
     let alive = true;
-    fetch('/api/auth?action=me', { cache: 'no-store' })
-      .then((r) => (r.ok ? r.json() : { user: null }))
-      .then((d) => alive && setUser(d?.user ?? null))
-      .catch(() => alive && setUser(null))
-      .finally(() => alive && setChecking(false));
+    const check = async () => {
+      for (let i = 0; i < 4; i++) {
+        try {
+          const r = await fetch('/api/auth?action=me', { cache: 'no-store' });
+          if (r.ok) {
+            const d = await r.json();
+            if (alive) setUser(d?.user ?? null);
+            return;
+          }
+          if (r.status < 500) break; // 401 etc.: sem sessão, não vale a pena repetir
+        } catch {
+          /* tenta de novo */
+        }
+        await new Promise((res) => setTimeout(res, 400 * (i + 1)));
+      }
+      if (alive) setUser(null);
+    };
+    check().finally(() => alive && setChecking(false));
     return () => { alive = false; };
   }, []);
 
@@ -69,22 +82,29 @@ const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     return (
       <div className="relative min-h-screen overflow-hidden bg-[#020617] flex items-center justify-center px-5 py-10">
         <style>{`
-                    @keyframes nhl-puck { 0% { transform: translateX(-60vw) scale(.8); opacity: 0; } 10% { opacity: 1; } 100% { transform: translateX(0) scale(1); opacity: 1; } }
-          @keyframes nhl-scratch { 0% { transform: translateX(-60vw) scaleX(.1); opacity: 0; } 12% { opacity: 1; } 78% { opacity: .85; } 100% { transform: translateX(0) scaleX(1); opacity: .5; } }
-          @keyframes nhl-title { from { letter-spacing: .3em; opacity: 0; filter: blur(6px); } to { letter-spacing: .06em; opacity: 1; filter: blur(0); } }
+                    @keyframes nhl-player { 0% { transform: translateX(-85vw); } 100% { transform: translateX(0); } }
+          @keyframes nhl-swing { 0%, 45% { transform: rotate(0deg); } 58% { transform: rotate(-44deg); } 66% { transform: rotate(3deg); } 82%, 100% { transform: rotate(20deg); } }
+          @keyframes nhl-puck-appear { from { opacity: 0; } to { opacity: 1; } }
+          @keyframes nhl-shot { 0% { transform: translate(0,0) scale(1); opacity: 1; filter: blur(0); } 70% { opacity: 1; } 100% { transform: translate(0,-34vh) scale(11); opacity: 0; filter: blur(2px); } }
+          @keyframes nhl-impact { 0% { opacity: 0; } 12% { opacity: .95; } 100% { opacity: 0; } }
+          @keyframes nhl-shake { 0%, 100% { transform: translate(0,0); } 20% { transform: translate(-5px,3px); } 40% { transform: translate(4px,-3px); } 60% { transform: translate(-3px,2px); } 80% { transform: translate(2px,-1px); } }
+          @keyframes nhl-title { from { letter-spacing: .3em; opacity: 0; filter: blur(8px); } to { letter-spacing: .06em; opacity: 1; filter: blur(0); } }
           @keyframes nhl-fade-in { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
           @keyframes nhl-fade-out { to { opacity: 0; transform: scale(1.03); } }
-          .nhl-puck { animation: nhl-puck 1.15s cubic-bezier(.1,.8,.25,1) .2s both; }
-          .nhl-scratch { animation: nhl-scratch 1.15s cubic-bezier(.1,.8,.25,1) .2s both; }
-          .nhl-title { animation: nhl-title 1.2s cubic-bezier(.2,.7,.2,1) 1.35s both; }
-          .nhl-intro-out { animation: nhl-fade-out .6s ease-in 2.9s forwards; }
+          .nhl-player { animation: nhl-player 1s cubic-bezier(.1,.75,.25,1) .1s both; }
+          .nhl-swing { animation: nhl-swing 1.75s linear .1s both; }
+          .nhl-puck-shot { animation: nhl-puck-appear .2s ease-out both, nhl-shot .34s cubic-bezier(.55,0,1,.7) 1.2s forwards; }
+          .nhl-impact { background: radial-gradient(circle at 50% 50%, rgba(255,255,255,.95), rgba(180,215,255,.4) 35%, transparent 65%); opacity: 0; animation: nhl-impact .5s ease-out 1.5s both; }
+          .nhl-shake { animation: nhl-shake .22s linear 1.5s both; }
+          .nhl-title { animation: nhl-title 1s cubic-bezier(.2,.7,.2,1) 1.55s both; }
+          .nhl-intro-out { animation: nhl-fade-out .45s ease-in 2.3s forwards; }
           .nhl-form-in { animation: nhl-fade-in .7s cubic-bezier(.2,.7,.2,1) both; }
           @keyframes nhl-soft-in { from { opacity: 0; } to { opacity: 1; } }
           @keyframes nhl-soft-out { to { opacity: 0; } }
           @media (prefers-reduced-motion: reduce) {
-            .nhl-puck, .nhl-scratch { animation: none; }
+            .nhl-player, .nhl-puck-shot, .nhl-impact, .nhl-shake { display: none; }
             .nhl-title { animation: nhl-soft-in 1s ease-out .2s both; filter: none; }
-            .nhl-intro-out { animation: nhl-soft-out .6s ease-in 2.9s forwards; }
+            .nhl-intro-out { animation: nhl-soft-out .45s ease-in 2.3s forwards; }
             .nhl-form-in { animation: nhl-soft-in .6s ease-out both; }
           }
           .nhl-field:-webkit-autofill { -webkit-box-shadow: 0 0 0 40px #0b1220 inset; -webkit-text-fill-color: #e2e8f0; caret-color: #e2e8f0; }
@@ -95,20 +115,20 @@ const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         {intro && (
           <div
             onClick={() => setIntro(false)}
-            className="nhl-intro-out absolute inset-0 z-10 flex cursor-pointer flex-col items-center justify-center"
+            className="nhl-intro-out nhl-shake absolute inset-0 z-10 flex cursor-pointer flex-col items-center justify-center"
             aria-hidden="true"
           >
-            <PuckIntro stopAtMs={1350} />
+            <PlayerIntro />
             <div className="nhl-title absolute top-[27%] whitespace-nowrap text-center text-[64px] leading-none text-white drop-shadow-[0_4px_24px_rgba(147,197,253,0.35)] sm:text-[88px]" style={{ fontFamily: "'Bebas Neue', sans-serif" }}>
               Bem-vindo
             </div>
-            <div className="absolute top-[11%]"><BrandLogo size="sm" /></div>
+            <div className="absolute top-[11%] [&_img]:mix-blend-lighten"><BrandLogo size="sm" /></div>
           </div>
         )}
 
         {!intro && (
         <main className="nhl-form-in relative w-full max-w-[380px]">
-          <div className="flex justify-center mb-8">
+          <div className="flex justify-center mb-8 [&_img]:mix-blend-lighten">
             <BrandLogo size="sm" />
           </div>
 

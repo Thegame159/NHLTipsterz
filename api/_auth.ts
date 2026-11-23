@@ -59,7 +59,8 @@ export async function checkCredentials(username: string, password: string): Prom
 
 export async function createSession(s: Session): Promise<string> {
   const token = crypto.randomBytes(32).toString("hex");
-  await redis.setPx(k("session", token), JSON.stringify(s), SESSION_DAYS * 24 * 3600 * 1000);
+  const ok = await redis.setPx(k("session", token), JSON.stringify(s), SESSION_DAYS * 24 * 3600 * 1000);
+  if (!ok) throw new Error("Não foi possível guardar a sessão.");
   return token;
 }
 
