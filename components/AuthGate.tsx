@@ -22,10 +22,10 @@ const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Introdução animada antes do formulário (toca para saltar). Com "reduzir movimento" fica só o desvanecer, sem deslocações.
   const [intro, setIntro] = useState(true);
   useEffect(() => {
-    if (!intro) return;
+    if (!intro || checking) return; // a contagem só começa quando a abertura está visível
     const t = setTimeout(() => setIntro(false), 2800);
     return () => clearTimeout(t);
-  }, [intro]);
+  }, [intro, checking]);
 
   useEffect(() => {
     let alive = true;
@@ -76,9 +76,7 @@ const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     }
   };
 
-  if (checking) return <div className="min-h-screen bg-[#020617]" />;
-
-  if (!user) {
+  if (checking || !user) {
     return (
       <div className="relative min-h-screen overflow-hidden bg-[#020617] flex items-center justify-center px-5 py-10">
         <style>{`
@@ -112,7 +110,7 @@ const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
         <IceBackdrop />
 
-        {intro && (
+        {!checking && intro && (
           <div
             onClick={() => setIntro(false)}
             className="nhl-intro-out nhl-shake absolute inset-0 z-10 flex cursor-pointer flex-col items-center justify-center"
@@ -126,7 +124,7 @@ const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           </div>
         )}
 
-        {!intro && (
+        {!checking && !intro && (
         <main className="nhl-form-in relative w-full max-w-[380px]">
           <div className="flex justify-center mb-8 [&_img]:mix-blend-lighten">
             <BrandLogo size="sm" />
