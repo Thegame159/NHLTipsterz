@@ -18,6 +18,7 @@ import AuthGate, { useAuth } from './components/AuthGate';
 import AdminPanel from './components/AdminPanel';
 import ProfileView from './components/ProfileView';
 import Avatar from './components/Avatar';
+import Watermark from './components/Watermark';
 import { buildSuggestions } from './utils/suggestions';
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
@@ -514,6 +515,9 @@ const AppMain: React.FC = () => {
       )}
 
       {/* Aviso de nova versão */}
+      {/* Marca de água para quem não é admin */}
+      {auth && !isAdmin && <Watermark username={auth.user.username} />}
+
       <UpdateBanner />
 
       {/* Footer fixo */}
