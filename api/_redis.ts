@@ -21,7 +21,10 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * resolve o IP com dns.resolve4 (c-ares, outro caminho) e liga por https mantendo o nome para TLS/SNI.
  */
 async function viaHttps(command: any[]): Promise<{ status: number; data: any }> {
-  const [https, dns] = await Promise.all([import("node:https"), import("node:dns")]);
+  // Nomes em variáveis: o bundler "edge" da Vercel não os analisa (só são usados em Node, na via alternativa)
+  const modHttps = ["node", "https"].join(":");
+  const modDns = ["node", "dns"].join(":");
+  const [https, dns]: any[] = await Promise.all([import(/* @vite-ignore */ modHttps), import(/* @vite-ignore */ modDns)]);
   const url = new URL(REDIS_REST_URL as string);
   const body = JSON.stringify(command);
   return new Promise((resolve, reject) => {
@@ -43,9 +46,9 @@ async function viaHttps(command: any[]): Promise<{ status: number; data: any }> 
           });
         },
       } as any,
-      (res) => {
+      (res: any) => {
         let buf = "";
-        res.on("data", (c) => (buf += c));
+        res.on("data", (c: any) => (buf += c));
         res.on("end", () => {
           try {
             resolve({ status: res.statusCode || 0, data: JSON.parse(buf) });
