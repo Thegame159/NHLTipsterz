@@ -5,6 +5,7 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import BrandLogo from './BrandLogo';
 import { IceBackdrop, PlayerIntro } from './LoginScene';
 import RegisterForm from './RegisterForm';
+import RequestInviteForm from './RequestInviteForm';
 
 export type AuthUser = {
   username: string;
@@ -43,6 +44,7 @@ const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       /* ignora */
     }
   };
+  const [requesting, setRequesting] = useState(false);
   const [intro, setIntro] = useState(!invite);
   useEffect(() => {
     if (!intro || checking) return; // a contagem só começa quando a abertura está visível
@@ -192,7 +194,9 @@ const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             <BrandLogo size="sm" />
           </div>
 
-          {invite ? (
+          {requesting && !invite ? (
+            <RequestInviteForm onBack={() => setRequesting(false)} />
+          ) : invite ? (
             <RegisterForm
               token={invite}
               onDone={(u) => {
@@ -261,7 +265,16 @@ const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             </button>
           </form>
 
-          <p className="mt-6 text-center text-xs text-slate-300 [text-shadow:0_1px_8px_#020617,0_0_2px_#020617]">Só com convite. Não tens conta? Pede um link a quem gere o site.</p>
+          <div className="mt-6 text-center">
+            <p className="text-xs text-slate-300 [text-shadow:0_1px_8px_#020617,0_0_2px_#020617]">Ainda não tens conta?</p>
+            <button
+              type="button"
+              onClick={() => setRequesting(true)}
+              className="mt-2 rounded-xl border border-white/15 bg-zinc-900/70 px-5 py-2.5 text-sm font-bold text-white backdrop-blur-md hover:bg-zinc-800"
+            >
+              Solicitar convite
+            </button>
+          </div>
           </>
           )}
         </main>

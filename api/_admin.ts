@@ -66,6 +66,20 @@ const tempPassword = () => {
   return Array.from(bytes, (b) => a[b % a.length]).join("");
 };
 
+const REQ_TTL_MS = 30 * 24 * 3600 * 1000; // pedidos de convite ficam 30 dias
+const MAX_REQ_PER_HOUR = 3;
+const REQ_ID_RE = /^[0-9a-f]{16}$/;
+
+async function newInvite(): Promise<({ token: string } & Invite) | null> {
+  const token = crypto.randomBytes(16).toString("hex");
+  const now = Date.now();
+  const inv: Invite = { createdAt: now, expiresAt: now + INVITE_DAYS * 24 * 3600 * 1000 };
+  const ok = await redis.setPx(k("invite", token), JSON.stringify(inv), INVITE_DAYS * 24 * 3600 * 1000);
+  return ok ? { token, ...inv } : null;
+}
+
+const clean = (v: unknown, max: number) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, max);
+
 /** Devolve true se tratou o pedido. */
 export async function adminActions(action: string, req: VercelRequest, res: VercelResponse): Promise<boolean> {
   // ── público: verificar um convite ──
@@ -131,22 +145,90 @@ export async function adminActions(action: string, req: VercelRequest, res: Verc
     return true;
   }
 
+  // ── público: pedir um convite ──
+  if (action === "invite-request" && req.method === "POST") {
+    const rl = k("rl-req", clientIp(req));
+    if (Number((await redis.get(rl)) ?? 0) >= MAX_REQ_PER_HOUR) {
+      res.status(429).json({ error: "Já enviaste pedidos suficientes. Tenta mais tarde." });
+      return true;
+    }
+    const b = bodyOf(req);
+    const name = clean(b.name, 40);
+    const contact = clean(b.contact, 80);
+    const message = clean(b.message, 300);
+    if (name.length < 2) {
+      res.status(400).json({ error: "Escreve o teu nome." });
+      return true;
+    }
+    if (contact.length < 3) {
+      res.status(400).json({ error: "Deixa um contacto (@ do Telegram ou email)." });
+      return true;
+    }
+    const n = await redis.incr(rl);
+    if (n === 1) await redis.expire(rl, 3600);
+    const id = crypto.randomBytes(8).toString("hex");
+    const ok = await redis.setPx(k("request", id), JSON.stringify({ name, contact, message, createdAt: Date.now() }), REQ_TTL_MS);
+    if (!ok) {
+      res.status(503).json({ error: "Não foi possível enviar o pedido. Tenta de novo." });
+      return true;
+    }
+    res.status(200).json({ ok: true });
+    return true;
+  }
+
   // ── só administrador ──
-  const isAdminAction = ["invites", "invite-create", "invite-cancel", "users", "user-disable", "user-modules", "user-expiry", "user-reset-password", "user-logout"].includes(action);
+  const isAdminAction = ["invites", "invite-create", "invite-cancel", "users", "user-disable", "user-modules", "user-expiry", "user-reset-password", "user-logout", "requests", "request-accept", "request-reject"].includes(action);
   if (!isAdminAction) return false;
   const s = await guard(req, res, "admin");
   if (!s) return true;
 
   if (action === "invite-create" && req.method === "POST") {
-    const token = crypto.randomBytes(16).toString("hex");
-    const now = Date.now();
-    const inv: Invite = { createdAt: now, expiresAt: now + INVITE_DAYS * 24 * 3600 * 1000 };
-    const ok = await redis.setPx(k("invite", token), JSON.stringify(inv), INVITE_DAYS * 24 * 3600 * 1000);
-    if (!ok) {
+    const inv = await newInvite();
+    if (!inv) {
       res.status(503).json({ error: "Não foi possível criar o convite. Tenta de novo." });
       return true;
     }
-    res.status(200).json({ token, ...inv });
+    res.status(200).json(inv);
+    return true;
+  }
+
+  if (action === "requests" && req.method === "GET") {
+    const keys = await redis.scanAll(k("request", "*"));
+    const rows = await Promise.all(
+      keys.map(async (key) => {
+        const r = parse<{ name: string; contact: string; message?: string; createdAt: number }>(await redis.get(key));
+        return r ? { id: key.split(":").pop() as string, ...r } : null;
+      })
+    );
+    res.status(200).json({ requests: rows.filter(Boolean).sort((a: any, b: any) => b.createdAt - a.createdAt) });
+    return true;
+  }
+
+  // aceitar: cria um convite e apaga o pedido
+  if (action === "request-accept" && req.method === "POST") {
+    const id = String(bodyOf(req).id ?? "");
+    if (!REQ_ID_RE.test(id) || !(await redis.get(k("request", id)))) {
+      res.status(404).json({ error: "Pedido não encontrado." });
+      return true;
+    }
+    const inv = await newInvite();
+    if (!inv) {
+      res.status(503).json({ error: "Não foi possível criar o convite. Tenta de novo." });
+      return true;
+    }
+    await redis.del(k("request", id));
+    res.status(200).json(inv);
+    return true;
+  }
+
+  if (action === "request-reject" && req.method === "POST") {
+    const id = String(bodyOf(req).id ?? "");
+    if (!REQ_ID_RE.test(id)) {
+      res.status(400).json({ error: "Pedido inválido." });
+      return true;
+    }
+    await redis.del(k("request", id));
+    res.status(200).json({ ok: true });
     return true;
   }
 
