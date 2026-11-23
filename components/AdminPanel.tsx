@@ -23,7 +23,7 @@ const fmtDate = (ms: number) =>
   ms ? new Date(ms).toLocaleString('pt-PT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
 const daysLeft = (ms: number) => Math.max(0, Math.ceil((ms - Date.now()) / 86400000));
 
-const AdminPanel: React.FC = () => {
+const AdminPanel: React.FC<{ onRequestsChange?: (n: number) => void }> = ({ onRequestsChange }) => {
   const [tab, setTab] = useState<'requests' | 'invites' | 'users'>('requests');
   const [requests, setRequests] = useState<InviteRequest[]>([]);
   const [accepted, setAccepted] = useState<{ name: string; contact: string; token: string } | null>(null);
@@ -43,12 +43,13 @@ const AdminPanel: React.FC = () => {
       setInvites(i.invites ?? []);
       setUsers(u.users ?? []);
       setRequests(q.requests ?? []);
+      onRequestsChange?.((q.requests ?? []).length);
     } catch (e: any) {
       setError(e.message);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [onRequestsChange]);
 
   useEffect(() => {
     load();

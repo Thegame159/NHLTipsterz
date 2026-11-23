@@ -55,6 +55,31 @@ const AppMain: React.FC = () => {
     [auth]
   );
   const isAdmin = auth?.user.role === 'admin';
+  // Pedidos de convite pendentes (só admin): número no separador Admin
+  const [pendingRequests, setPendingRequests] = useState(0);
+  useEffect(() => {
+    if (!isAdmin) return;
+    let alive = true;
+    const check = async () => {
+      try {
+        const r = await fetch('/api/auth?action=requests', { cache: 'no-store' });
+        if (!r.ok) return;
+        const j = await r.json();
+        if (alive) setPendingRequests(Array.isArray(j.requests) ? j.requests.length : 0);
+      } catch {
+        /* sem rede: tenta mais tarde */
+      }
+    };
+    check();
+    const onVisible = () => document.visibilityState === 'visible' && check();
+    const timer = window.setInterval(check, 2 * 60 * 1000);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [isAdmin]);
   // 'admin' só para o administrador; os outros separadores conforme os módulos
   const canSee = (t: Tab) => (t === 'profile' ? !!auth : t === 'admin' ? isAdmin : !allowedTabs || allowedTabs.has(t));
   const [data, setData]               = useState<NHLAnalysisData | null>(null);
@@ -423,7 +448,17 @@ const AppMain: React.FC = () => {
                       : 'text-slate-500 hover:text-slate-300'
                 }`}
               >
-                <TabIcon name={tab.key} className="w-[18px] h-[18px]" />
+                <span className="relative">
+                  <TabIcon name={tab.key} className="w-[18px] h-[18px]" />
+                  {tab.key === 'admin' && pendingRequests > 0 && (
+                    <span
+                      className="absolute -top-1.5 -right-2.5 min-w-[16px] h-4 px-1 rounded-full bg-red-600 text-white text-[9px] font-black leading-4 text-center ring-2 ring-[#020617]"
+                      aria-label={`${pendingRequests} pedido${pendingRequests > 1 ? 's' : ''} de convite`}
+                    >
+                      {pendingRequests > 9 ? '9+' : pendingRequests}
+                    </span>
+                  )}
+                </span>
                 {tab.label}
               </button>
             ))}
@@ -508,7 +543,7 @@ const AppMain: React.FC = () => {
 
             {activeTab === 'stats' && canSee('stats') && <StatsView />}
             {activeTab === 'calibration' && canSee('calibration') && <CalibrationView />}
-            {activeTab === 'admin' && canSee('admin') && <AdminPanel />}
+            {activeTab === 'admin' && canSee('admin') && <AdminPanel onRequestsChange={setPendingRequests} />}
             {activeTab === 'profile' && canSee('profile') && <ProfileView />}
           </main>
         </>
