@@ -19,6 +19,10 @@ const LOOKBACK_DAYS = 21; // até onde se procuram esses jogos
 const PRESEASON_CUTOFF_DAY = 8; // a partir deste dia da época regular a pré-época deixa de contar
 const CACHE_PREFIX = "nhl:analysis:v12:";
 const CACHE_TTL_MS = 2 * 60 * 60 * 1000; // 2 horas (as lesões influenciam os números)
+// Cópia publicada para os utilizadores: a última análise feita pelo administrador para cada data.
+// Dura mais (os utilizadores não geram análises) e não é apagada pelo "Limpar cache".
+const PUBLISHED_PREFIX = "nhl:published:v1:";
+const PUBLISHED_TTL_MS = 3 * 24 * 60 * 60 * 1000; // 3 dias
 const GAME_CACHE_PREFIX = "nhl:game:v2:"; // golos do 1.º período de jogos já terminados (nunca mudam)
 const GAME_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const ESPN_INJURIES_URL = "https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/injuries";
@@ -1432,8 +1436,8 @@ function buildPredictions(
 
 // ─── Cache (Redis) ───────────────────────────────────────────────────────────
 
-async function readCache(date: string): Promise<AnalysisPayload | null> {
-  const raw = await redis.get(`${CACHE_PREFIX}${date}`);
+async function readCache(date: string, prefix = CACHE_PREFIX): Promise<AnalysisPayload | null> {
+  const raw = await redis.get(`${prefix}${date}`);
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw);
@@ -1475,12 +1479,12 @@ export async function POST(req: Request) {
     if (!isDate(date)) return json({ message: "Data inválida (usa YYYY-MM-DD)." }, 400);
 
     if (!force) {
-      const cached = await readCache(date);
+      const cached = (await readCache(date)) ?? (isAdmin ? null : await readCache(date, PUBLISHED_PREFIX));
       if (cached) return json({ ...cached, meta: { ...cached.meta, cached: true } });
     }
 
     // Só o administrador pode gerar uma análise nova (gasta quota da IA); os restantes só veem as já feitas.
-    if (!isAdmin) return json({ message: "Esta data ainda não foi analisada." }, 404);
+    if (!isAdmin) return json({ message: "As previsões desta data ainda não estão disponíveis.", code: "NOT_PUBLISHED" }, 404);
 
     let games: NhlGame[];
     try {
@@ -1490,11 +1494,13 @@ export async function POST(req: Request) {
     }
 
     if (games.length === 0) {
-      return json({
+      const empty = {
         predictions: [],
         lastUpdated: new Date().toISOString(),
         meta: { source: "model", games: 0, note: "Sem jogos da NHL nesta data." },
-      });
+      };
+      await redis.setPx(`${PUBLISHED_PREFIX}${date}`, JSON.stringify(empty), PUBLISHED_TTL_MS);
+      return json(empty);
     }
 
     // Últimos 7 jogos de cada equipa
@@ -1575,6 +1581,8 @@ export async function POST(req: Request) {
     if (!aiError && failedDays === 0) {
       await redis.setPx(`${CACHE_PREFIX}${date}`, JSON.stringify(payload), CACHE_TTL_MS);
     }
+    // Publica sempre o que o administrador viu, para os utilizadores (mesmo com resumos automáticos).
+    await redis.setPx(`${PUBLISHED_PREFIX}${date}`, JSON.stringify(payload), PUBLISHED_TTL_MS);
 
     return json(payload);
   } catch (e: any) {

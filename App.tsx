@@ -69,6 +69,8 @@ const AppMain: React.FC = () => {
   // Inicializa com a data de hoje por predefinição
   const [selectedDate, setSelectedDate] = useState<string>(toDateStringLocal(new Date()));
   const [loadedDate, setLoadedDate]   = useState<string>('');
+  // Utilizadores: a data pedida ainda não foi publicada pelo administrador
+  const [unavailable, setUnavailable] = useState(false);
   
   // Estado para o feedback visual de limpeza de cache
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -89,6 +91,7 @@ const AppMain: React.FC = () => {
     setLoading(true);
     setProgress(0);
     setError(null);
+    setUnavailable(false);
     setToastMessage(null);
 
     try {
@@ -143,6 +146,7 @@ const AppMain: React.FC = () => {
         .map((g) => (g?.dateTime ? new Date(g.dateTime).getTime() : NaN))
         .filter((t) => !Number.isNaN(t))
         .sort((a, b) => a - b)[0];
+      if (!isAdmin) return; // só o administrador guarda o Auto no histórico
       if (firstStart !== undefined && Date.now() >= firstStart) {
         // fica visível até à próxima análise
         setToastMessage('ℹ️ Dia já começou — o Auto guardado no histórico não foi alterado.');
@@ -172,7 +176,13 @@ const AppMain: React.FC = () => {
       }
     } catch (err: any) {
       if (reqId !== requestIdRef.current) return;
-      setError(err?.message || 'Erro ao carregar dados. Tente novamente.');
+      if (!isAdmin && err?.status === 404) {
+        setUnavailable(true);
+        setData(null);
+        setLoadedDate('');
+      } else {
+        setError(err?.message || 'Erro ao carregar dados. Tente novamente.');
+      }
     } finally {
       if (progressInterval) clearInterval(progressInterval);
       if (msgInterval)      clearInterval(msgInterval);
@@ -181,6 +191,13 @@ const AppMain: React.FC = () => {
   };
 
   const handleAnalyzeClick = () => loadData(selectedDate);
+
+  // Texto quando ainda não há dados no ecrã
+  const emptyMsg = isAdmin
+    ? 'Escolhe uma data e clica em Analisar'
+    : unavailable
+      ? 'As previsões de hoje ainda não estão disponíveis. Volta mais tarde.'
+      : 'Carrega em Obter previsões';
 
   // ─── Função de Limpeza Global de Cache ─────────────────────────────────────
 
@@ -278,6 +295,8 @@ const AppMain: React.FC = () => {
         )}
 
         <div className="order-3 md:order-2 md:mx-auto flex items-center gap-3 justify-between md:justify-center w-full md:w-auto">
+          {isAdmin ? (
+          <>
           <div className="flex items-center bg-zinc-900/50 border border-white/10 rounded-lg overflow-hidden flex-1 md:flex-none">
             <input
               type="date"
@@ -289,14 +308,27 @@ const AppMain: React.FC = () => {
             />
           </div>
 
-          <div className="flex items-center gap-1.5">
+          </>
+          ) : (
             <button
-              onClick={handleAnalyzeClick}
-              className="bg-orange-600 text-white font-black px-4 py-2 rounded-lg text-[10px] uppercase tracking-wider hover:bg-orange-500 transition"
-              title={loadedDate ? `Carregado: ${loadedDate}` : 'Ainda não analisado'}
+              onClick={() => loadData(toDateStringLocal(new Date()))}
+              disabled={loading}
+              className="w-full md:w-auto bg-orange-600 text-white font-black px-4 py-2 rounded-lg text-[10px] uppercase tracking-wider hover:bg-orange-500 transition disabled:opacity-60"
             >
-              Analisar
+              {loadedDate ? 'Atualizar previsões' : 'Obter previsões'}
             </button>
+          )}
+
+          <div className="flex items-center gap-1.5">
+            {isAdmin && (
+              <button
+                onClick={handleAnalyzeClick}
+                className="bg-orange-600 text-white font-black px-4 py-2 rounded-lg text-[10px] uppercase tracking-wider hover:bg-orange-500 transition"
+                title={loadedDate ? `Carregado: ${loadedDate}` : 'Ainda não analisado'}
+              >
+                Analisar
+              </button>
+            )}
 
             {isAdmin && (
               <button
@@ -407,7 +439,7 @@ const AppMain: React.FC = () => {
                 )}
                 {(!loadedDate || predictionsCount === 0) && (
                   <div className="py-24 text-center text-slate-600 text-[10px] font-black uppercase tracking-widest">
-                    {loadedDate ? 'Sem jogos no intervalo 23:00 – 05:00' : 'Escolhe uma data e clica em Analisar'}
+                    {loadedDate ? 'Sem jogos no intervalo 23:00 – 05:00' : emptyMsg}
                   </div>
                 )}
               </div>
@@ -433,7 +465,7 @@ const AppMain: React.FC = () => {
                 </>
               ) : (
                 <div className="py-24 text-center text-slate-600 text-[10px] font-black uppercase tracking-widest">
-                  Escolhe uma data e clica em Analisar
+                  {emptyMsg}
                 </div>
               )
             )}
@@ -443,7 +475,7 @@ const AppMain: React.FC = () => {
                 <PlayersView predictions={data.predictions} date={loadedDate} />
               ) : (
                 <div className="py-24 text-center text-slate-600 text-[10px] font-black uppercase tracking-widest">
-                  Escolhe uma data e clica em Analisar
+                  {emptyMsg}
                 </div>
               )
             )}
@@ -457,7 +489,7 @@ const AppMain: React.FC = () => {
                 />
               ) : (
                 <div className="py-24 text-center text-slate-600 text-[10px] font-black uppercase tracking-widest">
-                  Escolhe uma data e clica em Analisar
+                  {emptyMsg}
                 </div>
               )
             )}
