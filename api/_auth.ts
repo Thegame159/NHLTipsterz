@@ -11,7 +11,8 @@ import type { Session } from "./_session.js";
 
 export { COOKIE, k };
 export type { Role, Session } from "./_session.js";
-export const SESSION_DAYS = 30;
+// Sessão: cookie sem validade (acaba ao fechar o browser) + limite no servidor de 2 horas
+export const SESSION_HOURS = 2;
 
 const safeEq = (a: string, b: string) => {
   const ha = crypto.createHash("sha256").update(a).digest();
@@ -59,7 +60,7 @@ export async function checkCredentials(username: string, password: string): Prom
 
 export async function createSession(s: Session): Promise<string> {
   const token = crypto.randomBytes(32).toString("hex");
-  const ok = await redis.setPx(k("session", token), JSON.stringify(s), SESSION_DAYS * 24 * 3600 * 1000);
+  const ok = await redis.setPx(k("session", token), JSON.stringify(s), SESSION_HOURS * 3600 * 1000);
   if (!ok) throw new Error("Não foi possível guardar a sessão.");
   return token;
 }
@@ -77,5 +78,5 @@ export function readCookie(req: VercelRequest, name: string): string | null {
 export const getSession = (req: VercelRequest): Promise<Session | null> => sessionFromCookieHeader(req.headers.cookie);
 
 export const sessionCookie = (token: string) =>
-  `${COOKIE}=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${SESSION_DAYS * 24 * 3600}`;
+  `${COOKIE}=${token}; HttpOnly; Secure; SameSite=Lax; Path=/`;
 export const clearCookie = () => `${COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`;

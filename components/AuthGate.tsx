@@ -54,8 +54,11 @@ const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     fetch('/api/auth?action=logout', { method: 'POST' }).finally(() => setUser(null));
   }, []);
 
-  const submit = async (e: React.FormEvent) => {
+  // Só entra com um toque/clique real no botão (ou Enter no teclado). O preenchimento automático e os
+  // gestores de palavras-passe que submetem sozinhos geram eventos não genuínos e são ignorados.
+  const submit = async (e: React.SyntheticEvent) => {
     e.preventDefault();
+    if (!e.nativeEvent.isTrusted) return;
     if (busy) return;
     setBusy(true);
     setError(null);
@@ -135,7 +138,7 @@ const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           </h1>
           <p className="mt-3 mb-8 text-center text-sm text-slate-400">Estatísticas e dicas de NHL, todos os dias.</p>
 
-          <form onSubmit={submit} className="rounded-2xl border border-white/10 bg-[#0b1220]/80 p-5 shadow-[0_20px_60px_-20px_rgba(0,0,0,0.8)] backdrop-blur-md sm:p-6">
+          <form onSubmit={(e) => e.preventDefault()} className="rounded-2xl border border-white/10 bg-[#0b1220]/80 p-5 shadow-[0_20px_60px_-20px_rgba(0,0,0,0.8)] backdrop-blur-md sm:p-6">
             <label className="block">
               <span className="mb-1.5 block text-xs font-semibold text-slate-400">Utilizador</span>
               <input
@@ -145,6 +148,7 @@ const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 spellCheck={false}
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') submit(e); }}
                 className="nhl-field w-full rounded-xl border border-slate-700/80 bg-[#060b16] px-3.5 py-3 text-[15px] text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/25"
               />
             </label>
@@ -157,6 +161,7 @@ const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                   autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') submit(e); }}
                   className="nhl-field w-full rounded-xl border border-slate-700/80 bg-[#060b16] py-3 pl-3.5 pr-16 text-[15px] text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/25"
                 />
                 <button
@@ -177,7 +182,8 @@ const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             )}
 
             <button
-              type="submit"
+              type="button"
+              onClick={submit}
               disabled={busy || !username || !password}
               className="mt-6 w-full rounded-xl bg-gradient-to-b from-orange-500 to-orange-600 py-3 text-sm font-bold text-white shadow-[0_8px_24px_-8px_rgba(249,115,22,0.7)] transition hover:from-orange-400 hover:to-orange-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-400 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none"
             >
