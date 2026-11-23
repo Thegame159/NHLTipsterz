@@ -400,7 +400,47 @@ const teamMatches = parseTeamsFromText(text);
   );
 };
 
-const SuggestionCard: React.FC<{
+/** Linha no estilo das Dicas: número, logótipos, texto (+ detalhe) e percentagem. */
+export const PickRow: React.FC<{
+  index: number;
+  badgeColor: string;
+  teams: string[];
+  text: string;
+  detail?: string;
+  perc?: number;
+  scale?: ScaleKey;
+}> = ({ index, badgeColor, teams, text, detail, perc, scale }) => (
+  <div className="flex items-center gap-3 bg-slate-900/60 p-3 rounded-xl border border-slate-700/50 group hover:border-blue-500/30 transition-colors">
+    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${badgeColor} text-white shrink-0 shadow-sm`}>
+      {index + 1}
+    </div>
+    <div className="flex items-center gap-2 overflow-hidden flex-1">
+      {teams.length > 0 && (
+        <div className="flex -space-x-1 mr-1 shrink-0">
+          {teams.map((abbr, i) => (
+            <img
+              key={`${abbr}-${i}`}
+              src={getLogoUrl(abbr)}
+              className="w-6 h-6 object-contain drop-shadow-md relative bg-slate-800 rounded-full p-0.5 border border-slate-700"
+              alt={abbr}
+              loading="lazy"
+              decoding="async"
+              onError={(e) => { if (!retryLightLogo(e.currentTarget)) { e.currentTarget.style.display = "none"; } }}
+              style={{ zIndex: 10 - i }}
+            />
+          ))}
+        </div>
+      )}
+      <div className="min-w-0">
+        <span className="block text-sm font-semibold text-slate-200 group-hover:text-white truncate">{text}</span>
+        {detail && <span className="block text-[11px] text-slate-400 truncate">{detail}</span>}
+      </div>
+    </div>
+    {typeof perc === "number" && perc > 0 && <PercBadge value={`${Math.round(perc)}%`} scale={scale} stack />}
+  </div>
+);
+
+export const SuggestionCard: React.FC<{
   title: string;
   items: string[];
   icon: string;
@@ -408,7 +448,9 @@ const SuggestionCard: React.FC<{
   badgeColor: string;
   description: string;
   scale?: ScaleKey;
-}> = ({ title, items, icon, gradient, badgeColor, description, scale }) => (
+  label?: string;
+  children?: React.ReactNode; // linhas próprias (usado em Picks do Dia)
+}> = ({ title, items, icon, gradient, badgeColor, description, scale, label = "Pick do Especialista", children }) => (
   <div className="relative overflow-hidden bg-slate-800/40 border border-slate-700/50 rounded-2xl p-6 shadow-xl transition-all hover:scale-[1.01] hover:shadow-blue-500/10">
     <div className={`absolute top-0 right-0 w-32 h-32 -mr-8 -mt-8 opacity-10 rounded-full blur-3xl ${gradient}`}></div>
 
@@ -417,14 +459,14 @@ const SuggestionCard: React.FC<{
         <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${gradient} shadow-lg shadow-black/20`}>
           <i className={`fas ${icon} text-white text-xl`}></i>
         </div>
-        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Pick do Especialista</span>
+        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">{label}</span>
       </div>
 
       <h3 className="text-xl font-bold text-white mb-1">{title}</h3>
       <p className="text-xs text-slate-400 mb-6 font-medium leading-tight">{description}</p>
 
       <div className="space-y-3">
-        {items.length > 0 ? (
+        {children ? children : items.length > 0 ? (
           items.map((item, idx) => (
   <SuggestionItem
     top={topFlags(items.map(percNumber))[idx]}

@@ -17,6 +17,7 @@ import TabHeader from './components/TabHeader';
 import AuthGate, { useAuth } from './components/AuthGate';
 import AdminPanel from './components/AdminPanel';
 import ProfileView from './components/ProfileView';
+import PicksDoDiaView from './components/PicksDoDiaView';
 import Avatar from './components/Avatar';
 import CopyGuard from './components/CopyGuard';
 import { buildSuggestions } from './utils/suggestions';
@@ -34,7 +35,7 @@ const LOADING_MESSAGES = [
   'Preparando face-off...',
 ];
 
-type Tab = 'schedule' | 'suggestions' | 'players' | 'mypicks' | 'stats' | 'calibration' | 'admin' | 'profile';
+type Tab = 'schedule' | 'suggestions' | 'picks' | 'players' | 'mypicks' | 'stats' | 'calibration' | 'admin' | 'profile';
 
 // ─── Helpers de data ─────────────────────────────────────────────────────────
 
@@ -91,7 +92,7 @@ const AppMain: React.FC = () => {
   // Se o separador aberto não estiver autorizado, salta para o primeiro que o utilizador pode ver
   useEffect(() => {
     if (!allowedTabs || activeTab === 'profile' || allowedTabs.has(activeTab)) return;
-    const first = (['schedule', 'suggestions', 'players', 'mypicks', 'stats', 'calibration'] as Tab[]).find(t => allowedTabs.has(t));
+    const first = (['schedule', 'suggestions', 'picks', 'players', 'mypicks', 'stats', 'calibration'] as Tab[]).find(t => allowedTabs.has(t));
     if (first) setActiveTab(first);
   }, [allowedTabs, activeTab]);
   // Inicializa com a data de hoje por predefinição
@@ -427,6 +428,7 @@ const AppMain: React.FC = () => {
               [
                 { key: 'schedule',    label: 'Jogos'        },
                 { key: 'suggestions', label: 'Dicas'        },
+                { key: 'picks',       label: 'Picks do Dia' },
                 { key: 'players',     label: 'Jogadores'    },
                 { key: 'mypicks',     label: 'Minhas Picks' },
                 { key: 'stats',       label: 'Stats'        },
@@ -540,6 +542,8 @@ const AppMain: React.FC = () => {
                 </div>
               )
             )}
+
+            {activeTab === 'picks' && canSee('picks') && <PicksDoDiaView />}
 
             {activeTab === 'stats' && canSee('stats') && <StatsView />}
             {activeTab === 'calibration' && canSee('calibration') && <CalibrationView />}

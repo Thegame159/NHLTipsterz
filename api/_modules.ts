@@ -5,7 +5,7 @@
 import { redis } from "./_redis.js";
 import { k } from "./_session.js";
 
-export const MODULES = ["schedule", "suggestions", "players", "mypicks", "stats", "calibration"] as const;
+export const MODULES = ["schedule", "suggestions", "picks", "players", "mypicks", "stats", "calibration"] as const;
 export type Module = (typeof MODULES)[number];
 
 /** Módulos de quem ainda não tem nenhum atribuído (utilizadores novos). */

@@ -20,6 +20,7 @@ export type UserRow = {
 export const MODULES: { key: string; label: string }[] = [
   { key: 'schedule', label: 'Jogos' },
   { key: 'suggestions', label: 'Dicas' },
+  { key: 'picks', label: 'Picks do Dia' },
   { key: 'players', label: 'Jogadores' },
   { key: 'mypicks', label: 'Minhas Picks' },
   { key: 'stats', label: 'Stats' },

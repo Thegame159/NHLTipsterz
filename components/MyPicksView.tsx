@@ -258,6 +258,22 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
   const [picks, setPicks] = useState<Suggestions>(defaultSuggestions());
   const [comboGame, setComboGame] = useState<string | null>(null);
   const [overGame, setOverGame] = useState<string | null>(null);
+  const [publishedAt, setPublishedAt] = useState<number | null>(null);
+  const [publishStale, setPublishStale] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    setPublishedAt(null);
+    setPublishStale(false);
+    fetch(`/api/history?date=${selectedDate}&side=published`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => alive && setPublishedAt(d?.published?.publishedAt ?? null))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [selectedDate]);
 
   useEffect(() => {
     const load = async () => {
@@ -456,7 +472,7 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
     setComboGame(null);
   };
 
-  const savePicks = async () => {
+  const savePicks = async (silent = false): Promise<boolean> => {
     try {
       if (typeof window !== "undefined") {
         window.localStorage.setItem(storageKey(selectedDate), JSON.stringify(picks));
@@ -479,7 +495,7 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
       if (!res.ok) {
         console.error("SAVE /api/history failed:", res.status, data);
         alert("Falhou a guardar no servidor (ficou guardado no browser).");
-        return;
+        return false;
       }
 
       // Tiros de jogador (marcar/pontuar): vão para o avaliador de jogadores
@@ -501,11 +517,55 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
         });
       } catch {}
 
-      alert("Picks guardadas!");
       window.dispatchEvent(new CustomEvent("history-updated"));
+      if (publishedAt) setPublishStale(true); // já estavam publicadas: há alterações por publicar
+      if (!silent) alert("Picks guardadas!");
+      return true;
     } catch (err) {
       console.error("Failed to save picks:", err);
       alert("Falhou a guardar no servidor (ficou guardado no browser).");
+      return false;
+    }
+  };
+
+  // Publicar: grava e copia as picks para o separador "Picks do Dia" dos utilizadores
+  const publishPicks = async () => {
+    if (publishing) return;
+    setPublishing(true);
+    try {
+      if (!(await savePicks(true))) return;
+      const res = await fetch("/api/history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date: selectedDate, action: "publish" }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        alert(data?.message || "Não foi possível publicar.");
+        return;
+      }
+      setPublishedAt(data.publishedAt);
+      setPublishStale(false);
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  const unpublishPicks = async () => {
+    if (!window.confirm("Retirar as picks deste dia aos utilizadores?")) return;
+    setPublishing(true);
+    try {
+      const res = await fetch("/api/history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date: selectedDate, action: "unpublish" }),
+      });
+      if (res.ok) {
+        setPublishedAt(null);
+        setPublishStale(false);
+      }
+    } finally {
+      setPublishing(false);
     }
   };
 
@@ -524,8 +584,10 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
           </p>
         </div>
 
+        <div className="flex flex-col items-center gap-2 sm:items-end">
+        <div className="flex gap-2">
         <button
-          onClick={savePicks}
+          onClick={() => savePicks()}
           disabled={isEmptyPicks(picks)}
           className={`px-4 py-2 rounded-lg border text-[11px] font-black uppercase tracking-widest ${
             isEmptyPicks(picks)
@@ -536,6 +598,32 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
         >
           Guardar Picks
         </button>
+        <button
+          onClick={publishPicks}
+          disabled={isEmptyPicks(picks) || publishing}
+          className={`px-4 py-2 rounded-lg border text-[11px] font-black uppercase tracking-widest ${
+            isEmptyPicks(picks) || publishing
+              ? "bg-white/5 border-white/10 text-slate-500 cursor-not-allowed"
+              : "bg-orange-600 border-orange-500 text-white hover:bg-orange-500"
+          }`}
+          title="Grava e mostra estas picks aos utilizadores em Picks do Dia"
+        >
+          {publishing ? "A publicar…" : publishedAt ? "Republicar" : "Publicar"}
+        </button>
+        </div>
+        <p className={`text-[11px] ${publishedAt ? (publishStale ? "text-amber-300" : "text-emerald-300") : "text-slate-500"}`}>
+          {publishedAt
+            ? publishStale
+              ? "Tens alterações por publicar."
+              : `Publicadas às ${new Date(publishedAt).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })}`
+            : "Ainda não publicadas."}
+          {publishedAt && (
+            <button onClick={unpublishPicks} disabled={publishing} className="ml-2 text-slate-400 underline hover:text-slate-200">
+              Retirar
+            </button>
+          )}
+        </p>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

@@ -32,6 +32,28 @@ function isDate(d: string) {
 
 const keyForDate = (date: string) => `${KEY_PREFIX}${date}`;
 
+// Picks publicadas para os utilizadores (separador "Picks do Dia"): cópia das minhas picks
+// (dicas gravadas + tripletes de jogadores) no momento em que carrego em Publicar.
+const PUBLISHED_PREFIX = "nhl:published-picks:";
+const publishedKey = (date: string) => `${PUBLISHED_PREFIX}${date}`;
+const PPICKS_PREFIX = "nhl:ppicks:"; // igual a api/player-picks.ts
+const ANALYSIS_PUBLISHED_PREFIX = "nhl:published:v1:"; // análise publicada (api/gemini.ts)
+
+// Probabilidades de cada jogo, para mostrar as percentagens nas Picks do Dia
+const gameProbs = (predictions: any[]) =>
+  (Array.isArray(predictions) ? predictions : []).map((g) => ({
+    home: g?.homeTeamAbbr,
+    away: g?.awayTeamAbbr,
+    winHome: g?.winProbabilityHome,
+    winAway: g?.winProbabilityAway,
+    over15P1: g?.over15P1Prob,
+    btts1P: g?.bttsP1Prob,
+    draw: g?.drawTRProb,
+    over45: g?.over45Prob,
+    over55: g?.over55Prob,
+    over15P2: g?.over15P2Prob,
+  }));
+
 function safeJsonParse(input: any) {
   try {
     const s = typeof input === "string" ? input : input?.toString?.() ?? "";
@@ -69,6 +91,31 @@ export default async function handler(
       const date = String((body as any)?.date || "").trim();
       if (!date || !isDate(date)) return res.status(400).json({ message: "Invalid date" });
 
+      // Publicar / retirar as minhas picks para os utilizadores
+      const action = String((body as any)?.action || "");
+      if (action === "publish") {
+        const hist = safeJsonParse(await redis.get(keyForDate(date)));
+        const suggestions = hist?.mine?.suggestions ?? null;
+        if (!suggestions) return res.status(400).json({ message: "Grava as picks antes de publicar." });
+        const pp = safeJsonParse(await redis.get(`${PPICKS_PREFIX}${date}`));
+        const strip = (l: any[]) =>
+          (Array.isArray(l) ? l : []).map((x) => ({ name: x?.name, abbr: x?.abbr, opp: x?.opp, prob: x?.prob }));
+        const analysis = safeJsonParse(await redis.get(`${ANALYSIS_PUBLISHED_PREFIX}${date}`));
+        const published = {
+          date,
+          publishedAt: Date.now(),
+          suggestions,
+          games: gameProbs(analysis?.predictions),
+          players: { goal: strip(pp?.mine?.goal), point: strip(pp?.mine?.point) },
+        };
+        await redis.set(publishedKey(date), JSON.stringify(published));
+        return res.status(200).json({ ok: true, publishedAt: published.publishedAt });
+      }
+      if (action === "unpublish") {
+        await redis.del(publishedKey(date));
+        return res.status(200).json({ ok: true });
+      }
+
       const side: HistorySide | undefined =
         (body as any)?.side === "auto" || (body as any)?.side === "mine" ? (body as any).side : undefined;
       if (!side) return res.status(400).json({ message: "Missing side" });
@@ -102,6 +149,12 @@ export default async function handler(
     if (req.method === "GET") {
       const dateParam = String(req.query.date || "").trim();
       const sideParam = String(req.query.side || "").trim();
+
+      // picks publicadas para os utilizadores
+      if (dateParam && isDate(dateParam) && sideParam === "published") {
+        const pub = safeJsonParse(await redis.get(publishedKey(dateParam)));
+        return res.status(200).json({ ok: true, published: pub ?? null });
+      }
 
       // uma data + um lado → só as dicas guardadas
       if (dateParam && isDate(dateParam) && (sideParam === "mine" || sideParam === "auto")) {
