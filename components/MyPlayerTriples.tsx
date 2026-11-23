@@ -1,6 +1,6 @@
 // components/MyPlayerTriples.tsx
 // "Minhas Picks" → os meus tripletes de jogadores (golos e pontos), como na aba Jogadores,
-// mas escolhidos por mim: 3 espaços por triplete, um jogador por jogo.
+// mas escolhidos por mim: múltiplas (sem limite prático), um jogador por jogo.
 // O seletor pede primeiro o jogo (como a Combinada) e só depois mostra os jogadores desse jogo.
 
 import React, { useEffect, useMemo, useState } from 'react';
@@ -13,6 +13,9 @@ import { ProbBadge, PuckIcon, copyText, probOf, shortName, Mode } from './Player
 export type Cand = { card: PlayerCard; abbr: string; opp: string; home: boolean; gameId: string };
 type Slot = { gameId: string; playerId: number };
 type Store = { goal: Slot[]; point: Slot[] };
+
+/** Máximo de jogadores por múltipla (teto técnico; a vista cresce à medida que se adicionam) */
+const MAX_PICKS = 20;
 
 const lsKey = (date: string) => `my_player_triples_${date}`;
 const ddmm = (d: string) => (d ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : '');
@@ -180,13 +183,13 @@ export const MyTripleCard: React.FC<{
 }> = ({ mode, picks, all, games, dateLabel, onAdd, onRemove, initialOpen = false, initialQuery = '', initialGame = '' }) => {
   const [open, setOpen] = useState(initialOpen);
   const [copied, setCopied] = useState(false);
-  const full = picks.length >= 3;
+  const full = picks.length >= MAX_PICKS;
   const combined = picks.length ? picks.reduce((acc, x) => acc * (probOf(x.card, mode) / 100), 1) * 100 : 0;
   const usedGames = new Set(picks.map((x) => x.gameId));
   const usedIds = new Set(picks.map((x) => x.card.id));
 
   const doCopy = async () => {
-    const title = mode === 'goal' ? 'Meu triplete de golos' : 'Meu triplete de pontos';
+    const title = mode === 'goal' ? 'Minha múltipla de golos' : 'Minha múltipla de pontos';
     const lines = picks.map((x, j) => `${j + 1}. ${shortName(x.card.name)} (${x.abbr}) ${x.home ? 'vs' : '@'} ${x.opp} — ${probOf(x.card, mode)}%`);
     const text = `🏒 NHL Tipsterz · ${title}${dateLabel ? ` · ${dateLabel}` : ''}\n\n${lines.join('\n')}\nCombinada: ~${Math.round(combined)}%`;
     if (await copyText(text)) {
@@ -199,7 +202,7 @@ export const MyTripleCard: React.FC<{
     <section className="rounded-xl border border-orange-500/40 bg-gradient-to-br from-orange-500/10 to-slate-900/40 p-3 space-y-2">
       <div className="flex items-center justify-between gap-3">
         <h3 className="flex items-center gap-2 font-black text-white text-sm uppercase tracking-wider">
-          {mode === 'goal' ? <><PuckIcon className="w-5 h-5" /> Meu triplete de golos</> : <>🔥 Meu triplete de pontos</>}
+          {mode === 'goal' ? <><PuckIcon className="w-5 h-5" /> Múltipla de golos</> : <>🔥 Múltipla de pontos</>}
         </h3>
         <div className="flex items-center gap-2">
           {picks.length > 0 && (
@@ -219,7 +222,7 @@ export const MyTripleCard: React.FC<{
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-        {[0, 1, 2].map((i) => {
+        {Array.from({ length: Math.max(3, Math.min(MAX_PICKS, picks.length + 1)) }, (_, i) => i).map((i) => {
           const x = picks[i];
           if (!x) {
             return (
@@ -268,7 +271,7 @@ export const MyTripleCard: React.FC<{
           onClose={() => setOpen(false)}
           onChoose={(x) => {
             onAdd(x);
-            if (picks.length + 1 >= 3) setOpen(false);
+            if (picks.length + 1 >= MAX_PICKS) setOpen(false);
           }}
         />
       )}
@@ -351,7 +354,7 @@ const MyPlayerTriples: React.FC<{ predictions: GamePrediction[]; date: string; m
       games={gameList}
       dateLabel={ddmm(date)}
       onAdd={(x) => {
-        if (store[mode].length >= 3) return;
+        if (store[mode].length >= MAX_PICKS) return;
         save({ ...store, [mode]: [...store[mode], { gameId: x.gameId, playerId: x.card.id }] });
       }}
       onRemove={(id) => save({ ...store, [mode]: store[mode].filter((s) => s.playerId !== id) })}

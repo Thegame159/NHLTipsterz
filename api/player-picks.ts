@@ -3,7 +3,7 @@
 // e confere depois, com os jogos reais, quantos acertaram.
 //
 //   POST   { date, goal: Pick[][], point: Pick[][] }  → guarda os tripletes automáticos (só a primeira vez de cada dia)
-//   POST   { date, side: "mine", goal: Pick[], point: Pick[] } → guarda os MEUS tripletes (substitui os anteriores)
+//   POST   { date, side: "mine", goal: Pick[], point: Pick[] } → guarda as MINHAS múltiplas (até 20 jogadores; substitui as anteriores)
 //   POST   { date, side: "tiros", tiros: TiroPick[] }  → guarda os MEUS tiros do dia de jogador (substitui os anteriores)
 //   GET    ?limit=60                                  → últimos dias, com resultados já conferidos
 //   DELETE ?date=YYYY-MM-DD                           → apaga um dia
@@ -59,7 +59,7 @@ const clean = (v: unknown): Pick[][] => {
 };
 
 const cleanList = (v: unknown): Pick[] =>
-  (Array.isArray(v) ? v : []).slice(0, 3).map((p: any) => ({
+  (Array.isArray(v) ? v : []).slice(0, 20).map((p: any) => ({
     id: num(p?.id),
     name: String(p?.name ?? "").slice(0, 60),
     abbr: String(p?.abbr ?? "").slice(0, 4),
