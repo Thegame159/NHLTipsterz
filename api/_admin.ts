@@ -6,6 +6,7 @@ import crypto from "node:crypto";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { redis } from "./_redis.js";
 import { guard } from "./_session.js";
+import { DATE_RE, DEFAULT_MODULES, accessExpired, cleanModules } from "./_modules.js";
 import { createSession, hashPassword, k, normUser, sessionCookie } from "./_auth.js";
 
 const INVITE_DAYS = 7;
@@ -37,6 +38,32 @@ const readInvite = async (token: string): Promise<Invite | null> => {
   const inv = parse<Invite>(await redis.get(k("invite", token)));
   if (!inv || inv.expiresAt < Date.now()) return null;
   return inv;
+};
+
+/** Sessões ativas por utilizador: { nome: [chaves] } */
+const sessionsByUser = async () => {
+  const out = new Map<string, string[]>();
+  const keys = await redis.scanAll(k("session", "*"));
+  await Promise.all(
+    keys.map(async (key) => {
+      const v = parse<{ u: string }>(await redis.get(key));
+      if (v?.u) out.set(v.u, [...(out.get(v.u) ?? []), key]);
+    })
+  );
+  return out;
+};
+
+const endSessions = async (username: string) => {
+  const keys = (await sessionsByUser()).get(username) ?? [];
+  await Promise.all(keys.map((key) => redis.del(key)));
+  return keys.length;
+};
+
+// Palavra-passe temporária legível (sem 0/O, 1/l/I)
+const tempPassword = () => {
+  const a = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = crypto.randomBytes(12);
+  return Array.from(bytes, (b) => a[b % a.length]).join("");
 };
 
 /** Devolve true se tratou o pedido. */
@@ -87,7 +114,7 @@ export async function adminActions(action: string, req: VercelRequest, res: Verc
       res.status(410).json({ error: "Este convite já não é válido (usado, cancelado ou expirado)." });
       return true;
     }
-    const saved = await redis.set(k("user", username), JSON.stringify({ hash: hashPassword(password), createdAt: Date.now() }));
+    const saved = await redis.set(k("user", username), JSON.stringify({ hash: hashPassword(password), createdAt: Date.now(), lastLogin: Date.now(), modules: DEFAULT_MODULES }));
     if (!saved) {
       // devolve o convite se a gravação falhou
       await redis.set(k("invite", token), JSON.stringify(inv));
@@ -97,7 +124,7 @@ export async function adminActions(action: string, req: VercelRequest, res: Verc
     try {
       const sess = await createSession({ u: username, r: "user" });
       res.setHeader("Set-Cookie", sessionCookie(sess));
-      res.status(200).json({ user: { username, role: "user" } });
+      res.status(200).json({ user: { username, role: "user", modules: DEFAULT_MODULES } });
     } catch {
       res.status(201).json({ ok: true, loginNeeded: true });
     }
@@ -105,7 +132,7 @@ export async function adminActions(action: string, req: VercelRequest, res: Verc
   }
 
   // ── só administrador ──
-  const isAdminAction = ["invites", "invite-create", "invite-cancel", "users", "user-disable"].includes(action);
+  const isAdminAction = ["invites", "invite-create", "invite-cancel", "users", "user-disable", "user-modules", "user-expiry", "user-reset-password", "user-logout"].includes(action);
   if (!isAdminAction) return false;
   const s = await guard(req, res, "admin");
   if (!s) return true;
@@ -148,13 +175,50 @@ export async function adminActions(action: string, req: VercelRequest, res: Verc
 
   if (action === "users" && req.method === "GET") {
     const keys = await redis.scanAll(k("user", "*"));
+    const sessions = await sessionsByUser();
     const rows = await Promise.all(
       keys.map(async (key) => {
-        const rec = parse<{ createdAt?: number; disabled?: boolean }>(await redis.get(key));
-        return rec ? { username: key.split(":").pop() as string, createdAt: rec.createdAt ?? 0, disabled: !!rec.disabled } : null;
+        const rec = parse<{ createdAt?: number; disabled?: boolean; modules?: string[]; accessUntil?: string | null; lastLogin?: number }>(
+          await redis.get(key)
+        );
+        const username = key.split(":").pop() as string;
+        return rec
+          ? {
+              username,
+              createdAt: rec.createdAt ?? 0,
+              disabled: !!rec.disabled,
+              modules: cleanModules(rec.modules),
+              accessUntil: rec.accessUntil ?? null,
+              expired: accessExpired(rec.accessUntil),
+              lastLogin: rec.lastLogin ?? null,
+              activeSessions: sessions.get(username)?.length ?? 0,
+            }
+          : null;
       })
     );
     res.status(200).json({ users: rows.filter(Boolean).sort((a: any, b: any) => a.username.localeCompare(b.username)) });
+    return true;
+  }
+
+  if (action === "user-modules" && req.method === "POST") {
+    const b = bodyOf(req);
+    const username = normUser(b.username);
+    if (!Array.isArray(b.modules)) {
+      res.status(400).json({ error: "Lista de módulos inválida." });
+      return true;
+    }
+    const rec = parse<any>(await redis.get(k("user", username)));
+    if (!rec) {
+      res.status(404).json({ error: "Utilizador não encontrado." });
+      return true;
+    }
+    const modules = cleanModules(b.modules);
+    const saved = await redis.set(k("user", username), JSON.stringify({ ...rec, modules }));
+    if (!saved) {
+      res.status(503).json({ error: "Não foi possível guardar. Tenta de novo." });
+      return true;
+    }
+    res.status(200).json({ ok: true, modules });
     return true;
   }
 
@@ -168,17 +232,59 @@ export async function adminActions(action: string, req: VercelRequest, res: Verc
       return true;
     }
     await redis.set(k("user", username), JSON.stringify({ ...rec, disabled }));
-    if (disabled) {
-      // termina as sessões ativas desse utilizador
-      const sess = await redis.scanAll(k("session", "*"));
-      await Promise.all(
-        sess.map(async (key) => {
-          const v = parse<{ u: string }>(await redis.get(key));
-          if (v?.u === username) await redis.del(key);
-        })
-      );
-    }
+    if (disabled) await endSessions(username); // termina as sessões ativas desse utilizador
     res.status(200).json({ ok: true });
+    return true;
+  }
+
+  // validade do acesso: { username, accessUntil: "AAAA-MM-DD" | null }
+  if (action === "user-expiry" && req.method === "POST") {
+    const b = bodyOf(req);
+    const username = normUser(b.username);
+    const until = b.accessUntil == null || b.accessUntil === "" ? null : String(b.accessUntil);
+    if (until !== null && !DATE_RE.test(until)) {
+      res.status(400).json({ error: "Data inválida." });
+      return true;
+    }
+    const rec = parse<any>(await redis.get(k("user", username)));
+    if (!rec) {
+      res.status(404).json({ error: "Utilizador não encontrado." });
+      return true;
+    }
+    await redis.set(k("user", username), JSON.stringify({ ...rec, accessUntil: until }));
+    if (accessExpired(until)) await endSessions(username);
+    res.status(200).json({ ok: true, accessUntil: until, expired: accessExpired(until) });
+    return true;
+  }
+
+  // nova palavra-passe temporária (mostrada uma única vez ao admin); termina as sessões
+  if (action === "user-reset-password" && req.method === "POST") {
+    const username = normUser(bodyOf(req).username);
+    const rec = parse<any>(await redis.get(k("user", username)));
+    if (!rec) {
+      res.status(404).json({ error: "Utilizador não encontrado." });
+      return true;
+    }
+    const password = tempPassword();
+    const saved = await redis.set(k("user", username), JSON.stringify({ ...rec, hash: hashPassword(password) }));
+    if (!saved) {
+      res.status(503).json({ error: "Não foi possível mudar a palavra-passe. Tenta de novo." });
+      return true;
+    }
+    await endSessions(username);
+    res.status(200).json({ ok: true, password });
+    return true;
+  }
+
+  // terminar as sessões sem desativar a conta
+  if (action === "user-logout" && req.method === "POST") {
+    const username = normUser(bodyOf(req).username);
+    if (!(await redis.get(k("user", username)))) {
+      res.status(404).json({ error: "Utilizador não encontrado." });
+      return true;
+    }
+    const ended = await endSessions(username);
+    res.status(200).json({ ok: true, ended });
     return true;
   }
 

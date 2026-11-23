@@ -1,7 +1,7 @@
 // src/App.tsx
 
 import { setLeagueBaseline } from './utils/marketScale';
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { fetchNHLAnalysis } from './services/geminiService';
 import { NHLAnalysisData, GamePrediction } from './types';
 import GameTable from './components/GameTable';
@@ -47,12 +47,24 @@ const toDateStringLocal = (d: Date): string => {
 const AppMain: React.FC = () => {
   const auth = useAuth();
   const [adminOpen, setAdminOpen] = useState(false);
+  // Módulos (separadores) a que o utilizador tem acesso; o administrador vê todos
+  const allowedTabs = useMemo<Set<string> | null>(
+    () => (!auth || auth.user.role === 'admin' ? null : new Set(auth.user.modules ?? ['schedule', 'suggestions'])),
+    [auth]
+  );
+  const canSee = (t: Tab) => !allowedTabs || allowedTabs.has(t);
   const [data, setData]               = useState<NHLAnalysisData | null>(null);
   const [loading, setLoading]         = useState(false);
   const [progress, setProgress]       = useState(0);
   const [loadingMsgIdx, setLoadingMsgIdx] = useState(0);
   const [error, setError]             = useState<string | null>(null);
   const [activeTab, setActiveTab]     = useState<Tab>('schedule');
+  // Se o separador aberto não estiver autorizado, salta para o primeiro que o utilizador pode ver
+  useEffect(() => {
+    if (!allowedTabs || allowedTabs.has(activeTab)) return;
+    const first = (['schedule', 'suggestions', 'players', 'mypicks', 'stats', 'calibration'] as Tab[]).find(t => allowedTabs.has(t));
+    if (first) setActiveTab(first);
+  }, [allowedTabs, activeTab]);
   // Inicializa com a data de hoje por predefinição
   const [selectedDate, setSelectedDate] = useState<string>(toDateStringLocal(new Date()));
   const [loadedDate, setLoadedDate]   = useState<string>('');
@@ -339,7 +351,7 @@ const AppMain: React.FC = () => {
                 { key: 'stats',       label: 'Stats'        },
                 { key: 'calibration', label: 'Calibração'   },
               ] as { key: Tab; label: string }[]
-            ).map(tab => (
+            ).filter(tab => canSee(tab.key)).map(tab => (
               <button
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
@@ -359,7 +371,13 @@ const AppMain: React.FC = () => {
 
           {/* Conteúdo */}
           <main className="animate-in fade-in duration-500">
-            {activeTab === 'schedule' && (
+            {allowedTabs && allowedTabs.size === 0 && (
+              <div className="py-24 text-center text-slate-500 text-xs">
+                Ainda não tens separadores atribuídos. Fala com quem gere o site.
+              </div>
+            )}
+
+            {activeTab === 'schedule' && canSee('schedule') && (
               <div className="space-y-6">
                 {loadedDate && data && predictionsCount > 0 && (
                   <TabHeader
@@ -379,7 +397,7 @@ const AppMain: React.FC = () => {
               </div>
             )}
 
-            {activeTab === 'suggestions' && (
+            {activeTab === 'suggestions' && canSee('suggestions') && (
               loadedDate && data ? (
                 <>
                   <TabHeader kind="suggestions" title="Dicas"
@@ -404,7 +422,7 @@ const AppMain: React.FC = () => {
               )
             )}
 
-            {activeTab === 'players' && (
+            {activeTab === 'players' && canSee('players') && (
               loadedDate && data ? (
                 <PlayersView predictions={data.predictions} date={loadedDate} />
               ) : (
@@ -414,7 +432,7 @@ const AppMain: React.FC = () => {
               )
             )}
 
-            {activeTab === 'mypicks' && (
+            {activeTab === 'mypicks' && canSee('mypicks') && (
               loadedDate && data ? (
                 <MyPicksView
                   predictions={data.predictions}
@@ -428,8 +446,8 @@ const AppMain: React.FC = () => {
               )
             )}
 
-            {activeTab === 'stats' && <StatsView />}
-            {activeTab === 'calibration' && <CalibrationView />}
+            {activeTab === 'stats' && canSee('stats') && <StatsView />}
+            {activeTab === 'calibration' && canSee('calibration') && <CalibrationView />}
           </main>
         </>
       )}

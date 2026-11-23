@@ -4,6 +4,7 @@
 
 import crypto from "node:crypto";
 import type { VercelRequest } from "@vercel/node";
+import { accessExpired } from "./_modules.js";
 import { redis } from "./_redis.js";
 
 import { COOKIE, k, sessionFromCookieHeader } from "./_session.js";
@@ -50,8 +51,8 @@ export async function checkCredentials(username: string, password: string): Prom
     return null;
   }
   try {
-    const rec = JSON.parse(raw) as { hash: string; disabled?: boolean };
-    if (rec.disabled) return null;
+    const rec = JSON.parse(raw) as { hash: string; disabled?: boolean; accessUntil?: string | null };
+    if (rec.disabled || accessExpired(rec.accessUntil)) return null;
     return verifyPassword(password, rec.hash) ? { u: username, r: "user" } : null;
   } catch {
     return null;

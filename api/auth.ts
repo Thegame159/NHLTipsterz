@@ -1,5 +1,5 @@
 // api/auth.ts
-// GET  /api/auth?action=me      -> { user: { username, role } | null }
+// GET  /api/auth?action=me      -> { user: { username, role, modules } | null }
 // POST /api/auth?action=login   -> { username, password }
 // POST /api/auth?action=logout
 // Convites / utilizadores: ver api/_admin.ts
@@ -7,6 +7,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { redis } from "./_redis.js";
 import { adminActions } from "./_admin.js";
+import { publicUser } from "./_modules.js";
 import { checkCredentials, clearCookie, createSession, getSession, k, normUser, readCookie, COOKIE, sessionCookie } from "./_auth.js";
 
 export const config = { runtime: "nodejs" };
@@ -31,7 +32,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (action === "me" && req.method === "GET") {
     try {
       const s = await getSession(req);
-      return res.status(200).json({ user: s ? { username: s.u, role: s.r } : null });
+      const user = s ? await publicUser(s) : null;
+      if (s && !user) {
+        // conta desativada ou com o acesso expirado: termina a sessão
+        const token = readCookie(req, COOKIE);
+        if (token) await redis.del(k("session", token));
+        res.setHeader("Set-Cookie", clearCookie());
+      }
+      return res.status(200).json({ user });
     } catch {
       return res.status(503).json({ error: "Serviço temporariamente indisponível." });
     }
@@ -73,10 +81,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(503).json({ error: "Serviço temporariamente indisponível. Tenta de novo." });
     }
     res.setHeader("Set-Cookie", sessionCookie(token));
-    return res.status(200).json({ user: { username: session.u, role: session.r } });
+    if (session.r === "user") await touchLastLogin(session.u);
+    return res.status(200).json({ user: await publicUser(session) });
   }
 
   return res.status(405).json({ error: "Método não permitido." });
+}
+
+async function touchLastLogin(username: string) {
+  try {
+    const raw = await redis.get(k("user", username));
+    if (raw) await redis.set(k("user", username), JSON.stringify({ ...JSON.parse(raw), lastLogin: Date.now() }));
+  } catch {
+    /* não impede o login */
+  }
 }
 
 function safeParse(s: string) {

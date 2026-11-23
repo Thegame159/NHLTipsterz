@@ -6,7 +6,7 @@ import BrandLogo from './BrandLogo';
 import { IceBackdrop, PlayerIntro } from './LoginScene';
 import RegisterForm from './RegisterForm';
 
-export type AuthUser = { username: string; role: 'admin' | 'user' };
+export type AuthUser = { username: string; role: 'admin' | 'user'; modules?: string[] };
 type Ctx = { user: AuthUser; logout: () => void };
 
 const AuthContext = createContext<Ctx | null>(null);
@@ -66,6 +66,42 @@ const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     check().finally(() => alive && setChecking(false));
     return () => { alive = false; };
   }, []);
+
+  // Vigia a conta enquanto o site está aberto (de 2 em 2 minutos e ao voltar ao separador):
+  // módulos diferentes -> aviso "Conta atualizada"; conta desativada/expirada -> volta ao login.
+  const [pending, setPending] = useState<AuthUser | null>(null);
+  useEffect(() => {
+    if (!user || user.role === 'admin') return;
+    let alive = true;
+    const same = (a?: string[], b?: string[]) => (a ?? []).length === (b ?? []).length && (a ?? []).every((m) => (b ?? []).includes(m));
+    const check = async () => {
+      try {
+        const r = await fetch('/api/auth?action=me', { cache: 'no-store' });
+        if (!r.ok || !alive) return; // falhas de rede/servidor: ignora e tenta mais tarde
+        const d = await r.json();
+        if (!alive) return;
+        if (!d?.user) {
+          setPending(null);
+          setError('A tua sessão terminou. Inicia sessão de novo.');
+          setUser(null);
+          return;
+        }
+        setPending(same(d.user.modules, user.modules) ? null : d.user);
+      } catch {
+        /* sem rede: ignora */
+      }
+    };
+    const onVisible = () => document.visibilityState === 'visible' && check();
+    const timer = window.setInterval(check, 2 * 60 * 1000);
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', check);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', check);
+    };
+  }, [user]);
 
   const logout = useCallback(() => {
     fetch('/api/auth?action=logout', { method: 'POST' }).finally(() => setUser(null));
@@ -228,7 +264,31 @@ const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     );
   }
 
-  return <AuthContext.Provider value={{ user, logout }}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={{ user, logout }}>
+      {children}
+      {pending && (
+        <div
+          role="status"
+          className="fixed bottom-32 left-4 right-4 sm:left-auto sm:right-6 sm:max-w-sm z-50 flex items-center gap-3 rounded-2xl border border-orange-500/40 bg-slate-900/95 backdrop-blur-md px-4 py-3 shadow-2xl"
+        >
+          <span className="flex-1 text-sm font-semibold text-slate-100">
+            Conta atualizada
+            <span className="block text-[11px] font-normal text-slate-400">Os teus separadores mudaram.</span>
+          </span>
+          <button
+            onClick={() => {
+              setUser(pending);
+              setPending(null);
+            }}
+            className="rounded-lg bg-orange-600 hover:bg-orange-500 px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-white"
+          >
+            Atualizar
+          </button>
+        </div>
+      )}
+    </AuthContext.Provider>
+  );
 };
 
 export default AuthGate;

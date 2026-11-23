@@ -2,10 +2,9 @@
 // Painel de administração (só para o administrador): convites e utilizadores.
 
 import React, { useCallback, useEffect, useState } from 'react';
+import AdminUsers, { type UserRow } from './AdminUsers';
 
 type Invite = { token: string; createdAt: number; expiresAt: number };
-type UserRow = { username: string; createdAt: number; disabled: boolean };
-
 const api = async (action: string, method = 'GET', body?: unknown) => {
   const r = await fetch(`/api/auth?action=${action}`, {
     method,
@@ -95,20 +94,14 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       await load();
     });
 
-  const toggleUser = (u: UserRow) =>
-    act(async () => {
-      await api('user-disable', 'POST', { username: u.username, disabled: !u.disabled });
-      await load();
-    });
-
-  const tabBtn = (id: 'invites' | 'users', label: string, n: number) => (
+  const tabBtn = (id: 'invites' | 'users', label: string, n?: number) => (
     <button
       onClick={() => setTab(id)}
       className={`flex-1 rounded-lg py-2 text-[11px] font-black uppercase tracking-wider transition ${
         tab === id ? 'bg-orange-600 text-white' : 'bg-zinc-800 text-slate-400 hover:text-white'
       }`}
     >
-      {label} <span className="opacity-70">({n})</span>
+      {label} {n !== undefined && <span className="opacity-70">({n})</span>}
     </button>
   );
 
@@ -119,7 +112,7 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         aria-modal="true"
         aria-label="Administração"
         onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[88vh] w-full max-w-lg flex-col rounded-t-2xl border border-white/10 bg-[#0b1220] shadow-2xl sm:rounded-2xl"
+        className="flex max-h-[88vh] w-full max-w-lg flex-col sm:max-w-3xl rounded-t-2xl border border-white/10 bg-[#0b1220] shadow-2xl sm:rounded-2xl"
       >
         <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
           <h2 className="text-base font-black text-white">Administração</h2>
@@ -195,34 +188,7 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           )}
 
           {tab === 'users' && (
-            <ul className="space-y-2">
-              {loading && <li className="py-4 text-center text-xs text-slate-500">A carregar…</li>}
-              {!loading && users.length === 0 && (
-                <li className="rounded-xl border border-dashed border-white/10 py-6 text-center text-xs text-slate-500">
-                  Ainda ninguém se registou. Cria um convite no separador Convites.
-                </li>
-              )}
-              {users.map((u) => (
-                <li key={u.username} className="flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-zinc-900/60 px-3 py-2.5">
-                  <div className="min-w-0">
-                    <p className={`truncate text-sm font-bold ${u.disabled ? 'text-slate-500 line-through' : 'text-white'}`}>{u.username}</p>
-                    <p className="text-[10px] text-slate-500">
-                      Registado {fmtDate(u.createdAt)}
-                      {u.disabled ? ' · desativado' : ''}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => toggleUser(u)}
-                    disabled={busy}
-                    className={`shrink-0 rounded-lg bg-zinc-800 px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wider hover:bg-zinc-700 disabled:opacity-50 ${
-                      u.disabled ? 'text-emerald-300' : 'text-red-300'
-                    }`}
-                  >
-                    {u.disabled ? 'Reativar' : 'Desativar'}
-                  </button>
-                </li>
-              ))}
-            </ul>
+            <AdminUsers users={users} setUsers={setUsers} loading={loading} api={api} reload={load} onError={setError} />
           )}
         </div>
       </div>
