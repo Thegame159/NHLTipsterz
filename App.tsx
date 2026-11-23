@@ -16,6 +16,8 @@ import CalibrationView from './components/CalibrationView';
 import TabHeader from './components/TabHeader';
 import AuthGate, { useAuth } from './components/AuthGate';
 import AdminPanel from './components/AdminPanel';
+import ProfileView from './components/ProfileView';
+import Avatar from './components/Avatar';
 import { buildSuggestions } from './utils/suggestions';
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
@@ -31,7 +33,7 @@ const LOADING_MESSAGES = [
   'Preparando face-off...',
 ];
 
-type Tab = 'schedule' | 'suggestions' | 'players' | 'mypicks' | 'stats' | 'calibration' | 'admin';
+type Tab = 'schedule' | 'suggestions' | 'players' | 'mypicks' | 'stats' | 'calibration' | 'admin' | 'profile';
 
 // ─── Helpers de data ─────────────────────────────────────────────────────────
 
@@ -53,7 +55,7 @@ const AppMain: React.FC = () => {
   );
   const isAdmin = auth?.user.role === 'admin';
   // 'admin' só para o administrador; os outros separadores conforme os módulos
-  const canSee = (t: Tab) => (t === 'admin' ? isAdmin : !allowedTabs || allowedTabs.has(t));
+  const canSee = (t: Tab) => (t === 'profile' ? !!auth : t === 'admin' ? isAdmin : !allowedTabs || allowedTabs.has(t));
   const [data, setData]               = useState<NHLAnalysisData | null>(null);
   const [loading, setLoading]         = useState(false);
   const [progress, setProgress]       = useState(0);
@@ -62,7 +64,7 @@ const AppMain: React.FC = () => {
   const [activeTab, setActiveTab]     = useState<Tab>('schedule');
   // Se o separador aberto não estiver autorizado, salta para o primeiro que o utilizador pode ver
   useEffect(() => {
-    if (!allowedTabs || allowedTabs.has(activeTab)) return;
+    if (!allowedTabs || activeTab === 'profile' || allowedTabs.has(activeTab)) return;
     const first = (['schedule', 'suggestions', 'players', 'mypicks', 'stats', 'calibration'] as Tab[]).find(t => allowedTabs.has(t));
     if (first) setActiveTab(first);
   }, [allowedTabs, activeTab]);
@@ -285,6 +287,14 @@ const AppMain: React.FC = () => {
         {auth && (
           <div className="order-2 md:order-3 flex items-center gap-1.5">
             <button
+              onClick={() => setActiveTab('profile')}
+              className="rounded-full hover:ring-2 hover:ring-orange-500/60 transition"
+              title={`Perfil de ${auth.user.username}`}
+              aria-label="Abrir o perfil"
+            >
+              <Avatar avatar={auth.user.avatar} name={auth.user.username} size={30} />
+            </button>
+            <button
               onClick={auth.logout}
               className="bg-zinc-800 text-slate-300 px-2.5 py-2 rounded-lg hover:bg-zinc-700 transition border border-white/10 text-[10px] font-black uppercase tracking-wider whitespace-nowrap"
               title={`Sessão iniciada como ${auth.user.username}`}
@@ -396,6 +406,7 @@ const AppMain: React.FC = () => {
                 { key: 'stats',       label: 'Stats'        },
                 { key: 'calibration', label: 'Calibração'   },
                 { key: 'admin',       label: 'Admin'        },
+                { key: 'profile',     label: 'Perfil'       },
               ] as { key: Tab; label: string }[]
             ).filter(tab => canSee(tab.key)).map(tab => (
               <button
@@ -497,6 +508,7 @@ const AppMain: React.FC = () => {
             {activeTab === 'stats' && canSee('stats') && <StatsView />}
             {activeTab === 'calibration' && canSee('calibration') && <CalibrationView />}
             {activeTab === 'admin' && canSee('admin') && <AdminPanel />}
+            {activeTab === 'profile' && canSee('profile') && <ProfileView />}
           </main>
         </>
       )}

@@ -8,6 +8,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { redis } from "./_redis.js";
 import { adminActions } from "./_admin.js";
 import { publicUser } from "./_modules.js";
+import { profileActions } from "./_profile.js";
 import { checkCredentials, clearCookie, createSession, getSession, k, normUser, readCookie, COOKIE, sessionCookie } from "./_auth.js";
 
 export const config = { runtime: "nodejs" };
@@ -24,6 +25,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     if (await adminActions(action, req, res)) return;
+    if (await profileActions(action, req, res)) return;
   } catch (e) {
     console.error("auth admin error:", e);
     return res.status(503).json({ error: "Serviço temporariamente indisponível. Tenta de novo." });

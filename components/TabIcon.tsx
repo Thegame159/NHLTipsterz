@@ -3,7 +3,7 @@
 
 import React from 'react';
 
-export type TabIconKey = 'schedule' | 'suggestions' | 'players' | 'mypicks' | 'stats' | 'calibration' | 'admin';
+export type TabIconKey = 'schedule' | 'suggestions' | 'players' | 'mypicks' | 'stats' | 'calibration' | 'admin' | 'profile';
 
 const TabIcon: React.FC<{ name: TabIconKey; className?: string }> = ({ name, className = 'w-5 h-5' }) => {
   const common = {
@@ -50,6 +50,13 @@ const TabIcon: React.FC<{ name: TabIconKey; className?: string }> = ({ name, cla
           <ellipse cx="12" cy="9" rx="8.5" ry="3.8" />
           <path d="M3.5 9v5c0 2.1 3.8 3.8 8.5 3.8s8.5-1.7 8.5-3.8V9" />
           <path d="M8 8.4c2.5-1 5.5-1 8 0" />
+        </svg>
+      );
+    case 'profile': // pessoa
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="8" r="3.6" />
+          <path d="M4.5 20c.8-3.8 3.8-6 7.5-6s6.7 2.2 7.5 6" />
         </svg>
       );
     case 'admin': // escudo com visto

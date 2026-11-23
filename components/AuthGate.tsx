@@ -6,8 +6,14 @@ import BrandLogo from './BrandLogo';
 import { IceBackdrop, PlayerIntro } from './LoginScene';
 import RegisterForm from './RegisterForm';
 
-export type AuthUser = { username: string; role: 'admin' | 'user'; modules?: string[] };
-type Ctx = { user: AuthUser; logout: () => void };
+export type AuthUser = {
+  username: string;
+  role: 'admin' | 'user';
+  modules?: string[];
+  avatar?: string | null;
+  accessUntil?: string | null;
+};
+type Ctx = { user: AuthUser; logout: () => void; update: (p: Partial<AuthUser>) => void };
 
 const AuthContext = createContext<Ctx | null>(null);
 export const useAuth = () => useContext(AuthContext);
@@ -265,7 +271,7 @@ const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   }
 
   return (
-    <AuthContext.Provider value={{ user, logout }}>
+    <AuthContext.Provider value={{ user, logout, update: (p) => setUser((u) => (u ? { ...u, ...p } : u)) }}>
       {children}
       {pending && (
         <div

@@ -14,21 +14,38 @@ export const DEFAULT_MODULES: Module[] = ["schedule", "suggestions"];
 export const cleanModules = (v: unknown): Module[] =>
   Array.isArray(v) ? MODULES.filter((m) => v.includes(m)) : [...DEFAULT_MODULES];
 
-/** Utilizador como o cliente o vê: nome, perfil e módulos. */
+/** Avatares disponíveis (desenhos próprios, ver components/Avatar.tsx). */
+export const AVATAR_RE = /^(mask|puck|helmet|skate|sticks|lamp|cup|jersey-[a-z]+-\d{1,2})$/;
+
+/** Perfil (avatar) de qualquer conta, incluindo a do administrador: auth:{ns}:profile:{nome} */
+export async function readProfile(username: string): Promise<{ avatar: string | null }> {
+  try {
+    const raw = await redis.get(k("profile", username));
+    const p = raw ? JSON.parse(raw) : {};
+    return { avatar: typeof p.avatar === "string" && AVATAR_RE.test(p.avatar) ? p.avatar : null };
+  } catch {
+    return { avatar: null };
+  }
+}
+
+/** Utilizador como o cliente o vê: nome, perfil, módulos, avatar e validade do acesso. */
 export async function publicUser(s: { u: string; r: "admin" | "user" }) {
-  if (s.r === "admin") return { username: s.u, role: s.r, modules: [...MODULES] };
+  const { avatar } = await readProfile(s.u);
+  if (s.r === "admin") return { username: s.u, role: s.r, modules: [...MODULES], avatar, accessUntil: null };
   let modules: Module[] = [...DEFAULT_MODULES];
+  let accessUntil: string | null = null;
   try {
     const raw = await redis.get(k("user", s.u));
     if (raw) {
       const rec = JSON.parse(raw);
       if (rec.disabled || accessExpired(rec.accessUntil)) return null; // conta desativada ou acesso expirado
       modules = cleanModules(rec.modules);
+      accessUntil = rec.accessUntil ?? null;
     }
   } catch {
     /* fica com os módulos por omissão */
   }
-  return { username: s.u, role: s.r, modules };
+  return { username: s.u, role: s.r, modules, avatar, accessUntil };
 }
 
 /** Data de hoje em Lisboa (AAAA-MM-DD). */
