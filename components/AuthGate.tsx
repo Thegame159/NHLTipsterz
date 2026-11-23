@@ -162,7 +162,7 @@ const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           ) : (
           <>
           <h1 className="text-center text-[40px] leading-none tracking-wide text-white" style={{ fontFamily: "'Bebas Neue', sans-serif" }}>
-            Inicia sessão
+            Iniciar sessão
           </h1>
           <p className="mt-3 mb-8 text-center text-sm text-slate-400">Estatísticas e dicas de NHL, todos os dias.</p>
 

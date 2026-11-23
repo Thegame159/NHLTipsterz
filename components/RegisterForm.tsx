@@ -128,7 +128,7 @@ const RegisterForm: React.FC<{ token: string; onDone: (u: AuthUser) => void; onC
       <p className="mt-6 text-center text-xs text-slate-300 [text-shadow:0_1px_8px_#020617,0_0_2px_#020617]">
         Já tens conta?{' '}
         <button onClick={onCancel} className="font-semibold text-orange-400 underline">
-          Inicia sessão
+          Iniciar sessão
         </button>
       </p>
     </>

@@ -240,14 +240,35 @@ const AppMain: React.FC = () => {
     <div className="max-w-7xl mx-auto p-4 sm:p-6 pb-32 sm:pb-32">
 
       {/* Header */}
-      <header className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4 border-b border-white/5 pb-4">
+      <header className="flex flex-wrap items-center justify-between mb-8 gap-x-4 gap-y-3 border-b border-white/5 pb-4">
         <div className="flex items-center">
           <div className="origin-left transform -ml-4 sm:-ml-2">
             <BrandLogo size="sm" />
           </div>
         </div>
 
-        <div className="flex items-center gap-3 justify-between md:justify-end w-full md:w-auto">
+        {auth && (
+          <div className="order-2 md:order-3 flex items-center gap-1.5">
+            {auth.user.role === 'admin' && (
+              <button
+                onClick={() => setAdminOpen(true)}
+                className="bg-zinc-800 text-orange-400 px-2.5 py-2 rounded-lg hover:bg-zinc-700 transition border border-orange-500/30 text-[10px] font-black uppercase tracking-wider whitespace-nowrap"
+                title="Convites e utilizadores"
+              >
+                Admin
+              </button>
+            )}
+            <button
+              onClick={auth.logout}
+              className="bg-zinc-800 text-slate-300 px-2.5 py-2 rounded-lg hover:bg-zinc-700 transition border border-white/10 text-[10px] font-black uppercase tracking-wider whitespace-nowrap"
+              title={`Sessão iniciada como ${auth.user.username}`}
+            >
+              Sair
+            </button>
+          </div>
+        )}
+
+        <div className="order-3 md:order-2 md:mx-auto flex items-center gap-3 justify-between md:justify-center w-full md:w-auto">
           <div className="flex items-center bg-zinc-900/50 border border-white/10 rounded-lg overflow-hidden flex-1 md:flex-none">
             <input
               type="date"
@@ -275,26 +296,6 @@ const AppMain: React.FC = () => {
             >
               🔄
             </button>
-
-            {auth?.user.role === 'admin' && (
-              <button
-                onClick={() => setAdminOpen(true)}
-                className="bg-zinc-800 text-orange-400 px-2.5 py-2 rounded-lg hover:bg-zinc-700 transition border border-orange-500/30 text-[10px] font-black uppercase tracking-wider whitespace-nowrap"
-                title="Convites e utilizadores"
-              >
-                Admin
-              </button>
-            )}
-
-            {auth && (
-              <button
-                onClick={auth.logout}
-                className="bg-zinc-800 text-slate-300 px-2.5 py-2 rounded-lg hover:bg-zinc-700 transition border border-white/10 text-[10px] font-black uppercase tracking-wider whitespace-nowrap"
-                title={`Sessão iniciada como ${auth.user.username}`}
-              >
-                Sair
-              </button>
-            )}
           </div>
         </div>
       </header>
