@@ -14,6 +14,7 @@ import PlayersView from './components/PlayersView';
 import TabIcon from './components/TabIcon';
 import CalibrationView from './components/CalibrationView';
 import TabHeader from './components/TabHeader';
+import AuthGate, { useAuth } from './components/AuthGate';
 import { buildSuggestions } from './utils/suggestions';
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
@@ -42,7 +43,8 @@ const toDateStringLocal = (d: Date): string => {
 
 // ─── App ─────────────────────────────────────────────────────────────────────
 
-const App: React.FC = () => {
+const AppMain: React.FC = () => {
+  const auth = useAuth();
   const [data, setData]               = useState<NHLAnalysisData | null>(null);
   const [loading, setLoading]         = useState(false);
   const [progress, setProgress]       = useState(0);
@@ -271,6 +273,16 @@ const App: React.FC = () => {
             >
               🔄
             </button>
+
+            {auth && (
+              <button
+                onClick={auth.logout}
+                className="bg-zinc-800 text-slate-300 px-2.5 py-2 rounded-lg hover:bg-zinc-700 transition border border-white/10 text-[10px] font-black uppercase tracking-wider whitespace-nowrap"
+                title={`Sessão iniciada como ${auth.user.username}`}
+              >
+                Sair
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -419,5 +431,11 @@ const App: React.FC = () => {
     </div>
   );
 };
+
+const App: React.FC = () => (
+  <AuthGate>
+    <AppMain />
+  </AuthGate>
+);
 
 export default App;
