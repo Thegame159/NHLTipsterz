@@ -90,6 +90,8 @@ interface Props {
   suggestions: Suggestions;
   predictions: Prediction[];
   totalGames?: number;
+  /** Vista de utilizador: sem Empates e sem cartões vazios. */
+  userView?: boolean;
 }
 
 const getLogoUrl = (abbr: string) => {
@@ -487,7 +489,8 @@ export const SuggestionCard: React.FC<{
 );
 
   
-  const SuggestionsView: React.FC<Props> = ({ suggestions, predictions, totalGames }) => {
+  const SuggestionsView: React.FC<Props> = ({ suggestions, predictions, totalGames, userView = false }) => {
+  const showCard = (items: unknown[] | undefined) => !userView || (items?.length ?? 0) > 0;
 
   const filterSuggestionsByTime = (items: string[]) => items;
 const filterTripleWin = (items: string[]) => items;
@@ -503,6 +506,7 @@ const filterTripleWin = (items: string[]) => items;
       </p>
 
       {/* ESCOLHAS FORTES: só mercados claramente acima do valor típico da liga */}
+      {showCard(suggestions.strongPicks) && (
       <div className="bg-slate-800/40 border border-slate-700 rounded-2xl p-6 relative overflow-hidden">
         <div className="absolute top-0 left-0 w-1 h-full bg-amber-500"></div>
         <h3 className="text-xl font-bold flex items-center mb-1 text-amber-400">
@@ -565,8 +569,10 @@ const filterTripleWin = (items: string[]) => items;
           Critério mínimo: vitória {STRONG_RULES.markets.win.min}% · 1.º período &gt;1.5 {STRONG_RULES.markets.over15P1.min}% · ambas marcam 1.º período {STRONG_RULES.markets.btts1P.min}% · 2.º período &gt;1.5 {STRONG_RULES.markets.over15P2.min}% · empate {STRONG_RULES.markets.draw.min}% · 5+ golos {STRONG_RULES.markets.over45.min}% · 6+ golos {STRONG_RULES.markets.over55.min}%
         </p>
       </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {showCard(suggestions.tripleWin) && (
         <SuggestionCard
           title="Triplete de Vitórias"
           items={filterTripleWin(suggestions.tripleWin)}
@@ -575,7 +581,9 @@ const filterTripleWin = (items: string[]) => items;
           badgeColor="bg-amber-500"
           description="Os 3 favoritos com maior probabilidade de vencer (incl. OT)."
         />
+        )}
 
+        {showCard(suggestions.tripleOver15P1) && (
         <SuggestionCard
           title="Triplete Over 1.5 P1"
           items={filterSuggestionsByTime(suggestions.tripleOver15P1)}
@@ -585,7 +593,9 @@ const filterTripleWin = (items: string[]) => items;
           description="3 jogos com entradas fortes para pelo menos 2 golos no 1º período."
           scale="p1"
         />
+        )}
 
+        {showCard(suggestions.doubleOver15P1) && (
         <SuggestionCard
           title="Dupla Over 1.5 P1"
          items={filterSuggestionsByTime(suggestions.doubleOver15P1)}
@@ -595,7 +605,9 @@ const filterTripleWin = (items: string[]) => items;
           description="Seleção secundária de alta confiança para golos rápidos."
           scale="p1"
         />
+        )}
 
+        {showCard(suggestions.tripleOver15P2) && (
         <SuggestionCard
           title="Triplete Over 1.5 P2"
           items={filterSuggestionsByTime(suggestions.tripleOver15P2 ?? [])}
@@ -605,7 +617,9 @@ const filterTripleWin = (items: string[]) => items;
           description="3 jogos com entradas fortes para pelo menos 2 golos no 2º período."
           scale="p2"
         />
+        )}
 
+        {showCard(suggestions.quadrupleOver45) && (
         <SuggestionCard
           title="Quadriplete O4.5"
          items={filterSuggestionsByTime(suggestions.quadrupleOver45)}
@@ -615,7 +629,9 @@ const filterTripleWin = (items: string[]) => items;
           description="Série de 4 jogos com forte tendência ofensiva para 5+ golos."
           scale="o45"
         />
+        )}
 
+        {showCard(suggestions.over55Suggestions) && (
         <div className="bg-slate-800/40 border border-slate-700 rounded-2xl p-6">
           <h3 className="text-xl font-bold flex items-center mb-1 text-pink-400">
             <i className="fas fa-plus-circle mr-3"></i>
@@ -645,7 +661,9 @@ const filterTripleWin = (items: string[]) => items;
             Só entram jogos com {SUGGESTION_RULES.over55.minProb}% ou mais.
           </p>
         </div>
+        )}
 
+        {!userView && (
         <div className="md:col-span-2 lg:col-span-3 bg-slate-800/40 border border-slate-700 rounded-2xl p-6 relative overflow-hidden group">
           <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500"></div>
           <h3 className="text-xl font-bold flex items-center mb-6 text-indigo-400">
@@ -700,6 +718,7 @@ const filterTripleWin = (items: string[]) => items;
             )}
           </div>
         </div>
+        )}
 
       </div>
 

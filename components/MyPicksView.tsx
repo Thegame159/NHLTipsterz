@@ -261,6 +261,31 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
   const [publishedAt, setPublishedAt] = useState<number | null>(null);
   const [publishStale, setPublishStale] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  // Definição geral: mostrar as Escolhas Fortes aos utilizadores (em Dicas do Dia)
+  const [showStrong, setShowStrong] = useState<boolean | null>(null);
+  const [savingStrong, setSavingStrong] = useState(false);
+  useEffect(() => {
+    fetch("/api/auth?action=settings", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setShowStrong(!!d.showStrongPicks))
+      .catch(() => {});
+  }, []);
+  const toggleStrong = async () => {
+    if (showStrong === null || savingStrong) return;
+    setSavingStrong(true);
+    try {
+      const r = await fetch("/api/auth?action=settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ showStrongPicks: !showStrong }),
+      });
+      const d = await r.json().catch(() => null);
+      if (r.ok && d) setShowStrong(!!d.showStrongPicks);
+      else alert(d?.error || "Não foi possível gravar.");
+    } finally {
+      setSavingStrong(false);
+    }
+  };
 
   useEffect(() => {
     let alive = true;
@@ -624,6 +649,23 @@ const MyPicksView: React.FC<Props> = ({ predictions, selectedDate }) => {
           )}
         </p>
         </div>
+      </div>
+
+      <div className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-slate-800/40 px-5 py-4">
+        <div className="min-w-0">
+          <p className="text-sm font-bold text-white">Mostrar Escolhas Fortes aos utilizadores</p>
+          <p className="text-[11px] text-slate-400">Em Dicas do Dia, para todos os dias. Os Empates nunca aparecem aos utilizadores.</p>
+        </div>
+        <button
+          onClick={toggleStrong}
+          disabled={showStrong === null || savingStrong}
+          role="switch"
+          aria-checked={!!showStrong}
+          aria-label="Mostrar Escolhas Fortes aos utilizadores"
+          className={`relative h-6 w-11 shrink-0 rounded-full transition disabled:opacity-50 ${showStrong ? "bg-orange-600" : "bg-zinc-700"}`}
+        >
+          <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all ${showStrong ? "left-[22px]" : "left-0.5"}`} />
+        </button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

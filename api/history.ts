@@ -150,6 +150,17 @@ export default async function handler(
       const dateParam = String(req.query.date || "").trim();
       const sideParam = String(req.query.side || "").trim();
 
+      // avisos dos utilizadores: há análise e/ou picks publicadas nesta data?
+      if (dateParam && isDate(dateParam) && sideParam === "status") {
+        const an = safeJsonParse(await redis.get(`${ANALYSIS_PUBLISHED_PREFIX}${dateParam}`));
+        const pub = safeJsonParse(await redis.get(publishedKey(dateParam)));
+        return res.status(200).json({
+          ok: true,
+          analysisAt: an?.lastUpdated ? Date.parse(an.lastUpdated) || null : null,
+          picksAt: pub?.publishedAt ?? null,
+        });
+      }
+
       // picks publicadas para os utilizadores
       if (dateParam && isDate(dateParam) && sideParam === "published") {
         const pub = safeJsonParse(await redis.get(publishedKey(dateParam)));

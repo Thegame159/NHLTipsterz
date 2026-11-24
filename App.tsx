@@ -95,6 +95,50 @@ const AppMain: React.FC = () => {
     const first = (['schedule', 'suggestions', 'picks', 'players', 'mypicks', 'stats', 'calibration'] as Tab[]).find(t => allowedTabs.has(t));
     if (first) setActiveTab(first);
   }, [allowedTabs, activeTab]);
+
+  // Utilizadores: avisos (bolinha vermelha) quando há dicas ou picks novas de hoje
+  const [dayStatus, setDayStatus] = useState<{ analysisAt: number | null; picksAt: number | null }>({ analysisAt: null, picksAt: null });
+  const seenKey = auth ? `nhl:seen-picks:${auth.user.username}` : '';
+  const [seenPicksAt, setSeenPicksAt] = useState<number>(() => {
+    try {
+      return Number(localStorage.getItem(seenKey) || 0);
+    } catch {
+      return 0;
+    }
+  });
+  useEffect(() => {
+    if (!auth || isAdmin) return;
+    let alive = true;
+    const check = async () => {
+      try {
+        const r = await fetch(`/api/history?date=${toDateStringLocal(new Date())}&side=status`, { cache: 'no-store' });
+        if (!r.ok) return;
+        const j = await r.json();
+        if (alive) setDayStatus({ analysisAt: j.analysisAt ?? null, picksAt: j.picksAt ?? null });
+      } catch {
+        /* sem rede: tenta mais tarde */
+      }
+    };
+    check();
+    const onVisible = () => document.visibilityState === 'visible' && check();
+    const timer = window.setInterval(check, 2 * 60 * 1000);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [auth, isAdmin]);
+  // ao abrir Picks do Dia, ficam vistas
+  useEffect(() => {
+    if (activeTab !== 'picks' || !dayStatus.picksAt || dayStatus.picksAt <= seenPicksAt) return;
+    setSeenPicksAt(dayStatus.picksAt);
+    try {
+      localStorage.setItem(seenKey, String(dayStatus.picksAt));
+    } catch {
+      /* ignora */
+    }
+  }, [activeTab, dayStatus.picksAt, seenPicksAt, seenKey]);
   // Inicializa com a data de hoje por predefinição
   const [selectedDate, setSelectedDate] = useState<string>(toDateStringLocal(new Date()));
   const [loadedDate, setLoadedDate]   = useState<string>('');
@@ -157,6 +201,11 @@ const AppMain: React.FC = () => {
 
       // As dicas são calculadas sobre os jogos visíveis
       const suggestionsList = buildSuggestions(filteredPredictions);
+      if (!isAdmin) {
+        // Utilizadores: sem Empates; Escolhas Fortes só se o admin as ligou
+        suggestionsList.drawSuggestions = [];
+        if (analysisData?.meta?.showStrongPicks !== true) suggestionsList.strongPicks = [];
+      }
 
       setLeagueBaseline(analysisData?.leagueBaseline);
       setProgress(100);
@@ -220,6 +269,12 @@ const AppMain: React.FC = () => {
   };
 
   const handleAnalyzeClick = () => loadData(selectedDate);
+
+  // Avisos (bolinha vermelha) dos utilizadores
+  const todayStr = toDateStringLocal(new Date());
+  const loadedAt = data?.lastUpdated ? Date.parse(data.lastUpdated) || 0 : 0;
+  const newTips = !!dayStatus.analysisAt && (loadedDate !== todayStr || loadedAt < dayStatus.analysisAt);
+  const newPicks = !!dayStatus.picksAt && dayStatus.picksAt > seenPicksAt && activeTab !== 'picks';
 
   // Texto quando ainda não há dados no ecrã
   const emptyMsg = isAdmin
@@ -452,6 +507,12 @@ const AppMain: React.FC = () => {
               >
                 <span className="relative">
                   <TabIcon name={tab.key} className="w-[18px] h-[18px]" />
+                  {!isAdmin && ((tab.key === 'suggestions' && newTips) || (tab.key === 'picks' && newPicks)) && (
+                    <span
+                      className="absolute -top-1 -right-1.5 h-2.5 w-2.5 rounded-full bg-red-600 ring-2 ring-[#020617]"
+                      aria-label="Há dados novos"
+                    />
+                  )}
                   {tab.key === 'admin' && pendingRequests > 0 && (
                     <span
                       className="absolute -top-1.5 -right-2.5 min-w-[16px] h-4 px-1 rounded-full bg-red-600 text-white text-[9px] font-black leading-4 text-center ring-2 ring-[#020617]"
@@ -461,7 +522,7 @@ const AppMain: React.FC = () => {
                     </span>
                   )}
                 </span>
-                {tab.label}
+                {tab.key === 'suggestions' && !isAdmin ? 'Dicas do Dia' : tab.label}
               </button>
             ))}
           </div>
@@ -497,7 +558,7 @@ const AppMain: React.FC = () => {
             {activeTab === 'suggestions' && canSee('suggestions') && (
               loadedDate && data ? (
                 <>
-                  <TabHeader kind="suggestions" title="Dicas"
+                  <TabHeader kind="suggestions" title={isAdmin ? "Dicas" : "Dicas do Dia"}
                     subtitle={
                       typeof data.totalGames === 'number' && data.totalGames > 0
                         ? `Hoje: ${data.totalGames} ${data.totalGames === 1 ? 'jogo' : 'jogos'}${
@@ -510,6 +571,7 @@ const AppMain: React.FC = () => {
                     suggestions={data.suggestions}
                     predictions={data.predictions}
                     totalGames={data.totalGames}
+                    userView={!isAdmin}
                   />
                 </>
               ) : (

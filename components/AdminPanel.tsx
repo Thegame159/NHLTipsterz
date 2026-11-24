@@ -128,6 +128,7 @@ const AdminPanel: React.FC<{ onRequestsChange?: (n: number) => void }> = ({ onRe
           <p className="text-[11px] text-slate-500">Convites, utilizadores e o que cada um pode ver.</p>
         </div>
 
+
         <div className="flex gap-2 px-5 pt-4">
           {tabBtn('requests', 'Pedidos', requests.length)}
           {tabBtn('invites', 'Convites', invites.length)}

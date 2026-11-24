@@ -1436,6 +1436,18 @@ function buildPredictions(
 
 // ─── Cache (Redis) ───────────────────────────────────────────────────────────
 
+/** Definições do site (Admin): ver api/_admin.ts. */
+const SETTINGS_KEY = "nhl:settings:v1";
+async function readSettings(): Promise<{ showStrongPicks: boolean }> {
+  try {
+    const raw = await redis.get(SETTINGS_KEY);
+    const s = raw ? JSON.parse(raw) : {};
+    return { showStrongPicks: s?.showStrongPicks === true };
+  } catch {
+    return { showStrongPicks: false };
+  }
+}
+
 async function readCache(date: string, prefix = CACHE_PREFIX): Promise<AnalysisPayload | null> {
   const raw = await redis.get(`${prefix}${date}`);
   if (!raw) return null;
@@ -1480,7 +1492,20 @@ export async function POST(req: Request) {
 
     if (!force) {
       const cached = (await readCache(date)) ?? (isAdmin ? null : await readCache(date, PUBLISHED_PREFIX));
-      if (cached) return json({ ...cached, meta: { ...cached.meta, cached: true } });
+      if (cached) {
+        const out: any = { ...cached, meta: { ...cached.meta, cached: true } };
+        if (!isAdmin) {
+          // Utilizadores: sem Empates e, se o admin não as ligou, sem Escolhas Fortes
+          const settings = await readSettings();
+          out.meta = { ...out.meta, showStrongPicks: settings.showStrongPicks };
+          out.suggestions = {
+            ...out.suggestions,
+            drawSuggestions: [],
+            strongPicks: settings.showStrongPicks ? out.suggestions?.strongPicks ?? [] : [],
+          };
+        }
+        return json(out);
+      }
     }
 
     // Só o administrador pode gerar uma análise nova (gasta quota da IA); os restantes só veem as já feitas.

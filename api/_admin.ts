@@ -80,6 +80,14 @@ async function newInvite(): Promise<({ token: string } & Invite) | null> {
 
 const clean = (v: unknown, max: number) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, max);
 
+// Definições do site (lidas também por api/gemini.ts)
+const SETTINGS_KEY = "nhl:settings:v1";
+type Settings = { showStrongPicks: boolean };
+const readSettings = async (): Promise<Settings> => {
+  const s = parse<Partial<Settings>>(await redis.get(SETTINGS_KEY)) ?? {};
+  return { showStrongPicks: s.showStrongPicks === true };
+};
+
 /** Devolve true se tratou o pedido. */
 export async function adminActions(action: string, req: VercelRequest, res: VercelResponse): Promise<boolean> {
   // ── público: verificar um convite ──
@@ -177,7 +185,7 @@ export async function adminActions(action: string, req: VercelRequest, res: Verc
   }
 
   // ── só administrador ──
-  const isAdminAction = ["invites", "invite-create", "invite-cancel", "users", "user-disable", "user-modules", "user-expiry", "user-reset-password", "user-logout", "requests", "request-accept", "request-reject"].includes(action);
+  const isAdminAction = ["invites", "invite-create", "invite-cancel", "users", "user-disable", "user-modules", "user-expiry", "user-reset-password", "user-logout", "requests", "request-accept", "request-reject", "settings"].includes(action);
   if (!isAdminAction) return false;
   const s = await guard(req, res, "admin");
   if (!s) return true;
@@ -189,6 +197,23 @@ export async function adminActions(action: string, req: VercelRequest, res: Verc
       return true;
     }
     res.status(200).json(inv);
+    return true;
+  }
+
+  if (action === "settings") {
+    if (req.method === "POST") {
+      const b = bodyOf(req);
+      const next: Settings = { ...(await readSettings()) };
+      if (typeof b.showStrongPicks === "boolean") next.showStrongPicks = b.showStrongPicks;
+      const ok = await redis.set(SETTINGS_KEY, JSON.stringify(next));
+      if (!ok) {
+        res.status(503).json({ error: "Não foi possível gravar. Tenta de novo." });
+        return true;
+      }
+      res.status(200).json(next);
+      return true;
+    }
+    res.status(200).json(await readSettings());
     return true;
   }
 
