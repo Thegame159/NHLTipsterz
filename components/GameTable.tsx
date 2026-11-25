@@ -183,7 +183,7 @@ const TeamForm: React.FC<{ home: string; away: string; homeForm: FormGame[]; awa
 
 // ─── Equipa (logo, nome, registo e jogos por baixo) ─────────────────────────
 
-const TeamBlock: React.FC<{ abbr: string; strong: boolean; record?: string; games?: number; b2b?: boolean }> = ({ abbr, strong, record, games, b2b }) => (
+const TeamBlock: React.FC<{ abbr: string; strong: boolean; record?: string; games?: number; b2b?: boolean; venue?: 'home' | 'away'; venueRecord?: string; venueGames?: number }> = ({ abbr, strong, record, games, b2b, venue, venueRecord, venueGames }) => (
   <div className="flex items-center gap-2.5 shrink-0">
     <img
       src={getLogoUrl(abbr)}
@@ -212,6 +212,18 @@ const TeamBlock: React.FC<{ abbr: string; strong: boolean; record?: string; game
           </span>
         )}
       </div>
+      {venue && venueRecord && (
+        <div
+          className="flex items-center gap-1.5 mt-1"
+          title={`Últimos ${venueGames ?? 0} jogo(s) ${venue === 'home' ? 'em casa' : 'fora'}`}
+        >
+          <span className="text-[10px] bg-sky-500/10 text-sky-300 border border-sky-500/25 px-1.5 py-0.5 rounded font-bold">
+            <i className={`fas ${venue === 'home' ? 'fa-home' : 'fa-plane'} mr-1 text-[9px]`}></i>
+            {venueRecord}
+          </span>
+          <span className="text-[10px] bg-slate-800/60 text-slate-500 px-1.5 py-0.5 rounded font-bold">{venueGames ?? 0}J</span>
+        </div>
+      )}
     </div>
   </div>
 );
@@ -256,7 +268,7 @@ const GameRow: React.FC<{ game: GamePrediction; tops: Tops }> = ({ game, tops })
                 {formatTime(game.dateTime)}
               </span>
               <div className="flex items-center gap-4 w-max">
-                <TeamBlock abbr={homeTeam} strong={isEven || isHomeFav} record={game.homeRecordL10} games={game.homeGames} b2b={game.homeB2B} />
+                <TeamBlock abbr={homeTeam} strong={isEven || isHomeFav} record={game.homeRecordL10} games={game.homeGames} b2b={game.homeB2B} venue="home" venueRecord={game.homeVenueRecord} venueGames={game.homeVenueGames} />
                 <span aria-label="vs" role="img" className="shrink-0 mx-1 flex flex-col items-center gap-1">
                   <svg width="26" height="26" viewBox="0 0 32 32" strokeLinecap="round" strokeLinejoin="round">
                     <line x1="5" y1="3.5" x2="19.5" y2="24.5" stroke="#f97316" strokeWidth="2.4" />
@@ -277,7 +289,7 @@ const GameRow: React.FC<{ game: GamePrediction; tops: Tops }> = ({ game, tops })
                     </svg>
                   </span>
                 </span>
-                <TeamBlock abbr={awayTeam} strong={isEven || !isHomeFav} record={game.awayRecordL10} games={game.awayGames} b2b={game.awayB2B} />
+                <TeamBlock abbr={awayTeam} strong={isEven || !isHomeFav} record={game.awayRecordL10} games={game.awayGames} b2b={game.awayB2B} venue="away" venueRecord={game.awayVenueRecord} venueGames={game.awayVenueGames} />
               </div>
             </div>
           </div>

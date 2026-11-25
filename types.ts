@@ -99,6 +99,10 @@ export interface GamePrediction {
   expGoalsAway?: number;
   homeGames?: number; // jogos em que a estimativa de cada equipa se baseia
   awayGames?: number;
+  homeVenueRecord?: string; // V-D-DP últimos jogos em casa (equipa da casa)
+  awayVenueRecord?: string; // V-D-DP últimos jogos fora (visitante)
+  homeVenueGames?: number;
+  awayVenueGames?: number;
   homeB2B?: boolean; // jogou ontem
   awayB2B?: boolean;
   favorite?: 'home' | 'away' | 'even'; // 'even' = jogo equilibrado
