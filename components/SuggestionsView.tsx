@@ -524,6 +524,57 @@ const filterTripleWin = (items: string[]) => items;
         </p>
       </div>
 
+      {/* BTTS E EMPATE: as 3 opções mais fortes do dia em cada mercado */}
+      {(() => {
+        const games = Array.isArray(predictions) ? predictions : [];
+        const top = (get: (g: Prediction) => number, min: number) => {
+          const ranked = [...games].sort((a, b) => get(b) - get(a)).map((g) => ({ g, p: Math.round(get(g) || 0) })).filter((x) => x.p > 0);
+          const strong = ranked.filter((x) => x.p >= min);
+          return strong.length > 0 ? strong : ranked.slice(0, 1); // todos os fortes; sem fortes, só o melhor do dia
+        };
+        const cols = [
+          { key: 'btts', title: 'Ambas marcam no 1.º período', icon: 'fa-futbol', accent: 'text-emerald-400', bar: 'bg-emerald-500', scale: 'btts' as ScaleKey, min: STRONG_RULES.markets.btts1P.min, rows: top((g) => g.bttsP1Prob, STRONG_RULES.markets.btts1P.min) },
+          { key: 'draw', title: 'Empate aos 60 min', icon: 'fa-handshake', accent: 'text-indigo-400', bar: 'bg-indigo-500', scale: 'draw' as ScaleKey, min: STRONG_RULES.markets.draw.min, rows: top((g) => g.drawTRProb, STRONG_RULES.markets.draw.min) },
+        ];
+        return (
+          <div className="bg-slate-800/40 border border-slate-700 rounded-2xl p-6 relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500"></div>
+            <h3 className="text-xl font-bold flex items-center mb-1 text-emerald-400">
+              <i className="fas fa-crosshairs mr-3 text-2xl"></i>
+              BTTS e Empate
+            </h3>
+            <p className="text-xs text-slate-400 mb-5 font-medium leading-tight">
+              Todos os jogos do dia acima do critério mínimo em cada mercado. Se nenhum passar, mostra só o melhor.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {cols.map((c) => (
+                <div key={c.key}>
+                  <p className={`text-sm font-black mb-3 ${c.accent}`}><i className={`fas ${c.icon} mr-2`}></i>{c.title}</p>
+                  <div className="space-y-3">
+                    {c.rows.length === 0 && <p className="text-slate-500 italic text-sm py-2">Sem dados para hoje.</p>}
+                    {c.rows.map(({ g, p }, i) => (
+                      <div key={`${c.key}-${g.id}`} className="bg-slate-900/80 p-3 rounded-xl border border-slate-700/50 flex items-center gap-3">
+                        <div className="flex -space-x-2 shrink-0">
+                          {[g.homeTeamAbbr, g.awayTeamAbbr].map((abbr, k) => (
+                            <img key={`${abbr}-${k}`} src={getLogoUrl(abbr)} className="w-8 h-8 object-contain bg-slate-800 rounded-full p-1 border border-slate-700" alt={abbr} loading="lazy" decoding="async"
+                              onError={(e) => { if (!retryLightLogo(e.currentTarget)) { e.currentTarget.style.display = 'none'; } }} />
+                          ))}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-bold text-slate-100 leading-tight">{teamLabel(g.homeTeamAbbr)} vs {teamLabel(g.awayTeamAbbr)}</p>
+                          {p >= c.min && <span className="text-[10px] font-black text-amber-300">FORTE</span>}
+                        </div>
+                        <PercBadge value={p} scale={c.scale} top={i === 0 && games.length > 1} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <SuggestionCard
           title="Triplete de Vitórias"
