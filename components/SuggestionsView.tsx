@@ -530,7 +530,7 @@ const filterTripleWin = (items: string[]) => items;
         const top = (get: (g: Prediction) => number, min: number) => {
           const ranked = [...games].sort((a, b) => get(b) - get(a)).map((g) => ({ g, p: Math.round(get(g) || 0) })).filter((x) => x.p > 0);
           const strong = ranked.filter((x) => x.p >= min);
-          return strong.length > 0 ? strong : ranked.slice(0, 1); // todos os fortes; sem fortes, só o melhor do dia
+          return strong.length >= 3 ? strong : ranked.slice(0, 3); // todos os fortes; no mínimo os 3 melhores do dia
         };
         const cols = [
           { key: 'btts', title: 'Ambas marcam no 1.º período', icon: 'fa-futbol', accent: 'text-emerald-400', bar: 'bg-emerald-500', scale: 'btts' as ScaleKey, min: STRONG_RULES.markets.btts1P.min, rows: top((g) => g.bttsP1Prob, STRONG_RULES.markets.btts1P.min) },
@@ -544,7 +544,7 @@ const filterTripleWin = (items: string[]) => items;
               BTTS e Empate
             </h3>
             <p className="text-xs text-slate-400 mb-5 font-medium leading-tight">
-              Todos os jogos do dia acima do critério mínimo em cada mercado. Se nenhum passar, mostra só o melhor.
+              Todos os jogos acima do critério mínimo em cada mercado; se forem menos de 3, mostra os 3 melhores do dia.
             </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {cols.map((c) => (
