@@ -14,7 +14,7 @@ const NHL_API = "https://api-web.nhle.com/v1";
 const MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
 
 const TEAM_GAMES = 7; // jogos recentes usados por equipa
-const LOOKBACK_DAYS = 35; // até onde se procuram esses jogos
+const LOOKBACK_DAYS = 21; // até onde se procuram esses jogos
 const PRESEASON_CUTOFF_DAY = 8; // a partir deste dia da época regular a pré-época deixa de contar
 const CACHE_PREFIX = "nhl:analysis:v13:";
 const CACHE_TTL_MS = 2 * 60 * 60 * 1000; // 2 horas (as lesões influenciam os números)
@@ -432,17 +432,12 @@ function selectRecentGames(all: FinishedGame[], date: string, teams: string[]) {
   return { perTeam, used: [...used.values()], regularSeasonDay };
 }
 
-/** Registo V-D-DP dos últimos TEAM_GAMES jogos de cada equipa só em casa ("home") ou só fora ("away"). */
-function venueRecords(all: FinishedGame[], date: string, teams: string[]) {
-  const regularDates = all.filter((g) => g.gameType >= 2).map((g) => g.date).sort();
-  const day = regularDates.length ? daysBetween(regularDates[0], date) + 1 : 0;
-  const pool = (day < PRESEASON_CUTOFF_DAY ? all : all.filter((g) => g.gameType !== 1)).sort(
-    (a, b) => b.date.localeCompare(a.date) || b.id - a.id
-  );
+/** Registo V-D-DP, dentro dos MESMOS jogos da forma recente de cada equipa, só em casa ("home") ou só fora ("away"). */
+function venueRecords(perTeam: Map<string, FinishedGame[]>) {
   const out = new Map<string, { record: string; n: number }>();
-  for (const side of ["home", "away"] as const) {
-    for (const abbr of new Set(teams)) {
-      const mine = pool.filter((g) => (side === "home" ? g.homeAbbr : g.awayAbbr) === abbr).slice(0, TEAM_GAMES);
+  for (const [abbr, games] of perTeam) {
+    for (const side of ["home", "away"] as const) {
+      const mine = games.filter((g) => (side === "home" ? g.homeAbbr : g.awayAbbr) === abbr);
       let w = 0, l = 0, otl = 0;
       for (const g of mine) {
         const own = side === "home" ? g.homeScore : g.awayScore;
@@ -1553,7 +1548,7 @@ export async function POST(req: Request) {
     };
 
     // Probabilidades: modelo estatístico (não dependem da IA)
-    const { predictions, expected } = buildPredictions(games, form, ctx, tiredTeams, injuries, impacts, venueRecords(allRecent, date, teams));
+    const { predictions, expected } = buildPredictions(games, form, ctx, tiredTeams, injuries, impacts, venueRecords(perTeam));
 
     // Resumos: IA (opcional). Se falhar, ficam os resumos automáticos.
     let aiError: string | null = null;
