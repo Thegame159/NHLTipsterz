@@ -55,7 +55,7 @@ const Chip: React.FC<{ p: PPick }> = ({ p }) => {
   const mark = p.r === 'hit' ? '✓' : p.r === 'miss' ? '✗' : p.r === 'dnp' ? 'n/j' : '…';
   const detail = p.r === 'hit' || p.r === 'miss' ? ` · ${p.g ?? 0}G ${p.a ?? 0}A` : '';
   return (
-    <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-bold ${cls}`} title={`${p.name} (${p.prob}% previsto${detail})`}>
+    <span className={`flex items-center gap-1 rounded-md border px-1.5 py-1 text-[11px] font-bold ${cls}`} title={`${p.name} (${p.prob}% previsto${detail})`}>
       {mark} {shortName(p.name)} <span className="opacity-60">{p.prob}%</span>
     </span>
   );
@@ -191,36 +191,27 @@ export const PlayerDayPicks: React.FC<{ rec: PRecord | undefined }> = ({ rec }) 
         </span>
       </button>
       {open && (['goal', 'point'] as const).map((mode) => {
-        const autoLists = rows.filter((r) => !r.mine && r.mode === mode);
-        const mineRow = rows.find((r) => r.mine && r.mode === mode);
-        if (autoLists.length === 0 && !mineRow) return null;
+        const cols = [
+          ...rows.filter((r) => !r.mine && r.mode === mode).map((r) => ({ key: `a${r.i}`, title: `Auto · opção ${r.i + 1}`, list: r.list, mine: false })),
+          ...rows.filter((r) => r.mine && r.mode === mode).map((r) => ({ key: 'm', title: 'Meu', list: r.list, mine: true })),
+        ];
+        if (cols.length === 0) return null;
+        const wrap = cols.length >= 3 ? 'md:grid-cols-3' : cols.length === 2 ? 'md:grid-cols-2' : '';
         return (
-          <div key={mode} className="rounded-xl border border-slate-700/40 bg-slate-900/40 p-3 space-y-2">
-            <div className="text-[10px] font-black uppercase tracking-widest text-orange-300/80">{mode === 'goal' ? 'Golos' : 'Pontos'}</div>
-            {autoLists.length > 0 && (
-              <div className={`grid gap-3 ${autoLists.length > 1 ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1'}`}>
-                {autoLists.map(({ i, list }) => (
-                  <div key={`a-${mode}-${i}`} className="space-y-1.5">
-                    <div className="text-[9px] font-black uppercase tracking-wider text-amber-300/70">Auto · opção {i + 1}</div>
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      {list.map((p) => (
-                        <Chip key={p.id} p={p} />
-                      ))}
-                    </div>
+          <div key={mode} className="space-y-2">
+            <div className="text-[11px] font-black uppercase tracking-widest text-orange-300">{mode === 'goal' ? 'Golos' : 'Pontos'}</div>
+            <div className={`grid grid-cols-1 gap-2 ${wrap}`}>
+              {cols.map((c) => (
+                <div key={c.key} className={`rounded-xl border p-2.5 space-y-1.5 ${c.mine ? 'border-sky-500/30 bg-sky-500/5' : 'border-amber-500/25 bg-amber-500/5'}`}>
+                  <div className={`text-[10px] font-black uppercase tracking-wider ${c.mine ? 'text-sky-300' : 'text-amber-300'}`}>{c.title}</div>
+                  <div className="flex flex-col items-stretch gap-1">
+                    {c.list.map((p) => (
+                      <Chip key={p.id} p={p} />
+                    ))}
                   </div>
-                ))}
-              </div>
-            )}
-            {mineRow && (
-              <div className="space-y-1.5 border-t border-slate-700/40 pt-2">
-                <div className="text-[9px] font-black uppercase tracking-wider text-sky-300/80">Meu</div>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {mineRow.list.map((p) => (
-                    <Chip key={p.id} p={p} />
-                  ))}
                 </div>
-              </div>
-            )}
+              ))}
+            </div>
           </div>
         );
       })}
