@@ -190,16 +190,40 @@ export const PlayerDayPicks: React.FC<{ rec: PRecord | undefined }> = ({ rec }) 
           <i className={`fas ${open ? 'fa-chevron-up' : 'fa-chevron-down'}`} />
         </span>
       </button>
-      {open && rows.map(({ mode, i, list, mine }) => (
-        <div key={`${mine ? 'm' : 'a'}-${mode}-${i}`} className="flex flex-wrap items-center gap-1.5">
-          <span className={`w-24 text-[9px] font-black uppercase tracking-wider ${mine ? 'text-orange-300/80' : 'text-slate-500'}`}>
-            {mine ? 'Meu · ' : ''}{mode === 'goal' ? 'Golos' : 'Pontos'}{mine ? '' : ` · ${i + 1}`}
-          </span>
-          {list.map((p) => (
-            <Chip key={p.id} p={p} />
-          ))}
-        </div>
-      ))}
+      {open && (['goal', 'point'] as const).map((mode) => {
+        const autoLists = rows.filter((r) => !r.mine && r.mode === mode);
+        const mineRow = rows.find((r) => r.mine && r.mode === mode);
+        if (autoLists.length === 0 && !mineRow) return null;
+        return (
+          <div key={mode} className="rounded-xl border border-slate-700/40 bg-slate-900/40 p-3 space-y-2">
+            <div className="text-[10px] font-black uppercase tracking-widest text-orange-300/80">{mode === 'goal' ? 'Golos' : 'Pontos'}</div>
+            {autoLists.length > 0 && (
+              <div className={`grid gap-3 ${autoLists.length > 1 ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1'}`}>
+                {autoLists.map(({ i, list }) => (
+                  <div key={`a-${mode}-${i}`} className="space-y-1.5">
+                    <div className="text-[9px] font-black uppercase tracking-wider text-amber-300/70">Auto · opção {i + 1}</div>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {list.map((p) => (
+                        <Chip key={p.id} p={p} />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {mineRow && (
+              <div className="space-y-1.5 border-t border-slate-700/40 pt-2">
+                <div className="text-[9px] font-black uppercase tracking-wider text-sky-300/80">Meu</div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {mineRow.list.map((p) => (
+                    <Chip key={p.id} p={p} />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 };

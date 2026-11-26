@@ -248,7 +248,7 @@ async function saveHistoryStats(
   stats: { correct: number; total: number; percent: number | null },
   markets: Record<string, PickEval[]>
 ) {
-  // v:2 = Over 4.5 / 5.5 avaliados só em tempo regulamentar
+  // v:2 = Over golos (4.5 / 5.5) avaliados só em tempo regulamentar
   (stats as any).v = 2;
   try {
     await fetch(`/api/history?t=${Date.now()}`, {
@@ -262,7 +262,11 @@ async function saveHistoryStats(
 
 function getManualValue(store: ManualStore | null, side: ManualSide, market: string, label: string): ManualValue | undefined {
   if (!store) return undefined;
-  return store[side]?.[market]?.[label];
+  const direct = store[side]?.[market]?.[label];
+  if (direct !== undefined || market !== "Over golos") return direct;
+  // Compatibilidade: correções manuais antigas estavam em "Over 4.5" / "Over 5.5"
+  const m = label.match(/^O(4|5)\.5 · (.*)$/);
+  return m ? store[side]?.[`Over ${m[1]}.5`]?.[m[2]] : undefined;
 }
 
 function setManualValueInStore(store: ManualStore | null, side: ManualSide, market: string, label: string, value: ManualValue): ManualStore {
@@ -379,8 +383,17 @@ export function evalMarkets(sug: Suggestions, results: ApiResultsResponse): Reco
       evalGamePick(t, (g) => (g.p2Away ?? 0) + (g.p2Home ?? 0) >= 2, (g) => typeof g.p2Away === "number" && typeof g.p2Home === "number")
     ),
     "Empate TR": (sug.drawSuggestions || []).map((d) => evalGamePick(d.game, (g) => g.regAway === g.regHome)),
-    "Over 4.5": (sug.quadrupleOver45 || []).map((t) => evalGamePick(t, (g) => g.regAway + g.regHome >= 5)),
-    "Over 5.5": (sug.over55Suggestions || []).map((t) => evalGamePick(t, (g) => g.regAway + g.regHome >= 6)),
+    // Overs: um só mercado (Over 4.5 e Over 5.5 juntos); cada pick indica a sua linha
+    "Over golos": [
+      ...(sug.quadrupleOver45 || []).map((t) => {
+        const e = evalGamePick(t, (g) => g.regAway + g.regHome >= 5);
+        return { ...e, label: `O4.5 · ${t}` };
+      }),
+      ...(sug.over55Suggestions || []).map((t) => {
+        const e = evalGamePick(t, (g) => g.regAway + g.regHome >= 6);
+        return { ...e, label: `O5.5 · ${t}` };
+      }),
+    ],
   };
 
   if (combinadaPicks.length > 0) out["Combinada"] = combinadaPicks;
@@ -673,8 +686,7 @@ const MarketBlock: React.FC<{
     "Over 1.5 P1 (Dupla)": "fa-bolt",
     "Over 1.5 P2 (Triplete)": "fa-fire-alt",
     "Empate TR": "fa-handshake",
-    "Over 4.5": "fa-hockey-puck",
-    "Over 5.5": "fa-plus-circle",
+    "Over golos": "fa-hockey-puck",
     "Combinada": "fa-layer-group",
     "Tiro do Dia": "fa-bullseye",
   };
@@ -1000,9 +1012,9 @@ const StatsView: React.FC = () => {
             const mineSug: Suggestions | null = history?.mine?.suggestions ?? null;
             const manualStore = manualByDate[date] ?? null;
 
-            // Resultados antigos com Over 4.5/5.5 foram avaliados com prolongamento: voltam a ser calculados
+            // Resultados antigos com "Over 4.5" / "Over 5.5" separados: voltam a ser calculados num só mercado "Over golos"
             const stale = (side: HistoryItem["auto"]) =>
-              !!side?.markets && ("Over 4.5" in side.markets || "Over 5.5" in side.markets) && (side.stats as any)?.v !== 2;
+              !!side?.markets && ("Over 4.5" in side.markets || "Over 5.5" in side.markets);
             const autoReady = history?.auto?.markets && Object.keys(history.auto.markets).length > 0 && !stale(history.auto);
             const mineReady = history?.mine?.markets && Object.keys(history.mine.markets).length > 0 && !stale(history.mine);
 
@@ -1380,44 +1392,23 @@ const StatsView: React.FC = () => {
                             </div>
                             }>
 
-                            {autoCombinadaPicks.length > 0 && mineCombinadaPicks.length > 0 ? (
-                              <div className="space-y-3">
-                                <div>
-                                  <div className="text-[10px] font-black uppercase tracking-widest text-amber-400/50 mb-2">Auto</div>
-                                  <div className="flex flex-wrap gap-2">
-                                    {autoCombinadaPicks.map((p, idx) => (
-                                      <div key={`ac-${idx}`} className="w-full sm:w-[calc(50%-4px)] lg:w-[calc(33.333%-6px)]">
-                                        <PickLine p={p} editable={isEditing} marketTitle="Combinada"
-                                          onSet={isEditing ? (val) => setManual(r.date, "auto", "Combinada", p.label, val) : undefined} />
-                                      </div>
-                                    ))}
+                            <div className={`grid gap-4 ${autoCombinadaPicks.length > 0 && mineCombinadaPicks.length > 0 ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1"}`}>
+                              {([
+                                { side: "auto" as const, picks: autoCombinadaPicks, name: "Auto", icon: "fa-bolt", box: "border-amber-500/30 bg-amber-500/5", head: "text-amber-300" },
+                                { side: "mine" as const, picks: mineCombinadaPicks, name: "Minhas", icon: "fa-user", box: "border-sky-500/30 bg-sky-500/5", head: "text-sky-300" },
+                              ]).filter((c) => c.picks.length > 0).map((c) => (
+                                <div key={c.side} className={`rounded-xl border p-3 space-y-2 ${c.box}`}>
+                                  <div className={`flex items-center justify-between text-xs font-black uppercase tracking-widest ${c.head}`}>
+                                    <span><i className={`fas ${c.icon} mr-2`} />{c.name}</span>
+                                    <span className="text-[10px] text-slate-400">{c.picks.filter((p) => p.ok === true).length}/{c.picks.filter((p) => p.ok !== null).length} certas</span>
                                   </div>
+                                  {c.picks.map((p, idx) => (
+                                    <PickLine key={`${c.side}-c-${idx}`} p={p} editable={isEditing} marketTitle="Combinada"
+                                      onSet={isEditing ? (val) => setManual(r.date, c.side, "Combinada", p.label, val) : undefined} />
+                                  ))}
                                 </div>
-                                <div>
-                                  <div className="text-[10px] font-black uppercase tracking-widest text-blue-400/50 mb-2">Minhas</div>
-                                  <div className="flex flex-wrap gap-2">
-                                    {mineCombinadaPicks.map((p, idx) => (
-                                      <div key={`mc-${idx}`} className="w-full sm:w-[calc(50%-4px)] lg:w-[calc(33.333%-6px)]">
-                                        <PickLine p={p} editable={isEditing} marketTitle="Combinada"
-                                          onSet={isEditing ? (val) => setManual(r.date, "mine", "Combinada", p.label, val) : undefined} />
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="flex flex-wrap gap-2">
-                                {(autoCombinadaPicks.length > 0 ? autoCombinadaPicks : mineCombinadaPicks).map((p, idx) => {
-                                  const side = autoCombinadaPicks.length > 0 ? "auto" : "mine";
-                                  return (
-                                    <div key={`c-${idx}`} className="w-full sm:w-[calc(50%-4px)] lg:w-[calc(33.333%-6px)]">
-                                      <PickLine p={p} editable={isEditing} marketTitle="Combinada"
-                                        onSet={isEditing ? (val) => setManual(r.date, side, "Combinada", p.label, val) : undefined} />
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
+                              ))}
+                            </div>
                             </Collapse>
                           </div>
                         )}
