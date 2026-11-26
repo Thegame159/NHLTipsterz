@@ -52,11 +52,12 @@ const Chip: React.FC<{ p: PPick }> = ({ p }) => {
       : p.r === 'miss'
       ? 'text-red-300 border-red-500/30 bg-red-500/10'
       : 'text-slate-400 border-slate-700 bg-slate-800/50';
+  const pill = p.r === 'hit' ? 'bg-emerald-500/25 text-emerald-200' : p.r === 'miss' ? 'bg-red-500/25 text-red-200' : 'bg-slate-700/60 text-slate-200';
   const mark = p.r === 'hit' ? '✓' : p.r === 'miss' ? '✗' : p.r === 'dnp' ? 'n/j' : '…';
   const detail = p.r === 'hit' || p.r === 'miss' ? ` · ${p.g ?? 0}G ${p.a ?? 0}A` : '';
   return (
     <span className={`flex items-center gap-1 rounded-md border px-1.5 py-1 text-[11px] font-bold ${cls}`} title={`${p.name} (${p.prob}% previsto${detail})`}>
-      {mark} {shortName(p.name)} <span className="opacity-60">{p.prob}%</span>
+      {mark} {shortName(p.name)} <span className={`ml-auto rounded px-1.5 py-0.5 font-black text-[11px] tabular-nums ${pill}`}>{p.prob}%</span>
     </span>
   );
 };
